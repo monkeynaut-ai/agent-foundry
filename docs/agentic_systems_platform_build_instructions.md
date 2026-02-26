@@ -26,7 +26,37 @@ What this document does not claim by itself:
 
 ---
 
-## Implementation Steps (do these in order)
+## Build Order (mandatory; follow exactly)
+
+Agents must implement slices in **this exact sequence**, where **each slice is a single PR**. Do not reorder, skip, or parallelize slices.
+
+### Mandatory slice sequence
+1) Step 1: S1.1 → S1.8
+2) Step 2: S2.1 → S2.7
+3) Step 3: S3.1 → S3.6
+4) Step 4 (partial): S4.1 → S4.4 → S4.6 → S4.7
+5) Step 5: S5.1 → S5.8
+6) Step 6: S6.1 → S6.7
+7) Step 4 (deferred gate inclusion): S4.5
+8) Decision Support demo: DS1 → DS9
+
+### Agent execution rules (to ensure compliance)
+- **One PR per slice.** A PR may contain multiple commits, but must only implement the stated slice.
+- **TDD required.** Within each PR, commits must follow: tests (red) → implementation (green) → optional refactor.
+- **Dependency check before coding.** Before starting a slice, confirm all its listed dependencies are already merged. If any dependency is missing, stop and produce a single error report titled `BUILD_ORDER_BLOCKED` with:
+  - the blocked slice id,
+  - the missing dependency,
+  - the exact document lines that state the dependency.
+- **Feature flags.** If a slice is behind a feature flag, implement both:
+  - flag OFF behavior (no-op or safe fallback), and
+  - flag ON behavior (the feature),
+  each covered by independent tests.
+- **No human-in-the-loop required to build.** Any HITL/breakpoint features are implemented and tested via simulated approvals/interrupt payloads; do not require interactive input.
+
+---
+
+## Component Map
+
 
 ## Deliverable Slices for Test-Driven Development
 Design slices so each PR is a vertical slice delivering deployable value. Each slice includes: description, acceptance criteria coverage, dependencies, and suggested commit breakdown.
@@ -429,23 +459,14 @@ Design slices so each PR is a vertical slice delivering deployable value. Each s
   1) Tests (red): invalid output triggers schema gate failure and blocks final response.
   2) Impl (green): validator node.
 
-**S6.4 — Domain eval gates: citation, continuity, style**
-- Includes: `citation_validator`, `continuity_validator`, `style_validator` with structured failure reports.
-- Addresses AC: Step 6 #5, #6, #7.
+**S6.4 — Decision eval gates: citation, uncertainty, evidence-first**
+- Includes: `citation_validator`, `uncertainty_completeness_validator`, `evidence_first_contract` with structured failure reports.
+- Addresses AC coverage: Decision Support demo gates; Step 6 gating patterns.
 - Dependencies: S6.3.
-- Feature flags: `FF_DOMAIN_GATES` (default off per system until tuned).
+- Feature flags: `FF_DOMAIN_GATES` (default off until tuned).
 - Suggested commits:
-  1) Tests (red): missing evidence ids fails citation gate; contradiction fails continuity gate; style violation fails style gate.
+  1) Tests (red): missing evidence ids fails citation gate; missing uncertainty fields fails uncertainty gate; empty evidence triggers evidence-first failure with typed outcome.
   2) Impl (green): each validator + report format.
-
-**S6.5 — Engineering eval gates: tests + static analysis**
-- Includes: `test_runner_gate`, `static_analysis_gate` with trace details.
-- Addresses AC: Step 6 #8, #9.
-- Dependencies: S6.3.
-- Feature flags: `FF_ENGINEERING_GATES` (default off in environments without CI tools).
-- Suggested commits:
-  1) Tests (red): simulated failing tests/lint produce gate failure with names/rules/locations.
-  2) Impl (green): runners + parsers.
 
 **S6.6 — Compiler enforces gate execution on all paths to final**
 - Includes: static analysis during compile ensuring at least one eval gate on every path to final node.
@@ -467,10 +488,125 @@ Design slices so each PR is a vertical slice delivering deployable value. Each s
 
 ---
 
-### Step 2 — Build a Retriever over Registry + Docs
-**Goal:** Give planners reliable, current guidance and reduce hallucinated API usage.
+## Decision Support Demo (Reference Implementation)
+**Pattern:** evidence-first recommendation contract.
 
-#### Acceptance Criteria
+### Demo scope
+A single runnable workflow that:
+1) takes a user question + optional constraints,
+2) retrieves evidence,
+3) optionally calls tools,
+4) produces a structured recommendation with evidence ids, assumptions, and uncertainty,
+5) enforces eval gates that block final output on missing evidence/uncertainty.
+
+### Required state fields (demo)
+- `question`
+- `domain`
+- `constraints`
+- `retrieved_evidence` (snippets + ids)
+- `analysis`
+- `recommendation` (structured)
+- `assumptions`
+- `uncertainty`
+
+### Required capabilities (demo)
+- `rag_retriever`
+- `structured_output_pydantic`
+- `tool_calling` (demo uses a stub calculator tool)
+- `schema_validator`
+- `citation_validator`
+- `uncertainty_completeness_validator`
+- `evidence_first_contract`
+
+### Deliverable Slices (Decision Support Demo)
+
+**DS1 — Runnable demo entrypoint with a static plan (no LLM/tools yet)**
+- Includes: a CLI/API runner that loads a checked-in Decision Support `GraphWiringPlan` JSON and executes a trivial graph that returns a canned structured recommendation.
+- Addresses AC: Build acceptance #3–#4.
+- Dependencies: Step 3 (S3.6), Step 5 (S5.1).
+- Feature flags: `FF_DECISION_DEMO` (default on).
+- Suggested commits:
+  1) Tests (red): runner loads plan JSON and executes graph producing expected output object.
+  2) Impl (green): runner + static plan fixture + minimal graph wiring.
+
+**DS2 — Evidence retrieval node + evidence written to state**
+- Includes: `rag_retriever` node in the demo plan; evidence stored as `{id, text, source}` list; determinism for id assignment.
+- Addresses AC: Step 2 (retrieval behavior), Step 6 (retrieval tracing).
+- Dependencies: Step 2 (S2.3–S2.6), Step 5 (S5.3), Step 6 (S6.2).
+- Feature flags: `FF_DECISION_RETRIEVAL` (default on).
+- Suggested commits:
+  1) Tests (red): given a query, when demo runs, then `retrieved_evidence` contains ≥1 item with non-empty `id` and `text`.
+  2) Impl (green): add retrieval node + state mapping + evidence id strategy.
+
+**DS3 — Structured recommendation schema enforced (no tools)**
+- Includes: `structured_output_pydantic` node producing a `Recommendation` model with fields: `recommendation`, `evidence_ids`, `assumptions[]`, `uncertainty`.
+- Addresses AC: Step 1 schema enforcement, Step 6 `schema_validator`.
+- Dependencies: Step 1 (S1.5), Step 6 (S6.3).
+- Feature flags: `FF_DECISION_STRUCTURED_OUTPUT` (default on).
+- Suggested commits:
+  1) Tests (red): malformed recommendation output fails schema and blocks final.
+  2) Impl (green): Pydantic models + node wrapper + plan update.
+
+**DS4 — Citation validator gate: claims must reference evidence ids**
+- Includes: `citation_validator` gate that checks `recommendation.evidence_ids` are all present in `retrieved_evidence.id` and fails with missing refs list.
+- Addresses AC: build acceptance #5 (citations).
+- Dependencies: Step 6 (S6.4) and Step 5 (S5.3).
+- Feature flags: `FF_DECISION_CITATIONS` (default on).
+- Suggested commits:
+  1) Tests (red): given recommendation with an evidence id not in retrieved set, when gate runs, then it fails and final output is not produced.
+  2) Impl (green): citation validator capability + wire into plan.
+
+**DS5 — Uncertainty completeness validator gate**
+- Includes: `uncertainty_completeness_validator` gate requiring: numeric confidence in [0,1] AND a natural-language uncertainty rationale.
+- Addresses AC: build acceptance #5 (uncertainty).
+- Dependencies: Step 6 (S6.4) + DS3.
+- Feature flags: `FF_DECISION_UNCERTAINTY` (default on).
+- Suggested commits:
+  1) Tests (red): missing confidence or rationale fails gate with field-specific errors.
+  2) Impl (green): validator capability + plan wiring.
+
+**DS6 — Evidence-first contract validator (end-to-end policy)**
+- Includes: `evidence_first_contract` validator enforcing:
+  - if `retrieved_evidence` is empty, return a typed “insufficient evidence” outcome (no recommendation),
+  - recommendation must list assumptions explicitly.
+- Addresses AC: build acceptance #5 (evidence contract).
+- Dependencies: DS2, DS4, DS5.
+- Feature flags: `FF_DECISION_EVIDENCE_CONTRACT` (default on).
+- Suggested commits:
+  1) Tests (red): no evidence → returns typed insufficient-evidence output and does not emit recommendation; missing assumptions fails.
+  2) Impl (green): validator + alternative output path.
+
+**DS7 — Tool-calling node with a stub calculator tool + tracing**
+- Includes: `tool_calling` node that can call a deterministic calculator tool; trace includes tool name + args + output with redaction.
+- Addresses AC: Step 6 tool tracing.
+- Dependencies: Step 6 (S6.2), Step 3 (S3.4), Step 1 (S1.5).
+- Feature flags: `FF_DECISION_TOOLS` (default off until stable).
+- Suggested commits:
+  1) Tests (red): question requiring arithmetic triggers tool call and returns correct computed value; trace contains tool call record.
+  2) Impl (green): calculator tool + tool_calling capability wiring.
+
+**DS8 — Planner produces the Decision Support demo plan (replacing static plan)**
+- Includes: planner config to generate the Decision Support plan deterministically from a “decision-support” goal; outputs byte-identical plan.
+- Addresses AC: build acceptance #2.
+- Dependencies: Step 4 (S4.3, S4.7) + DS1–DS6.
+- Feature flags: `FF_DECISION_PLANNER` (default off; keep static plan as fallback).
+- Suggested commits:
+  1) Tests (red): planner emits valid plan that matches expected node types and required gates.
+  2) Impl (green): decision-support planner adapter + deterministic settings.
+
+**DS9 — Non-functional: end-to-end latency and failure-mode budgets**
+- Includes: perf tests for demo run; explicit timeout budgets on nodes.
+- Targets:
+  - Without network tools: end-to-end p95 ≤ 2s (reference machine)
+- Dependencies: DS2–DS6.
+- Feature flags: `FF_BENCHMARKS` (CI nightly).
+- Suggested commits:
+  1) Tests (red): perf test asserts p95 ≤ 2s; forced slow node times out and returns typed error.
+  2) Impl (green): timeouts + minor optimizations.
+
+---
+
+## Acceptance Criteria
 A build is acceptable when:
 1) You can load the Capability Registry and retrieve capability specs.
 2) Planner can produce a valid Wiring Plan for Decision Support (or a static plan is available as fallback).
@@ -480,10 +616,7 @@ A build is acceptable when:
 
 ---
 
-## Next Implementation Task (start here)
-1) Complete platform Steps 1–3 (Registry, Retriever, Plan schema/validation).
-2) Implement compiler core (Step 5) and tracing/gates skeleton (Step 6).
-3) Build Decision Support demo slices DS1 → DS6 (static plan → retrieval → structured output → gates).
-4) Add DS7 tool-calling (optional) and DS8 planner generation (optional, behind flags).
-5) Add DS9 performance budgets (CI nightly).
+## Completion Checklist
+- All slices S1.1–S6.7 and DS1–DS9 are implemented and passing tests.
+- Feature-flagged slices are enabled/disabled according to their defaults and have explicit tests for both states where applicable.
 

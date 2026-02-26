@@ -11,12 +11,12 @@
       "Bash(git log*)",
       "Bash(ls*)",
       "Bash(pwd*)",
+      "Bash(git push*)",
+      "Bash(gh pr *)",
       "Bash(mkdir *)"
     ],
     "deny": [
-      "Bash(git push*)",
       "Bash(git push --force*)",
-      "Bash(gh pr *)",
       "Bash(git reset*)",
       "Bash(git clean*)",
       "Bash(rm -rf *)"
