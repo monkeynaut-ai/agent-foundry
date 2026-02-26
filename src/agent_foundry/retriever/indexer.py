@@ -9,6 +9,7 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
 from agent_foundry.registry.registry import CapabilityRegistry
+from agent_foundry.retriever.errors import IndexLoadError, RetrieverUnavailableError
 
 FF_RETRIEVER = False
 
@@ -83,12 +84,22 @@ class RegistryIndexer:
         (self._index_dir / _META_FILE).write_text(json.dumps(meta))
 
     def load(self) -> None:
-        """Load a previously persisted index."""
-        self._store = FAISS.load_local(
-            str(self._index_dir),
-            self._embeddings,
-            allow_dangerous_deserialization=True,
-        )
+        """Load a previously persisted index.
+
+        Raises:
+            IndexLoadError: If the index directory or files are missing/corrupt.
+        """
+        try:
+            self._store = FAISS.load_local(
+                str(self._index_dir),
+                self._embeddings,
+                allow_dangerous_deserialization=True,
+            )
+        except Exception as e:
+            raise IndexLoadError(
+                message=f"Failed to load index from {self._index_dir}: {e}",
+                index_path=self._index_dir,
+            ) from e
         meta_path = self._index_dir / _META_FILE
         if meta_path.exists():
             meta = json.loads(meta_path.read_text())
@@ -107,12 +118,21 @@ class RegistryIndexer:
         return self._docs_by_source.get(source)
 
     def retrieve(self, query: str, k: int = 3) -> list[Document]:
-        """Retrieve the top-k most similar documents for a query."""
+        """Retrieve the top-k most similar documents for a query.
+
+        Raises:
+            RetrieverUnavailableError: If the store is not loaded or search fails.
+        """
         if self._store is None:
-            raise RuntimeError("Index not loaded. Call build() or load() first.")
+            raise RetrieverUnavailableError("Index not loaded. Call build() or load() first.")
         if k <= 0:
             return []
-        results = self._store.similarity_search(query, k=k)
+        try:
+            results = self._store.similarity_search(query, k=k)
+        except Exception as e:
+            raise RetrieverUnavailableError(
+                f"Search failed: {e}"
+            ) from e
         return results
 
     def _specs_to_documents(self, registry: CapabilityRegistry) -> list[Document]:
