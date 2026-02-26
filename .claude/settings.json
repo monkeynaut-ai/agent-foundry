@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pdm add *)",
+      "Bash(pdm install*)",
+      "Bash(pdm run pytest*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(ls*)",
+      "Bash(pwd*)",
+      "Bash(mkdir *)"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(git push --force*)",
+      "Bash(gh pr *)",
+      "Bash(git reset*)",
+      "Bash(git clean*)",
+      "Bash(rm -rf *)"
+    ]
+  }
+}
