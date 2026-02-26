@@ -1,6 +1,12 @@
 """Typed exceptions for capability registry operations."""
 
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agent_foundry.registry.spec import ImplementationPointer
 
 
 class CapabilitySpecValidationError(Exception):
@@ -28,6 +34,18 @@ class DuplicateCapabilityError(Exception):
     ):
         self.capability_name = capability_name
         self.file_paths = file_paths
+        super().__init__(message)
+
+
+class CapabilityImportError(Exception):
+    """Raised when a capability implementation cannot be imported."""
+
+    def __init__(
+        self,
+        message: str,
+        pointer: ImplementationPointer,
+    ):
+        self.pointer = pointer
         super().__init__(message)
 
 
