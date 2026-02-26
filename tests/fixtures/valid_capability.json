@@ -1,0 +1,38 @@
+{
+  "name": "structured_output_pydantic",
+  "description": "Produces structured output validated by Pydantic models",
+  "version": "1.0.0",
+  "implementation": {
+    "module": "agent_foundry.capabilities.structured_output",
+    "class_name": "StructuredOutputCapability"
+  },
+  "inputs_schema": {
+    "type": "object",
+    "properties": {
+      "prompt": {
+        "type": "string",
+        "description": "The prompt to generate structured output from"
+      },
+      "output_model": {
+        "type": "string",
+        "description": "Fully qualified Pydantic model class name"
+      }
+    },
+    "required": ["prompt", "output_model"]
+  },
+  "outputs_schema": {
+    "type": "object",
+    "properties": {
+      "result": {
+        "type": "object",
+        "description": "The validated structured output"
+      }
+    },
+    "required": ["result"]
+  },
+  "tags": ["structured_output", "pydantic", "llm"],
+  "quality_controls": {
+    "timeout_seconds": 60,
+    "max_retries": 3
+  }
+}
