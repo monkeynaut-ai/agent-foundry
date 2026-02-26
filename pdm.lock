@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:bac0b8d9ed13199160e3991cd7366dd01c2e53c421c28c6a1e8c63e62ec1b465"
+content_hash = "sha256:525259a8711b7c4ae5a0b5b91a9ffcf66676ff6f139eb504a4ad18285b97aaf7"
 
 [[metadata.targets]]
 requires_python = "==3.13.*"
@@ -651,6 +651,70 @@ files = [
 ]
 
 [[package]]
+name = "langgraph"
+version = "1.0.9"
+requires_python = ">=3.10"
+summary = "Building stateful, multi-actor applications with LLMs"
+groups = ["default"]
+dependencies = [
+    "langchain-core>=0.1",
+    "langgraph-checkpoint<5.0.0,>=2.1.0",
+    "langgraph-prebuilt<1.1.0,>=1.0.8",
+    "langgraph-sdk<0.4.0,>=0.3.0",
+    "pydantic>=2.7.4",
+    "xxhash>=3.5.0",
+]
+files = [
+    {file = "langgraph-1.0.9-py3-none-any.whl", hash = "sha256:bce0d1f3e9a20434215a2a818395a58aedfc11c87bd6b52706c0db5c05ec44ec"},
+    {file = "langgraph-1.0.9.tar.gz", hash = "sha256:feac2729faba7d3c325bef76f240d7d7f66b02d2cbf4fdb1ed7d0cc83f963651"},
+]
+
+[[package]]
+name = "langgraph-checkpoint"
+version = "4.0.0"
+requires_python = ">=3.10"
+summary = "Library with base interfaces for LangGraph checkpoint savers."
+groups = ["default"]
+dependencies = [
+    "langchain-core>=0.2.38",
+    "ormsgpack>=1.12.0",
+]
+files = [
+    {file = "langgraph_checkpoint-4.0.0-py3-none-any.whl", hash = "sha256:3fa9b2635a7c5ac28b338f631abf6a030c3b508b7b9ce17c22611513b589c784"},
+    {file = "langgraph_checkpoint-4.0.0.tar.gz", hash = "sha256:814d1bd050fac029476558d8e68d87bce9009a0262d04a2c14b918255954a624"},
+]
+
+[[package]]
+name = "langgraph-prebuilt"
+version = "1.0.8"
+requires_python = ">=3.10"
+summary = "Library with high-level APIs for creating and executing LangGraph agents and tools."
+groups = ["default"]
+dependencies = [
+    "langchain-core>=1.0.0",
+    "langgraph-checkpoint<5.0.0,>=2.1.0",
+]
+files = [
+    {file = "langgraph_prebuilt-1.0.8-py3-none-any.whl", hash = "sha256:d16a731e591ba4470f3e313a319c7eee7dbc40895bcf15c821f985a3522a7ce0"},
+    {file = "langgraph_prebuilt-1.0.8.tar.gz", hash = "sha256:0cd3cf5473ced8a6cd687cc5294e08d3de57529d8dd14fdc6ae4899549efcf69"},
+]
+
+[[package]]
+name = "langgraph-sdk"
+version = "0.3.9"
+requires_python = ">=3.10"
+summary = "SDK for interacting with LangGraph API"
+groups = ["default"]
+dependencies = [
+    "httpx>=0.25.2",
+    "orjson>=3.11.5",
+]
+files = [
+    {file = "langgraph_sdk-0.3.9-py3-none-any.whl", hash = "sha256:94654294250c920789b6ed0d8a70c0117fed5736b61efc24ff647157359453c5"},
+    {file = "langgraph_sdk-0.3.9.tar.gz", hash = "sha256:8be8958529b3f6d493ec248fdb46e539362efda75784654a42a7091d22504e0e"},
+]
+
+[[package]]
 name = "langsmith"
 version = "0.7.7"
 requires_python = ">=3.10"
@@ -784,7 +848,6 @@ version = "3.11.7"
 requires_python = ">=3.10"
 summary = "Fast, correct Python JSON library supporting dataclasses, datetimes, and numpy"
 groups = ["default"]
-marker = "platform_python_implementation != \"PyPy\""
 files = [
     {file = "orjson-3.11.7-cp313-cp313-macosx_10_15_x86_64.macosx_11_0_arm64.macosx_10_15_universal2.whl", hash = "sha256:1d98b30cc1313d52d4af17d9c3d307b08389752ec5f2e5febdfada70b0f8c733"},
     {file = "orjson-3.11.7-cp313-cp313-macosx_15_0_arm64.whl", hash = "sha256:d897e81f8d0cbd2abb82226d1860ad2e1ab3ff16d7b08c96ca00df9d45409ef4"},
@@ -802,6 +865,25 @@ files = [
     {file = "orjson-3.11.7-cp313-cp313-win_amd64.whl", hash = "sha256:b9f95dcdea9d4f805daa9ddf02617a89e484c6985fa03055459f90e87d7a0757"},
     {file = "orjson-3.11.7-cp313-cp313-win_arm64.whl", hash = "sha256:800988273a014a0541483dc81021247d7eacb0c845a9d1a34a422bc718f41539"},
     {file = "orjson-3.11.7.tar.gz", hash = "sha256:9b1a67243945819ce55d24a30b59d6a168e86220452d2c96f4d1f093e71c0c49"},
+]
+
+[[package]]
+name = "ormsgpack"
+version = "1.12.2"
+requires_python = ">=3.10"
+summary = "Fast, correct Python msgpack library supporting dataclasses, datetimes, and numpy"
+groups = ["default"]
+files = [
+    {file = "ormsgpack-1.12.2-cp313-cp313-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:5ea60cb5f210b1cfbad8c002948d73447508e629ec375acb82910e3efa8ff355"},
+    {file = "ormsgpack-1.12.2-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f3601f19afdbea273ed70b06495e5794606a8b690a568d6c996a90d7255e51c1"},
+    {file = "ormsgpack-1.12.2-cp313-cp313-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:29a9f17a3dac6054c0dce7925e0f4995c727f7c41859adf9b5572180f640d172"},
+    {file = "ormsgpack-1.12.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:39c1bd2092880e413902910388be8715f70b9f15f20779d44e673033a6146f2d"},
+    {file = "ormsgpack-1.12.2-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:50b7249244382209877deedeee838aef1542f3d0fc28b8fe71ca9d7e1896a0d7"},
+    {file = "ormsgpack-1.12.2-cp313-cp313-musllinux_1_2_armv7l.whl", hash = "sha256:5af04800d844451cf102a59c74a841324868d3f1625c296a06cc655c542a6685"},
+    {file = "ormsgpack-1.12.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:cec70477d4371cd524534cd16472d8b9cc187e0e3043a8790545a9a9b296c258"},
+    {file = "ormsgpack-1.12.2-cp313-cp313-win_amd64.whl", hash = "sha256:21f4276caca5c03a818041d637e4019bc84f9d6ca8baa5ea03e5cc8bf56140e9"},
+    {file = "ormsgpack-1.12.2-cp313-cp313-win_arm64.whl", hash = "sha256:baca4b6773d20a82e36d6fd25f341064244f9f86a13dead95dd7d7f996f51709"},
+    {file = "ormsgpack-1.12.2.tar.gz", hash = "sha256:944a2233640273bee67521795a73cf1e959538e0dfb7ac635505010455e53b33"},
 ]
 
 [[package]]
