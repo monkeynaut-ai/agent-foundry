@@ -10,18 +10,26 @@ logger = logging.getLogger(__name__)
 
 FF_RETRIEVER = True
 
+DEFAULT_MAX_SNIPPET_LENGTH = 2000
+
 
 class RetrievalAPI:
     """High-level retrieval API over a built index."""
 
-    def __init__(self, indexer: RegistryIndexer):
+    def __init__(
+        self,
+        indexer: RegistryIndexer,
+        max_snippet_length: int = DEFAULT_MAX_SNIPPET_LENGTH,
+    ):
         self._indexer = indexer
+        self._max_snippet_length = max_snippet_length
 
     def retrieve(self, query: str, k: int = 3) -> list[Document]:
         """Retrieve top-k snippets for a query.
 
         Uses vector similarity search with exact-name boosting: if the query
         matches a capability name exactly, that document is guaranteed in results.
+        Snippets are truncated to max_snippet_length.
 
         Args:
             query: The search query string.
@@ -62,4 +70,10 @@ class RetrievalAPI:
         if not results:
             logger.info("no_hits", extra={"query": query})
 
-        return results
+        return [self._truncate_snippet(doc) for doc in results]
+
+    def _truncate_snippet(self, doc: Document) -> Document:
+        content = doc.page_content
+        if len(content) > self._max_snippet_length:
+            content = content[: self._max_snippet_length - 3] + "..."
+        return Document(page_content=content, metadata=doc.metadata)
