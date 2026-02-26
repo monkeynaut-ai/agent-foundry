@@ -110,6 +110,8 @@ class RegistryIndexer:
         """Retrieve the top-k most similar documents for a query."""
         if self._store is None:
             raise RuntimeError("Index not loaded. Call build() or load() first.")
+        if k <= 0:
+            return []
         results = self._store.similarity_search(query, k=k)
         return results
 
