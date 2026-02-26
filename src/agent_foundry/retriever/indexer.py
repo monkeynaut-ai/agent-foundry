@@ -92,6 +92,13 @@ class RegistryIndexer:
             meta = json.loads(meta_path.read_text())
             self._doc_count = meta.get("doc_count", 0)
 
+    def retrieve(self, query: str, k: int = 3) -> list[Document]:
+        """Retrieve the top-k most similar documents for a query."""
+        if self._store is None:
+            raise RuntimeError("Index not loaded. Call build() or load() first.")
+        results = self._store.similarity_search(query, k=k)
+        return results
+
     def _specs_to_documents(self, registry: CapabilityRegistry) -> list[Document]:
         docs = []
         for name in sorted(registry.names()):
