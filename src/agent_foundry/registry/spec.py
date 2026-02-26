@@ -5,7 +5,12 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+
+from agent_foundry.registry.errors import (
+    CapabilitySpecParseError,
+    CapabilitySpecValidationError,
+)
 
 
 class ImplementationPointer(BaseModel):
@@ -45,17 +50,85 @@ def load_capability_spec(path: Path) -> CapabilitySpec:
         A validated CapabilitySpec instance.
 
     Raises:
-        ValueError: If the file extension is not supported.
+        CapabilitySpecParseError: If the file cannot be read or parsed.
+        CapabilitySpecValidationError: If the parsed data fails schema validation.
     """
     path = Path(path)
-    text = path.read_text()
+
+    try:
+        text = path.read_text()
+    except OSError as e:
+        raise CapabilitySpecParseError(
+            message=f"Cannot read file {path}: {e}",
+            file_path=path,
+        ) from e
 
     suffix = path.suffix.lower()
     if suffix in (".yaml", ".yml"):
-        data = yaml.safe_load(text)
+        data = _parse_yaml(text, path)
     elif suffix == ".json":
-        data = json.loads(text)
+        data = _parse_json(text, path)
     else:
-        raise ValueError(f"Unsupported file extension: {suffix}. Use .yaml, .yml, or .json")
+        raise CapabilitySpecParseError(
+            message=f"Unsupported file extension: {suffix}. Use .yaml, .yml, or .json",
+            file_path=path,
+        )
 
-    return CapabilitySpec(**data)
+    return _validate_spec(data, path)
+
+
+def _parse_yaml(text: str, path: Path) -> dict:
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        line = column = None
+        if hasattr(e, "problem_mark") and e.problem_mark is not None:
+            line = e.problem_mark.line + 1
+            column = e.problem_mark.column + 1
+        raise CapabilitySpecParseError(
+            message=f"YAML parse error in {path}: {e}",
+            file_path=path,
+            line=line,
+            column=column,
+        ) from e
+    if not isinstance(data, dict):
+        raise CapabilitySpecParseError(
+            message=f"Expected a mapping in {path}, got {type(data).__name__}",
+            file_path=path,
+        )
+    return data
+
+
+def _parse_json(text: str, path: Path) -> dict:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise CapabilitySpecParseError(
+            message=f"JSON parse error in {path}: {e}",
+            file_path=path,
+            line=e.lineno,
+            column=e.colno,
+        ) from e
+    if not isinstance(data, dict):
+        raise CapabilitySpecParseError(
+            message=f"Expected a mapping in {path}, got {type(data).__name__}",
+            file_path=path,
+        )
+    return data
+
+
+def _validate_spec(data: dict, path: Path) -> CapabilitySpec:
+    try:
+        return CapabilitySpec(**data)
+    except ValidationError as e:
+        missing = [
+            err["loc"][0]
+            for err in e.errors()
+            if err["type"] == "missing"
+            and len(err["loc"]) > 0
+        ]
+        raise CapabilitySpecValidationError(
+            message=f"Validation error in {path}: {e}",
+            file_path=path,
+            missing_fields=missing,
+        ) from e

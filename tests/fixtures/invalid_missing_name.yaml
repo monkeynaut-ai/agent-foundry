@@ -1,0 +1,11 @@
+description: A capability with no name field
+version: "1.0.0"
+implementation:
+  module: agent_foundry.capabilities.test
+  class_name: TestCapability
+inputs_schema:
+  type: object
+  properties: {}
+outputs_schema:
+  type: object
+  properties: {}
