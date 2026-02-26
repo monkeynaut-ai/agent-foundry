@@ -48,6 +48,7 @@ class RegistryIndexer:
         self._embeddings = embeddings or DeterministicEmbeddings()
         self._store: FAISS | None = None
         self._doc_count: int = 0
+        self._docs_by_source: dict[str, Document] = {}
 
     @property
     def is_loaded(self) -> bool:
@@ -73,6 +74,7 @@ class RegistryIndexer:
 
         self._store = FAISS.from_documents(documents, self._embeddings)
         self._doc_count = len(documents)
+        self._docs_by_source = {d.metadata.get("source", ""): d for d in documents}
 
         self._index_dir.mkdir(parents=True, exist_ok=True)
         self._store.save_local(str(self._index_dir))
@@ -91,6 +93,18 @@ class RegistryIndexer:
         if meta_path.exists():
             meta = json.loads(meta_path.read_text())
             self._doc_count = meta.get("doc_count", 0)
+        # Rebuild source index from the FAISS docstore
+        self._docs_by_source = {}
+        if self._store and hasattr(self._store, "docstore"):
+            for doc_id in self._store.index_to_docstore_id.values():
+                doc = self._store.docstore.search(doc_id)
+                if isinstance(doc, Document):
+                    source = doc.metadata.get("source", "")
+                    self._docs_by_source[source] = doc
+
+    def get_by_source(self, source: str) -> Document | None:
+        """Look up a document by its source metadata."""
+        return self._docs_by_source.get(source)
 
     def retrieve(self, query: str, k: int = 3) -> list[Document]:
         """Retrieve the top-k most similar documents for a query."""
