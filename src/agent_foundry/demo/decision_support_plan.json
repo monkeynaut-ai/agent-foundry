@@ -1,0 +1,29 @@
+{
+  "goal": "decision-support",
+  "nodes": [
+    {"id": "retriever", "capability": "rag_retriever", "config": {"k": 3}},
+    {"id": "output", "capability": "structured_output_pydantic", "config": {}},
+    {"id": "schema_gate", "capability": "schema_validator", "config": {}},
+    {"id": "citation_gate", "capability": "citation_validator", "config": {}},
+    {"id": "uncertainty_gate", "capability": "uncertainty_completeness_validator", "config": {}},
+    {"id": "evidence_gate", "capability": "evidence_first_contract", "config": {}}
+  ],
+  "edges": [
+    {"source": "retriever", "target": "output"},
+    {"source": "output", "target": "schema_gate"},
+    {"source": "schema_gate", "target": "citation_gate"},
+    {"source": "citation_gate", "target": "uncertainty_gate"},
+    {"source": "uncertainty_gate", "target": "evidence_gate"}
+  ],
+  "entry_point": "retriever",
+  "capability_versions": {
+    "rag_retriever": "1.0.0",
+    "structured_output_pydantic": "1.0.0",
+    "schema_validator": "1.0.0",
+    "citation_validator": "1.0.0",
+    "uncertainty_completeness_validator": "1.0.0",
+    "evidence_first_contract": "1.0.0"
+  },
+  "tools": [],
+  "breakpoints": []
+}
