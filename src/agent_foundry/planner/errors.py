@@ -24,3 +24,10 @@ class DanglingEdgeError(Exception):
     def __init__(self, message: str, node_id: str):
         self.node_id = node_id
         super().__init__(message)
+
+
+class PlanValidationError(Exception):
+    """General plan validation error for tool, breakpoint, version, and loop rules."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
