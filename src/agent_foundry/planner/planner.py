@@ -1,12 +1,21 @@
 """Wiring planner: deterministic plan generation from goals."""
 
-from agent_foundry.planner.wiring_plan import GraphWiringPlan, NodeDef, EdgeDef
+import concurrent.futures
+from typing import Any
+
+from langchain_core.documents import Document
+
+from agent_foundry.planner.errors import (
+    PlanningInsufficientContextError,
+    PlanningTimeoutError,
+)
+from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.registry import CapabilityRegistry
 
 FF_PLANNER = False
 
 # Deterministic goal-to-plan mappings
-_DECISION_SUPPORT_PLAN = {
+_DECISION_SUPPORT_PLAN: dict[str, Any] = {
     "goal": "decision-support",
     "nodes": [
         {"id": "retriever", "capability": "rag_retriever", "config": {}},
@@ -34,39 +43,116 @@ _DECISION_SUPPORT_PLAN = {
     },
 }
 
+_DECISION_SUPPORT_WITH_TOOLS_PLAN: dict[str, Any] = {
+    **_DECISION_SUPPORT_PLAN,
+    "goal": "decision-support-with-tools",
+    "nodes": [
+        {"id": "retriever", "capability": "rag_retriever", "config": {}},
+        {"id": "tools", "capability": "tool_calling", "config": {}},
+        {"id": "output", "capability": "structured_output_pydantic", "config": {}},
+        {"id": "schema_gate", "capability": "schema_validator", "config": {}},
+        {"id": "citation_gate", "capability": "citation_validator", "config": {}},
+        {"id": "uncertainty_gate", "capability": "uncertainty_completeness_validator", "config": {}},
+        {"id": "evidence_gate", "capability": "evidence_first_contract", "config": {}},
+    ],
+    "edges": [
+        {"source": "retriever", "target": "tools"},
+        {"source": "tools", "target": "output"},
+        {"source": "output", "target": "schema_gate"},
+        {"source": "schema_gate", "target": "citation_gate"},
+        {"source": "citation_gate", "target": "uncertainty_gate"},
+        {"source": "uncertainty_gate", "target": "evidence_gate"},
+    ],
+    "entry_point": "retriever",
+    "tools": [
+        {"name": "calculator", "args_schema": {"type": "object", "properties": {"expression": {"type": "string"}}}},
+    ],
+    "capability_versions": {
+        **_DECISION_SUPPORT_PLAN["capability_versions"],
+        "tool_calling": "1.0.0",
+    },
+}
+
 _GOAL_PLANS: dict[str, dict] = {
     "decision-support": _DECISION_SUPPORT_PLAN,
+    "decision-support-with-tools": _DECISION_SUPPORT_WITH_TOOLS_PLAN,
 }
 
 
 class WiringPlanner:
     """Deterministic planner that selects capabilities from the registry."""
 
-    def __init__(self, registry: CapabilityRegistry, snippets: list | None = None):
+    def __init__(
+        self,
+        registry: CapabilityRegistry,
+        snippets: list[Document] | None = None,
+        strict: bool = False,
+        timeout_seconds: float | None = None,
+    ):
         self._registry = registry
         self._snippets = snippets or []
+        self._strict = strict
+        self._timeout_seconds = timeout_seconds
 
-    def plan(self, goal: str) -> GraphWiringPlan:
+    def plan(self, goal: str, risk: str = "low") -> GraphWiringPlan:
         """Generate a wiring plan for the given goal.
 
         Args:
-            goal: The planning goal (e.g., "decision-support").
+            goal: The planning goal.
+            risk: Risk level ("low", "medium", "high").
 
         Returns:
             A valid GraphWiringPlan.
-
-        Raises:
-            ValueError: If no plan template exists for the goal.
         """
+        if self._timeout_seconds is not None:
+            return self._plan_with_timeout(goal, risk)
+        return self._generate_plan(goal, risk)
+
+    def _plan_with_timeout(self, goal: str, risk: str) -> GraphWiringPlan:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self._generate_plan, goal, risk)
+            try:
+                return future.result(timeout=self._timeout_seconds)
+            except concurrent.futures.TimeoutError:
+                raise PlanningTimeoutError(
+                    f"Planning for goal '{goal}' timed out after {self._timeout_seconds}s"
+                )
+
+    def _generate_plan(self, goal: str, risk: str) -> GraphWiringPlan:
+        # Strict mode: require snippets for unknown goals
+        if self._strict and not self._snippets and goal not in _GOAL_PLANS:
+            raise PlanningInsufficientContextError(
+                f"No snippets available for goal '{goal}' in strict mode"
+            )
+
         if goal in _GOAL_PLANS:
-            plan_data = _GOAL_PLANS[goal].copy()
+            import copy
+            plan_data = copy.deepcopy(_GOAL_PLANS[goal])
         else:
             plan_data = self._build_minimal_plan(goal)
 
+        # Apply HITL breakpoint for high-risk tool plans
+        if risk == "high" and self._has_tool_calling(plan_data):
+            tool_node_ids = [
+                n["id"] for n in plan_data["nodes"]
+                if n["capability"] == "tool_calling"
+            ]
+            plan_data["breakpoints"] = tool_node_ids
+            # Add human_approval_gate node if not present
+            if not any(n["capability"] == "human_approval_gate" for n in plan_data["nodes"]):
+                plan_data["nodes"].append({
+                    "id": "human_gate",
+                    "capability": "human_approval_gate",
+                    "config": {},
+                })
+                plan_data["capability_versions"]["human_approval_gate"] = "1.0.0"
+
         return GraphWiringPlan(**plan_data)
 
+    def _has_tool_calling(self, plan_data: dict) -> bool:
+        return any(n["capability"] == "tool_calling" for n in plan_data.get("nodes", []))
+
     def _build_minimal_plan(self, goal: str) -> dict:
-        """Build a minimal plan with the first available capability."""
         names = self._registry.names()
         if not names:
             raise ValueError(f"No capabilities available for goal '{goal}'")

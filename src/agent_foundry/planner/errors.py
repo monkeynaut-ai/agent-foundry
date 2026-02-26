@@ -31,3 +31,17 @@ class PlanValidationError(Exception):
 
     def __init__(self, message: str):
         super().__init__(message)
+
+
+class PlanningInsufficientContextError(Exception):
+    """Raised when planner has insufficient context (no snippets in strict mode)."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+class PlanningTimeoutError(Exception):
+    """Raised when planning exceeds the time budget."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
