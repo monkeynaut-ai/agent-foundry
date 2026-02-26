@@ -1,0 +1,28 @@
+name: tool_calling
+description: Executes tool calls with argument validation and result capture
+version: "1.0.0"
+implementation:
+  module: agent_foundry.capabilities.tool_calling
+  class_name: ToolCallingCapability
+inputs_schema:
+  type: object
+  properties:
+    tool_name:
+      type: string
+    tool_args:
+      type: object
+  required:
+    - tool_name
+outputs_schema:
+  type: object
+  properties:
+    tool_result:
+      type: object
+  required:
+    - tool_result
+tags:
+  - tools
+  - execution
+quality_controls:
+  timeout_seconds: 60
+  max_retries: 1

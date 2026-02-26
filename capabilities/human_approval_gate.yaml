@@ -1,0 +1,31 @@
+name: human_approval_gate
+description: Pauses execution for human approval before irreversible actions
+version: "1.0.0"
+implementation:
+  module: agent_foundry.capabilities.human_approval
+  class_name: HumanApprovalGateCapability
+inputs_schema:
+  type: object
+  properties:
+    action_summary:
+      type: string
+    risk_level:
+      type: string
+  required:
+    - action_summary
+outputs_schema:
+  type: object
+  properties:
+    approved:
+      type: boolean
+    approver:
+      type: string
+  required:
+    - approved
+tags:
+  - hitl
+  - approval
+  - gate
+quality_controls:
+  timeout_seconds: 300
+  max_retries: 0

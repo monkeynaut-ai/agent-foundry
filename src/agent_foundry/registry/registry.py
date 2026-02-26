@@ -46,5 +46,14 @@ class CapabilityRegistry:
     def names(self) -> list[str]:
         return list(self._specs.keys())
 
+    def search(self, tags: list[str]) -> list[CapabilitySpec]:
+        """Search for capabilities matching all given tags, sorted by name."""
+        tag_set = set(tags)
+        matches = [
+            spec for spec in self._specs.values()
+            if tag_set.issubset(set(spec.tags))
+        ]
+        return sorted(matches, key=lambda s: s.name)
+
     def __len__(self) -> int:
         return len(self._specs)
