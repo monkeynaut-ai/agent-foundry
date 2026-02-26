@@ -24,6 +24,7 @@ distribution = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-m 'not benchmark'"
 markers = [
     "benchmark: performance benchmark tests (excluded from normal runs)",
 ]
