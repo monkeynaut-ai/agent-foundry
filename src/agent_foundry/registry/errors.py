@@ -49,6 +49,22 @@ class CapabilityImportError(Exception):
         super().__init__(message)
 
 
+class CapabilityExecutionError(Exception):
+    """Raised when capability execution fails due to input/output validation or runtime error."""
+
+    def __init__(
+        self,
+        message: str,
+        capability_name: str,
+        phase: str,
+        field_paths: list[str] | None = None,
+    ):
+        self.capability_name = capability_name
+        self.phase = phase
+        self.field_paths = field_paths or []
+        super().__init__(message)
+
+
 class CapabilitySpecParseError(Exception):
     """Raised when a capability spec file cannot be parsed."""
 
