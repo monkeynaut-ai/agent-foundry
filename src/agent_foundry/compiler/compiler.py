@@ -18,10 +18,17 @@ logger = logging.getLogger(__name__)
 FF_COMPILER = False
 
 
+EVAL_GATE_CAPABILITIES = {
+    "schema_validator", "citation_validator",
+    "uncertainty_completeness_validator", "evidence_first_contract",
+}
+
+
 def compile_plan(
     plan: GraphWiringPlan,
     registry: CapabilityRegistry,
     handler_registry: dict[str, Any] | None = None,
+    enforce_gates: bool = False,
 ) -> Any:
     """Compile a wiring plan into an executable LangGraph.
 
@@ -45,6 +52,10 @@ def compile_plan(
         raise PlanCompilationError(
             f"Entry point '{plan.entry_point}' not found in plan nodes: {node_ids}"
         )
+
+    # Enforce eval gates on all paths if requested
+    if enforce_gates:
+        _check_eval_gates_on_paths(plan)
 
     graph = StateGraph(dict)
 
@@ -182,3 +193,44 @@ def _make_router(
         return default_target
 
     return router
+
+
+def _check_eval_gates_on_paths(plan: GraphWiringPlan) -> None:
+    """Ensure at least one eval gate is on every path from entry to terminal nodes."""
+    node_capabilities = {n.id: n.capability for n in plan.nodes}
+    gate_nodes = {n.id for n in plan.nodes if n.capability in EVAL_GATE_CAPABILITIES}
+
+    if not gate_nodes:
+        raise PlanCompilationError(
+            "Plan has no eval gate nodes. At least one eval gate "
+            f"({', '.join(sorted(EVAL_GATE_CAPABILITIES))}) must be on every path to final."
+        )
+
+    # Build adjacency
+    adjacency: dict[str, list[str]] = {n.id: [] for n in plan.nodes}
+    for edge in plan.edges:
+        adjacency.setdefault(edge.source, []).append(edge.target)
+
+    # Find terminal nodes
+    source_nodes = {e.source for e in plan.edges}
+    terminal_nodes = {n.id for n in plan.nodes} - source_nodes
+
+    # DFS from entry_point to each terminal, check if any path lacks a gate
+    def _has_gate_on_path(current: str, visited: set[str]) -> bool:
+        if current in gate_nodes:
+            return True
+        if current in terminal_nodes and current not in gate_nodes:
+            return False
+        visited.add(current)
+        neighbors = adjacency.get(current, [])
+        if not neighbors:
+            return current in gate_nodes
+        return all(
+            _has_gate_on_path(n, visited.copy())
+            for n in neighbors if n not in visited
+        )
+
+    if not _has_gate_on_path(plan.entry_point, set()):
+        raise PlanCompilationError(
+            "Not all paths from entry to final pass through an eval gate."
+        )

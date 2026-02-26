@@ -1,0 +1,76 @@
+"""S6.6 — Compiler enforces gate execution on all paths to final.
+
+Tests: plan missing gate on one path fails compilation.
+"""
+
+from pathlib import Path
+
+import pytest
+
+from agent_foundry.compiler.compiler import compile_plan
+from agent_foundry.compiler.errors import PlanCompilationError
+from agent_foundry.planner.wiring_plan import GraphWiringPlan
+from agent_foundry.registry.registry import CapabilityRegistry
+
+CAPABILITIES_DIR = Path(__file__).parent.parent / "capabilities"
+
+
+@pytest.fixture
+def registry():
+    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
+
+
+HANDLERS = {
+    "rag_retriever": lambda s: {**s, "retrieved": True},
+    "schema_validator": lambda s: {**s, "validated": True},
+    "structured_output_pydantic": lambda s: {**s, "structured": True},
+    "citation_validator": lambda s: {**s, "citations_checked": True},
+}
+
+EVAL_GATE_CAPABILITIES = {
+    "schema_validator", "citation_validator",
+    "uncertainty_completeness_validator", "evidence_first_contract",
+}
+
+
+class TestGateEnforcement:
+    """All paths to final node must pass through at least one eval gate."""
+
+    def test_plan_without_gate_fails(self, registry):
+        plan = GraphWiringPlan(
+            goal="test",
+            nodes=[
+                {"id": "n1", "capability": "rag_retriever"},
+                {"id": "n2", "capability": "structured_output_pydantic"},
+            ],
+            edges=[{"source": "n1", "target": "n2"}],
+            entry_point="n1",
+            capability_versions={
+                "rag_retriever": "1.0.0",
+                "structured_output_pydantic": "1.0.0",
+            },
+        )
+        with pytest.raises(PlanCompilationError, match="eval gate"):
+            compile_plan(plan, registry, handler_registry=HANDLERS, enforce_gates=True)
+
+    def test_plan_with_gate_passes(self, registry):
+        plan = GraphWiringPlan(
+            goal="test",
+            nodes=[
+                {"id": "n1", "capability": "rag_retriever"},
+                {"id": "gate", "capability": "schema_validator"},
+                {"id": "n2", "capability": "structured_output_pydantic"},
+            ],
+            edges=[
+                {"source": "n1", "target": "gate"},
+                {"source": "gate", "target": "n2"},
+            ],
+            entry_point="n1",
+            capability_versions={
+                "rag_retriever": "1.0.0",
+                "schema_validator": "1.0.0",
+                "structured_output_pydantic": "1.0.0",
+            },
+        )
+        graph = compile_plan(plan, registry, handler_registry=HANDLERS, enforce_gates=True)
+        assert graph is not None
