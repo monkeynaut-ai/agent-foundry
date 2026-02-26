@@ -1,0 +1,26 @@
+"""Typed exceptions for planner operations."""
+
+
+class UnknownCapabilityError(Exception):
+    """Raised when a plan references a capability not in the registry."""
+
+    def __init__(self, message: str, capability: str, node_id: str):
+        self.capability = capability
+        self.node_id = node_id
+        super().__init__(message)
+
+
+class DuplicateNodeIdError(Exception):
+    """Raised when a plan contains duplicate node IDs."""
+
+    def __init__(self, message: str, node_id: str):
+        self.node_id = node_id
+        super().__init__(message)
+
+
+class DanglingEdgeError(Exception):
+    """Raised when an edge references a non-existent node."""
+
+    def __init__(self, message: str, node_id: str):
+        self.node_id = node_id
+        super().__init__(message)
