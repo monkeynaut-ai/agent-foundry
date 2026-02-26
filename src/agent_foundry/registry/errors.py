@@ -17,6 +17,20 @@ class CapabilitySpecValidationError(Exception):
         super().__init__(message)
 
 
+class DuplicateCapabilityError(Exception):
+    """Raised when two specs share the same capability name."""
+
+    def __init__(
+        self,
+        message: str,
+        capability_name: str,
+        file_paths: list[Path],
+    ):
+        self.capability_name = capability_name
+        self.file_paths = file_paths
+        super().__init__(message)
+
+
 class CapabilitySpecParseError(Exception):
     """Raised when a capability spec file cannot be parsed."""
 
