@@ -90,6 +90,25 @@ class TestTraceEnrichment:
         assert span.retrieval_info is not None
         assert span.retrieval_info["snippet_ids"] == ["s1", "s2"]
 
+    def test_tool_trace_redacts_nested_secrets(self):
+        tracer = ExecutionTracer()
+        span = tracer.start_span(node_id="n1", capability="tool_calling")
+        tracer.add_tool_call(
+            span,
+            tool_name="api_call",
+            args={
+                "query": "test",
+                "headers": {"authorization": "Bearer abc123"},
+                "auth": {"token": "tok-xyz"},
+            },
+            result={"data": "ok"},
+        )
+        tracer.end_span(span, status="success")
+
+        args = span.tool_calls[0]["args"]
+        assert args["headers"]["authorization"] == "[REDACTED]"
+        assert args["auth"]["token"] == "[REDACTED]"
+
 
 # --- S6.3: Schema Validator Gate ---
 

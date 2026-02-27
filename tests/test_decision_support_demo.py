@@ -105,7 +105,8 @@ class TestDS4CitationValidator:
 
     def test_valid_citations_in_demo(self, registry):
         result = run_demo("What should we do?", registry=registry)
-        assert result.get("citations_valid") is True or "gate_failure" not in result
+        assert result.get("citations_valid") is True
+        assert "gate_failure" not in result
 
     def test_fabricated_citation_fails(self):
         result = citation_validator_gate(
@@ -123,7 +124,8 @@ class TestDS5UncertaintyCompleteness:
 
     def test_demo_has_valid_uncertainty(self, registry):
         result = run_demo("What should we do?", registry=registry)
-        assert result.get("uncertainty_valid") is True or "gate_failure" not in result
+        assert result.get("uncertainty_valid") is True
+        assert "gate_failure" not in result
 
     def test_missing_confidence_fails(self):
         result = uncertainty_completeness_gate({"rationale": "test"})
@@ -137,7 +139,9 @@ class TestDS6EvidenceFirstContract:
 
     def test_demo_passes_evidence_first(self, registry):
         result = run_demo("What should we do?", registry=registry)
-        assert result.get("evidence_valid") is True or result.get("outcome") == "recommendation_valid"
+        assert result.get("evidence_valid") is True
+        assert result.get("outcome") == "recommendation_valid"
+        assert "gate_failure" not in result
 
     def test_no_evidence_returns_insufficient(self):
         result = evidence_first_gate([], {"text": "do something"})

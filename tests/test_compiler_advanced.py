@@ -109,7 +109,8 @@ class TestConditionalEdges:
         )
         graph = compile_plan(plan, registry, handler_registry=HANDLERS)
         result = graph.invoke({"needs_validation": True})
-        assert result.get("validated") is True or result.get("citations_checked") is True
+        assert result.get("validated") is True
+        assert "citations_checked" not in result
 
 
 # --- S5.4: Loop Safety ---

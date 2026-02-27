@@ -73,4 +73,29 @@ class TestGateEnforcement:
             },
         )
         graph = compile_plan(plan, registry, handler_registry=HANDLERS, enforce_gates=True)
-        assert graph is not None
+        result = graph.invoke({})
+        assert result.get("validated") is True
+        assert result.get("structured") is True
+
+    def test_branching_plan_with_gate_bypass_fails(self, registry):
+        plan = GraphWiringPlan(
+            goal="test",
+            nodes=[
+                {"id": "start", "capability": "rag_retriever"},
+                {"id": "gate", "capability": "schema_validator"},
+                {"id": "final", "capability": "structured_output_pydantic"},
+            ],
+            edges=[
+                {"source": "start", "target": "gate", "condition": "needs_validation"},
+                {"source": "start", "target": "final"},
+                {"source": "gate", "target": "final"},
+            ],
+            entry_point="start",
+            capability_versions={
+                "rag_retriever": "1.0.0",
+                "schema_validator": "1.0.0",
+                "structured_output_pydantic": "1.0.0",
+            },
+        )
+        with pytest.raises(PlanCompilationError, match="eval gate"):
+            compile_plan(plan, registry, handler_registry=HANDLERS, enforce_gates=True)

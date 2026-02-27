@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 from agent_foundry.planner.errors import PlanValidationError
 from agent_foundry.planner.validators import validate_plan
@@ -109,11 +110,11 @@ class TestPersistenceValidation:
     """Persistence config must have required non-empty fields."""
 
     def test_persistence_missing_backend_fails(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError, match="backend"):
             _make_plan(persistence={"thread_id": "t1"})
 
     def test_persistence_missing_thread_id_fails(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError, match="thread_id"):
             _make_plan(persistence={"backend": "sqlite"})
 
     def test_valid_persistence_passes(self, registry):

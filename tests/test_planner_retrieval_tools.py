@@ -94,7 +94,14 @@ class TestHITLPlacement:
     def test_high_risk_plan_inserts_breakpoint(self, registry):
         planner = WiringPlanner(registry=registry)
         plan = planner.plan("decision-support-with-tools", risk="high")
-        assert len(plan.breakpoints) > 0
+        assert plan.breakpoints == ["tools"]
+
+    def test_high_risk_plan_adds_human_approval_gate_and_version(self, registry):
+        planner = WiringPlanner(registry=registry)
+        plan = planner.plan("decision-support-with-tools", risk="high")
+        capabilities = {n.capability for n in plan.nodes}
+        assert "human_approval_gate" in capabilities
+        assert plan.capability_versions.get("human_approval_gate") == "1.0.0"
 
     def test_low_risk_plan_no_breakpoint(self, registry):
         planner = WiringPlanner(registry=registry)
@@ -116,6 +123,11 @@ class TestNoSnippetBehavior:
         planner = WiringPlanner(registry=registry, snippets=[], strict=True)
         with pytest.raises(PlanningInsufficientContextError):
             planner.plan("unknown-goal-requiring-context")
+
+    def test_empty_registry_raises_value_error(self):
+        planner = WiringPlanner(registry=CapabilityRegistry(specs={}), snippets=[])
+        with pytest.raises(ValueError, match="No capabilities available"):
+            planner.plan("unknown-goal")
 
 
 # --- S4.7: Determinism + Budget ---

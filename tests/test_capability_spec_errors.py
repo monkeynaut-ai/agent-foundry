@@ -67,6 +67,24 @@ class TestParseErrors:
         msg = str(exc_info.value)
         assert "invalid_parse_error.yaml" in msg
 
+    def test_unsupported_extension_raises_parse_error(self, tmp_path):
+        path = tmp_path / "capability.txt"
+        path.write_text("name: ignored")
+        with pytest.raises(CapabilitySpecParseError, match="Unsupported file extension"):
+            load_capability_spec(path)
+
+    def test_yaml_non_object_raises_parse_error(self, tmp_path):
+        path = tmp_path / "capability.yaml"
+        path.write_text("- just\n- a\n- list\n")
+        with pytest.raises(CapabilitySpecParseError, match="Expected a mapping"):
+            load_capability_spec(path)
+
+    def test_json_non_object_raises_parse_error(self, tmp_path):
+        path = tmp_path / "capability.json"
+        path.write_text('["just", "a", "list"]')
+        with pytest.raises(CapabilitySpecParseError, match="Expected a mapping"):
+            load_capability_spec(path)
+
 
 class TestProcessDoesNotCrash:
     """Invalid specs never cause unhandled exceptions."""
