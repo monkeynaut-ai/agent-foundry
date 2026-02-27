@@ -4,7 +4,7 @@ Benchmark test: registry startup under N=100 specs, p95 <= 500ms.
 Marked @pytest.mark.benchmark — excluded from normal test runs.
 """
 
-import shutil
+import os
 import statistics
 import time
 from pathlib import Path
@@ -34,6 +34,8 @@ class TestRegistryStartupPerformance:
     """Registry startup must meet performance budget."""
 
     def test_startup_p95_under_500ms(self, large_caps_dir):
+        slow_factor = float(os.getenv("AF_BENCHMARK_SLOW_FACTOR", "1.0"))
+        p95_budget_ms = 500 * slow_factor
         timings = []
         for _ in range(20):
             start = time.perf_counter()
@@ -46,6 +48,11 @@ class TestRegistryStartupPerformance:
         p95 = timings[p95_index]
         median = statistics.median(timings)
 
-        assert p95 <= 500, f"p95 startup time {p95:.1f}ms exceeds 500ms budget"
+        assert p95 <= p95_budget_ms, (
+            f"p95 startup time {p95:.1f}ms exceeds {p95_budget_ms:.1f}ms budget"
+        )
         # Log for visibility
-        print(f"\nRegistry startup (N=100): median={median:.1f}ms, p95={p95:.1f}ms")
+        print(
+            "\nRegistry startup (N=100): "
+            f"median={median:.1f}ms, p95={p95:.1f}ms, budget={p95_budget_ms:.1f}ms"
+        )

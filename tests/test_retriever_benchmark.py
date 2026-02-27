@@ -6,6 +6,7 @@ Marked @pytest.mark.benchmark — excluded from normal test runs.
 
 import statistics
 import time
+import os
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,9 @@ class TestRetrievalLatency:
     """Retrieval must meet latency budget."""
 
     def test_median_under_50ms_p95_under_200ms(self, retrieval_api):
+        slow_factor = float(os.getenv("AF_BENCHMARK_SLOW_FACTOR", "1.0"))
+        median_budget_ms = 50 * slow_factor
+        p95_budget_ms = 200 * slow_factor
         timings = []
         for q in QUERIES:
             start = time.perf_counter()
@@ -45,6 +49,12 @@ class TestRetrievalLatency:
         p95_index = int(len(timings) * 0.95)
         p95 = timings[p95_index]
 
-        print(f"\nRetrieval latency (100 queries): median={median:.1f}ms, p95={p95:.1f}ms")
-        assert median <= 50, f"Median {median:.1f}ms exceeds 50ms budget"
-        assert p95 <= 200, f"p95 {p95:.1f}ms exceeds 200ms budget"
+        print(
+            "\nRetrieval latency (100 queries): "
+            f"median={median:.1f}ms, p95={p95:.1f}ms, "
+            f"budgets=({median_budget_ms:.1f}ms, {p95_budget_ms:.1f}ms)"
+        )
+        assert median <= median_budget_ms, (
+            f"Median {median:.1f}ms exceeds {median_budget_ms:.1f}ms budget"
+        )
+        assert p95 <= p95_budget_ms, f"p95 {p95:.1f}ms exceeds {p95_budget_ms:.1f}ms budget"

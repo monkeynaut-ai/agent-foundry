@@ -12,6 +12,7 @@ DS9: Non-functional: end-to-end latency budgets.
 """
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -217,6 +218,8 @@ class TestDS9Performance:
     def test_e2e_p95_under_2s(self, registry):
         import statistics
 
+        slow_factor = float(os.getenv("AF_BENCHMARK_SLOW_FACTOR", "1.0"))
+        p95_budget_ms = 2000 * slow_factor
         timings = []
         for _ in range(10):
             start = time.perf_counter()
@@ -227,5 +230,8 @@ class TestDS9Performance:
         timings.sort()
         p95 = timings[int(len(timings) * 0.95)]
         median = statistics.median(timings)
-        print(f"\nDemo E2E: median={median:.1f}ms, p95={p95:.1f}ms")
-        assert p95 <= 2000, f"p95 {p95:.1f}ms exceeds 2000ms budget"
+        print(
+            f"\nDemo E2E: median={median:.1f}ms, p95={p95:.1f}ms, "
+            f"budget={p95_budget_ms:.1f}ms"
+        )
+        assert p95 <= p95_budget_ms, f"p95 {p95:.1f}ms exceeds {p95_budget_ms:.1f}ms budget"
