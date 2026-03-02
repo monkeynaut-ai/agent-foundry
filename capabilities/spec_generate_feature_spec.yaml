@@ -2,32 +2,15 @@ name: spec_generate_feature_spec
 description: Generates a feature spec and test plan from a feature architecture
 version: "1.0.0"
 implementation:
-  module: agent_foundry.archipelago.handlers
+  module: archipelago.agents.spec
   class_name: SpecHandler
 inputs_schema:
   type: object
   properties:
-    feature_name:
-      type: string
-    components:
-      type: array
-      items:
-        type: string
-    data_flow:
-      type: string
-    technology_choices:
-      type: array
-      items:
-        type: string
-    risks:
-      type: array
-      items:
-        type: string
+    feature_architecture:
+      type: object
   required:
-    - feature_name
-    - components
-    - data_flow
-    - technology_choices
+    - feature_architecture
 outputs_schema:
   type: object
   properties:
