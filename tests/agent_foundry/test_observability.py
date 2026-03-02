@@ -23,7 +23,7 @@ from agent_foundry.observability.gates import (
 )
 from agent_foundry.registry.registry import CapabilityRegistry
 
-CAPABILITIES_DIR = Path(__file__).parent.parent / "capabilities"
+CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
 
 
 # --- S6.1: Tracing Spans ---

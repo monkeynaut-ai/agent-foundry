@@ -52,7 +52,7 @@ class TestBackendOutage:
     def test_faiss_error_during_search_raises_error(self, tmp_path):
         """Simulate FAISS backend error during search."""
         from agent_foundry.registry.registry import CapabilityRegistry
-        caps_dir = Path(__file__).parent.parent / "capabilities"
+        caps_dir = Path(__file__).parent.parent.parent / "capabilities"
         registry = CapabilityRegistry.from_directory(caps_dir)
 
         index_dir = tmp_path / "index"

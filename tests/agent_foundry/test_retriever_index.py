@@ -12,7 +12,7 @@ import pytest
 from agent_foundry.registry.registry import CapabilityRegistry
 from agent_foundry.retriever.indexer import RegistryIndexer
 
-CAPABILITIES_DIR = Path(__file__).parent.parent / "capabilities"
+CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
 
 
 @pytest.fixture

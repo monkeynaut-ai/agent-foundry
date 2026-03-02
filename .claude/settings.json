@@ -13,7 +13,9 @@
       "Bash(pwd*)",
       "Bash(git push*)",
       "Bash(gh pr *)",
-      "Bash(mkdir *)"
+      "Bash(mkdir *)",
+      "Bash(pdm run:*)",
+      "Bash(find:*)"
     ],
     "deny": [
       "Bash(git push --force*)",

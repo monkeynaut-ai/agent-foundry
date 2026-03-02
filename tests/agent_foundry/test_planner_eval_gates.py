@@ -11,7 +11,7 @@ import pytest
 from agent_foundry.planner.planner import WiringPlanner
 from agent_foundry.registry.registry import CapabilityRegistry
 
-CAPABILITIES_DIR = Path(__file__).parent.parent / "capabilities"
+CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
 
 EVAL_GATE_CAPABILITIES = {
     "schema_validator", "citation_validator",
