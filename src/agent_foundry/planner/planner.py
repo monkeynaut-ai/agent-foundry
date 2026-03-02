@@ -73,9 +73,36 @@ _DECISION_SUPPORT_WITH_TOOLS_PLAN: dict[str, Any] = {
     },
 }
 
+_ARCHIPELAGO_PIPELINE_PLAN: dict[str, Any] = {
+    "goal": "archipelago-pipeline",
+    "nodes": [
+        {"id": "strategy", "capability": "strategy_generate_product_brief", "config": {}},
+        {"id": "architecture", "capability": "architecture_generate_feature_arch", "config": {}},
+        {"id": "spec", "capability": "spec_generate_feature_spec", "config": {}},
+        {"id": "spec_approval_gate", "capability": "human_approval_gate", "config": {}},
+        {"id": "dev_test", "capability": "dev_implement_feature_tdd", "config": {}},
+    ],
+    "edges": [
+        {"source": "strategy", "target": "architecture"},
+        {"source": "architecture", "target": "spec"},
+        {"source": "spec", "target": "spec_approval_gate"},
+        {"source": "spec_approval_gate", "target": "dev_test"},
+    ],
+    "entry_point": "strategy",
+    "breakpoints": ["spec_approval_gate"],
+    "capability_versions": {
+        "strategy_generate_product_brief": "1.0.0",
+        "architecture_generate_feature_arch": "1.0.0",
+        "spec_generate_feature_spec": "1.0.0",
+        "human_approval_gate": "1.0.0",
+        "dev_implement_feature_tdd": "1.0.0",
+    },
+}
+
 _GOAL_PLANS: dict[str, dict] = {
     "decision-support": _DECISION_SUPPORT_PLAN,
     "decision-support-with-tools": _DECISION_SUPPORT_WITH_TOOLS_PLAN,
+    "archipelago-pipeline": _ARCHIPELAGO_PIPELINE_PLAN,
 }
 
 

@@ -1,0 +1,141 @@
+"""Archipelago pipeline plan — parsing, validation, and planner integration tests."""
+
+import json
+from pathlib import Path
+
+import pytest
+
+from agent_foundry.planner.planner import WiringPlanner
+from agent_foundry.planner.validators import validate_plan
+from agent_foundry.planner.wiring_plan import GraphWiringPlan
+from agent_foundry.registry.registry import CapabilityRegistry
+
+PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "pipeline_plan.json"
+CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+
+
+@pytest.fixture
+def plan_data():
+    return json.loads(PLAN_PATH.read_text())
+
+
+@pytest.fixture
+def plan(plan_data):
+    return GraphWiringPlan(**plan_data)
+
+
+@pytest.fixture
+def registry():
+    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
+
+
+# ── Commit 1: Parse tests ──
+
+
+class TestParsePlan:
+    def test_given_pipeline_json_when_parsed_then_goal_is_archipelago_pipeline(
+        self, plan
+    ):
+        assert plan.goal == "archipelago-pipeline"
+
+    def test_given_pipeline_json_when_parsed_then_has_5_nodes(self, plan):
+        assert len(plan.nodes) == 5
+
+    def test_given_pipeline_json_when_parsed_then_has_4_edges(self, plan):
+        assert len(plan.edges) == 4
+
+    def test_given_pipeline_json_when_parsed_then_entry_point_is_strategy(self, plan):
+        assert plan.entry_point == "strategy"
+
+    def test_given_pipeline_json_when_parsed_then_breakpoints_contain_spec_approval_gate(
+        self, plan
+    ):
+        assert "spec_approval_gate" in plan.breakpoints
+
+    def test_given_pipeline_json_when_round_tripped_then_no_field_loss(
+        self, plan_data
+    ):
+        plan = GraphWiringPlan(**plan_data)
+        dumped = json.loads(plan.model_dump_json())
+        reconstructed = GraphWiringPlan(**dumped)
+        assert reconstructed == plan
+
+    def test_given_pipeline_json_when_capability_versions_inspected_then_all_nodes_covered(
+        self, plan
+    ):
+        node_capabilities = {n.capability for n in plan.nodes}
+        versioned_capabilities = set(plan.capability_versions.keys())
+        assert node_capabilities == versioned_capabilities
+
+
+# ── Commit 2: Validation tests ──
+
+
+class TestValidatePlan:
+    def test_given_pipeline_plan_and_full_registry_when_validated_then_no_errors(
+        self, plan, registry
+    ):
+        validate_plan(plan, registry)
+
+    def test_given_pipeline_plan_when_duplicate_check_runs_then_no_duplicate_ids(
+        self, plan
+    ):
+        node_ids = [n.id for n in plan.nodes]
+        assert len(node_ids) == len(set(node_ids))
+
+    def test_given_pipeline_plan_when_dangling_edge_check_runs_then_no_dangles(
+        self, plan
+    ):
+        node_ids = {n.id for n in plan.nodes}
+        for edge in plan.edges:
+            assert edge.source in node_ids, f"Dangling source: {edge.source}"
+            assert edge.target in node_ids, f"Dangling target: {edge.target}"
+
+    def test_given_pipeline_plan_when_breakpoint_check_runs_then_all_breakpoints_valid(
+        self, plan
+    ):
+        node_ids = {n.id for n in plan.nodes}
+        for bp in plan.breakpoints:
+            assert bp in node_ids, f"Breakpoint references non-existent node: {bp}"
+
+    def test_given_pipeline_plan_when_version_coverage_check_runs_then_all_covered(
+        self, plan
+    ):
+        for node in plan.nodes:
+            assert node.capability in plan.capability_versions, (
+                f"Missing version for capability: {node.capability}"
+            )
+
+
+# ── Commit 3: Planner extension tests ──
+
+
+class TestPlannerExtension:
+    def test_given_planner_with_registry_when_plan_archipelago_pipeline_then_returns_valid_plan(
+        self, registry
+    ):
+        planner = WiringPlanner(registry)
+        plan = planner.plan("archipelago-pipeline")
+        assert isinstance(plan, GraphWiringPlan)
+        assert plan.goal == "archipelago-pipeline"
+
+    def test_given_planner_when_plan_archipelago_pipeline_then_has_5_nodes(
+        self, registry
+    ):
+        planner = WiringPlanner(registry)
+        plan = planner.plan("archipelago-pipeline")
+        assert len(plan.nodes) == 5
+
+    def test_given_planner_when_plan_archipelago_pipeline_then_breakpoints_set(
+        self, registry
+    ):
+        planner = WiringPlanner(registry)
+        plan = planner.plan("archipelago-pipeline")
+        assert "spec_approval_gate" in plan.breakpoints
+
+    def test_given_planner_when_plan_archipelago_pipeline_then_validates_against_registry(
+        self, registry
+    ):
+        planner = WiringPlanner(registry)
+        plan = planner.plan("archipelago-pipeline")
+        validate_plan(plan, registry)
