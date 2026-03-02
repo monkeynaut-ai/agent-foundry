@@ -7,11 +7,11 @@ import pytest
 from agent_foundry.registry.spec import load_capability_spec
 from archipelago.agents.approval_gate import ApprovalGateHandler
 
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+FRAMEWORK_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "agent_foundry" / "capabilities"
 
 
 def _make_spec():
-    return load_capability_spec(CAPABILITIES_DIR / "human_approval_gate.yaml")
+    return load_capability_spec(FRAMEWORK_CAPS_DIR / "human_approval_gate.yaml")
 
 
 def _make_state():

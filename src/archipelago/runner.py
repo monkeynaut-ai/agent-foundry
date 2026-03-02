@@ -35,8 +35,9 @@ def run_archipelago(
         The final state dict with all pipeline artifacts.
     """
     if registry is None:
-        caps_dir = Path(__file__).parent.parent.parent / "capabilities"
-        registry = CapabilityRegistry.from_directory(caps_dir)
+        registry = CapabilityRegistry.with_product_specs(
+            Path(__file__).parent / "capabilities"
+        )
 
     if plan is None:
         plan = load_archipelago_plan()

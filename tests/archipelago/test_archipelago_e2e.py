@@ -12,7 +12,7 @@ from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.registry import CapabilityRegistry
 from agent_foundry.registry.spec import load_capability_spec
 
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "pipeline_plan.json"
 
 
@@ -96,7 +96,7 @@ STUB_HANDLERS = {
 
 @pytest.fixture
 def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
+    return CapabilityRegistry.with_product_specs(PRODUCT_CAPS_DIR)
 
 
 @pytest.fixture
@@ -133,19 +133,19 @@ class TestEndToEnd:
         self, final_state
     ):
         strategy_spec = load_capability_spec(
-            CAPABILITIES_DIR / "strategy_generate_product_brief.yaml"
+            PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml"
         )
         jsonschema.validate({"product_brief": final_state["product_brief"]}, strategy_spec.outputs_schema)
 
         arch_spec = load_capability_spec(
-            CAPABILITIES_DIR / "architecture_generate_feature_arch.yaml"
+            PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml"
         )
         jsonschema.validate(
             {"feature_architecture": final_state["feature_architecture"]}, arch_spec.outputs_schema
         )
 
         spec_spec = load_capability_spec(
-            CAPABILITIES_DIR / "spec_generate_feature_spec.yaml"
+            PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml"
         )
         combined_spec = {
             "feature_spec": final_state["feature_spec"],
@@ -154,7 +154,7 @@ class TestEndToEnd:
         jsonschema.validate(combined_spec, spec_spec.outputs_schema)
 
         dev_spec = load_capability_spec(
-            CAPABILITIES_DIR / "dev_implement_feature_tdd.yaml"
+            PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml"
         )
         combined_dev = {
             "code_patch": final_state["code_patch"],

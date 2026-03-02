@@ -25,7 +25,7 @@ from archipelago.models import (
 
 from pathlib import Path
 
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 
 
 def _mock_product_brief():
@@ -112,7 +112,7 @@ class TestStrategyHandler:
         result = strategy_handler(state)
 
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "strategy_generate_product_brief.yaml"
+            PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml"
         )
         jsonschema.validate({"product_brief": result["product_brief"]}, spec.outputs_schema)
 
@@ -150,7 +150,7 @@ class TestArchitectureHandler:
         result = architecture_handler(state)
 
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "architecture_generate_feature_arch.yaml"
+            PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml"
         )
         jsonschema.validate({"feature_architecture": result["feature_architecture"]}, spec.outputs_schema)
 
@@ -191,7 +191,7 @@ class TestSpecHandler:
         result = spec_handler(state)
 
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "spec_generate_feature_spec.yaml"
+            PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml"
         )
         combined = {"feature_spec": result["feature_spec"], "test_plan": result["test_plan"]}
         jsonschema.validate(combined, spec.outputs_schema)
@@ -239,7 +239,7 @@ class TestDevTestHandler:
         result = dev_test_handler(state)
 
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "dev_implement_feature_tdd.yaml"
+            PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml"
         )
         combined = {"code_patch": result["code_patch"], "test_results": result["test_results"]}
         jsonschema.validate(combined, spec.outputs_schema)

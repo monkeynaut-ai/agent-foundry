@@ -16,7 +16,7 @@ from archipelago.models import (
     TestResults,
 )
 
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 
 ARCHIPELAGO_SPEC_NAMES = [
     "architecture_generate_feature_arch",
@@ -29,7 +29,7 @@ ARCHIPELAGO_SPEC_NAMES = [
 
 @pytest.fixture
 def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
+    return CapabilityRegistry.with_product_specs(PRODUCT_CAPS_DIR)
 
 
 def _valid_product_brief_dump() -> dict:
@@ -92,7 +92,7 @@ def _valid_test_results_dump() -> dict:
 class TestStrategySpec:
     def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "strategy_generate_product_brief.yaml"
+            PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml"
         )
         assert isinstance(spec, CapabilitySpec)
         assert spec.name == "strategy_generate_product_brief"
@@ -103,7 +103,7 @@ class TestStrategySpec:
         self,
     ):
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "strategy_generate_product_brief.yaml"
+            PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml"
         )
         data = {"product_brief": _valid_product_brief_dump()}
         jsonschema.validate(data, spec.outputs_schema)
@@ -112,7 +112,7 @@ class TestStrategySpec:
 class TestArchitectureSpec:
     def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "architecture_generate_feature_arch.yaml"
+            PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml"
         )
         assert isinstance(spec, CapabilitySpec)
         assert spec.name == "architecture_generate_feature_arch"
@@ -123,7 +123,7 @@ class TestArchitectureSpec:
         self,
     ):
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "architecture_generate_feature_arch.yaml"
+            PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml"
         )
         data = {"feature_architecture": _valid_feature_architecture_dump()}
         jsonschema.validate(data, spec.outputs_schema)
@@ -135,7 +135,7 @@ class TestArchitectureSpec:
 class TestSpecSpec:
     def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "spec_generate_feature_spec.yaml"
+            PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml"
         )
         assert isinstance(spec, CapabilitySpec)
         assert spec.name == "spec_generate_feature_spec"
@@ -146,7 +146,7 @@ class TestSpecSpec:
         self,
     ):
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "spec_generate_feature_spec.yaml"
+            PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml"
         )
         data = {
             "feature_spec": _valid_feature_spec_dump(),
@@ -158,7 +158,7 @@ class TestSpecSpec:
 class TestDevSpec:
     def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "dev_implement_feature_tdd.yaml"
+            PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml"
         )
         assert isinstance(spec, CapabilitySpec)
         assert spec.name == "dev_implement_feature_tdd"
@@ -167,7 +167,7 @@ class TestDevSpec:
 
     def test_given_dev_spec_when_outputs_schema_validates_model_dump_then_passes(self):
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "dev_implement_feature_tdd.yaml"
+            PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml"
         )
         data = {
             "code_patch": _valid_code_patch_dump(),
@@ -183,7 +183,7 @@ class TestRegistryIntegration:
     def test_given_all_yaml_specs_when_registry_loaded_then_contains_12_capabilities(
         self, registry
     ):
-        assert len(registry) == 13
+        assert len(registry) == 12
 
     def test_given_registry_when_searched_by_archipelago_tag_then_returns_exactly_4(
         self, registry

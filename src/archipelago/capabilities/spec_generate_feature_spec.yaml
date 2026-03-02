@@ -1,0 +1,63 @@
+name: spec_generate_feature_spec
+description: Generates a feature spec and test plan from a feature architecture
+version: "1.0.0"
+implementation:
+  module: archipelago.agents.spec
+  class_name: SpecHandler
+inputs_schema:
+  type: object
+  properties:
+    feature_architecture:
+      type: object
+  required:
+    - feature_architecture
+outputs_schema:
+  type: object
+  properties:
+    feature_spec:
+      type: object
+      properties:
+        title:
+          type: string
+        objective:
+          type: string
+        acceptance_criteria:
+          type: array
+          items:
+            type: string
+        pr_slices:
+          type: array
+          items:
+            type: object
+      required:
+        - title
+        - objective
+        - acceptance_criteria
+        - pr_slices
+    test_plan:
+      type: object
+      properties:
+        feature_name:
+          type: string
+        test_cases:
+          type: array
+          items:
+            type: object
+        coverage_targets:
+          type: array
+          items:
+            type: string
+      required:
+        - feature_name
+        - test_cases
+        - coverage_targets
+  required:
+    - feature_spec
+    - test_plan
+tags:
+  - archipelago
+  - spec
+  - generation
+quality_controls:
+  timeout_seconds: 120
+  max_retries: 1

@@ -7,11 +7,11 @@ import pytest
 from agent_foundry.registry.spec import load_capability_spec
 from archipelago.agents.spec import SpecHandler
 
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 
 
 def _make_spec():
-    return load_capability_spec(CAPABILITIES_DIR / "spec_generate_feature_spec.yaml")
+    return load_capability_spec(PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml")
 
 
 def _make_state():

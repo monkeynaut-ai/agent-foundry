@@ -14,13 +14,13 @@ from agent_foundry.registry.registry import CapabilityRegistry
 from archipelago.docker_worker.handler import DOCKER_WORKER_HANDLERS, docker_worker_handler
 from archipelago.docker_worker.models import WorkerConstraints
 
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "pipeline_plan.json"
 
 
 @pytest.fixture
 def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
+    return CapabilityRegistry.with_product_specs(PRODUCT_CAPS_DIR)
 
 
 @pytest.fixture

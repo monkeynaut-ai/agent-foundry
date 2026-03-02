@@ -7,11 +7,11 @@ import pytest
 from agent_foundry.registry.spec import CapabilitySpec, ImplementationPointer, load_capability_spec
 from archipelago.agents.strategy import StrategyHandler
 
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 
 
 def _make_spec() -> CapabilitySpec:
-    return load_capability_spec(CAPABILITIES_DIR / "strategy_generate_product_brief.yaml")
+    return load_capability_spec(PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml")
 
 
 class TestStrategyHandler:

@@ -9,18 +9,18 @@ from agent_foundry.registry.registry import CapabilityRegistry
 from agent_foundry.registry.spec import CapabilitySpec, load_capability_spec
 from archipelago.docker_worker.models import WorkerInput, WorkerConstraints, WorkerResult
 
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 
 
 @pytest.fixture
 def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
+    return CapabilityRegistry.with_product_specs(PRODUCT_CAPS_DIR)
 
 
 class TestCodingSpec:
     def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "coding_implement_feature_from_spec.yaml"
+            PRODUCT_CAPS_DIR / "coding_implement_feature_from_spec.yaml"
         )
         assert isinstance(spec, CapabilitySpec)
         assert spec.name == "coding_implement_feature_from_spec"
@@ -31,7 +31,7 @@ class TestCodingSpec:
         self,
     ):
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "coding_implement_feature_from_spec.yaml"
+            PRODUCT_CAPS_DIR / "coding_implement_feature_from_spec.yaml"
         )
         worker_input = WorkerInput(
             repo_ref="abc123",
@@ -45,7 +45,7 @@ class TestCodingSpec:
         self,
     ):
         spec = load_capability_spec(
-            CAPABILITIES_DIR / "coding_implement_feature_from_spec.yaml"
+            PRODUCT_CAPS_DIR / "coding_implement_feature_from_spec.yaml"
         )
         worker_result = WorkerResult(
             result_summary="done",

@@ -1,0 +1,68 @@
+name: dev_implement_feature_tdd
+description: Implements a feature using TDD given a spec and test plan
+version: "1.0.0"
+implementation:
+  module: agent_foundry.archipelago.handlers
+  class_name: DevTestHandler
+inputs_schema:
+  type: object
+  properties:
+    feature_spec:
+      type: object
+    test_plan:
+      type: object
+  required:
+    - feature_spec
+    - test_plan
+outputs_schema:
+  type: object
+  properties:
+    code_patch:
+      type: object
+      properties:
+        feature_name:
+          type: string
+        files_changed:
+          type: array
+          items:
+            type: string
+        diff_summary:
+          type: string
+        branch_name:
+          type: string
+      required:
+        - feature_name
+        - files_changed
+        - diff_summary
+        - branch_name
+    test_results:
+      type: object
+      properties:
+        feature_name:
+          type: string
+        tests_passed:
+          type: integer
+        tests_failed:
+          type: integer
+        test_output:
+          type: string
+        all_green:
+          type: boolean
+      required:
+        - feature_name
+        - tests_passed
+        - tests_failed
+        - test_output
+        - all_green
+  required:
+    - code_patch
+    - test_results
+tags:
+  - archipelago
+  - dev
+  - tdd
+  - implementation
+  - deprecated
+quality_controls:
+  timeout_seconds: 300
+  max_retries: 1

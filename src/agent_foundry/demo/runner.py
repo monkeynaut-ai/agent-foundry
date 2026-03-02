@@ -156,8 +156,7 @@ def run_demo(
         The final state dict with recommendation and gate results.
     """
     if registry is None:
-        caps_dir = Path(__file__).parent.parent.parent.parent / "capabilities"
-        registry = CapabilityRegistry.from_directory(caps_dir)
+        registry = CapabilityRegistry.with_builtins()
 
     if plan is None:
         plan = load_demo_plan()
