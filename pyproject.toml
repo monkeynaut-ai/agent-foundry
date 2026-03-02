@@ -34,6 +34,8 @@ demo.cmd = "python -m agent_foundry.demo.cli"
 demo.env = {PYTHONPATH = "src"}
 archipelago.cmd = "python -m archipelago.cli"
 archipelago.env = {PYTHONPATH = "src"}
+lint-imports.cmd = "lint-imports"
+lint-imports.env = {PYTHONPATH = "src"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -42,3 +44,18 @@ addopts = "-m 'not benchmark'"
 markers = [
     "benchmark: performance benchmark tests (excluded from normal runs)",
 ]
+
+[dependency-groups]
+dev = [
+    "import-linter>=2.10",
+]
+
+[tool.importlinter]
+root_packages = ["agent_foundry", "archipelago"]
+include_external_packages = false
+
+[[tool.importlinter.contracts]]
+name = "Agent Foundry must not import from Archipelago"
+type = "forbidden"
+source_modules = ["agent_foundry"]
+forbidden_modules = ["archipelago"]
