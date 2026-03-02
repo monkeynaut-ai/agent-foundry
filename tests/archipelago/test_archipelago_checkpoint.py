@@ -54,7 +54,7 @@ STUB_HANDLERS = {
     "human_approval_gate": _make_logging_handler("spec_approval_gate", {
         "approved": True, "approver": "auto",
     }),
-    "dev_implement_feature_tdd": _make_logging_handler("dev_test", {
+    "coding_implement_feature_from_spec": _make_logging_handler("dev_test", {
         "code_patch": {
             "feature_name": "Test", "files_changed": ["f.py"],
             "diff_summary": "diff", "branch_name": "feat/t",

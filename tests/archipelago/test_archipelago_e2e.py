@@ -90,7 +90,7 @@ STUB_HANDLERS = {
     "architecture_generate_feature_arch": _stub_architecture,
     "spec_generate_feature_spec": _stub_spec,
     "human_approval_gate": _stub_gate,
-    "dev_implement_feature_tdd": _stub_dev_test,
+    "coding_implement_feature_from_spec": _stub_dev_test,
 }
 
 

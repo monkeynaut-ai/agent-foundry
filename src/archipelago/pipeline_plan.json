@@ -5,7 +5,7 @@
     {"id": "architecture", "capability": "architecture_generate_feature_arch", "config": {}},
     {"id": "spec", "capability": "spec_generate_feature_spec", "config": {}},
     {"id": "spec_approval_gate", "capability": "human_approval_gate", "config": {}},
-    {"id": "dev_test", "capability": "dev_implement_feature_tdd", "config": {}}
+    {"id": "dev_test", "capability": "coding_implement_feature_from_spec", "config": {}}
   ],
   "edges": [
     {"source": "strategy", "target": "architecture"},
@@ -20,6 +20,6 @@
     "architecture_generate_feature_arch": "1.0.0",
     "spec_generate_feature_spec": "1.0.0",
     "human_approval_gate": "1.0.0",
-    "dev_implement_feature_tdd": "1.0.0"
+    "coding_implement_feature_from_spec": "1.0.0"
   }
 }

@@ -20,6 +20,7 @@ CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
 
 ARCHIPELAGO_SPEC_NAMES = [
     "architecture_generate_feature_arch",
+    "coding_implement_feature_from_spec",
     "dev_implement_feature_tdd",
     "spec_generate_feature_spec",
     "strategy_generate_product_brief",
@@ -182,13 +183,13 @@ class TestRegistryIntegration:
     def test_given_all_yaml_specs_when_registry_loaded_then_contains_12_capabilities(
         self, registry
     ):
-        assert len(registry) == 12
+        assert len(registry) == 13
 
     def test_given_registry_when_searched_by_archipelago_tag_then_returns_exactly_4(
         self, registry
     ):
         results = registry.search(tags=["archipelago"])
-        assert len(results) == 4
+        assert len(results) == 5
 
     def test_given_each_archipelago_spec_when_name_queried_then_found_in_registry(
         self, registry

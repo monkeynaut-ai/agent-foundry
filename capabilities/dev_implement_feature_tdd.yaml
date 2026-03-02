@@ -62,6 +62,7 @@ tags:
   - dev
   - tdd
   - implementation
+  - deprecated
 quality_controls:
   timeout_seconds: 300
   max_retries: 1
