@@ -1,0 +1,61 @@
+name: architecture_generate_feature_arch
+description: Generates a feature architecture from a product brief
+version: "1.0.0"
+implementation:
+  module: agent_foundry.archipelago.handlers
+  class_name: ArchitectureHandler
+inputs_schema:
+  type: object
+  properties:
+    name:
+      type: string
+    problem_statement:
+      type: string
+    target_personas:
+      type: array
+      items:
+        type: string
+    success_metrics:
+      type: array
+      items:
+        type: string
+    constraints:
+      type: array
+      items:
+        type: string
+  required:
+    - name
+    - problem_statement
+    - target_personas
+    - success_metrics
+outputs_schema:
+  type: object
+  properties:
+    feature_name:
+      type: string
+    components:
+      type: array
+      items:
+        type: string
+    data_flow:
+      type: string
+    technology_choices:
+      type: array
+      items:
+        type: string
+    risks:
+      type: array
+      items:
+        type: string
+  required:
+    - feature_name
+    - components
+    - data_flow
+    - technology_choices
+tags:
+  - archipelago
+  - architecture
+  - generation
+quality_controls:
+  timeout_seconds: 120
+  max_retries: 1
