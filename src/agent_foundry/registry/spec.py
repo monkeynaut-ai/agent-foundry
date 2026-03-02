@@ -18,6 +18,7 @@ class ImplementationPointer(BaseModel):
 
     module: str
     class_name: str
+    method: str = "__call__"
 
 
 class QualityControls(BaseModel):
