@@ -11,7 +11,11 @@ from agent_foundry.compiler.errors import (
     PlanCompilationError,
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
+from agent_foundry.registry.errors import CapabilityImportError
+from agent_foundry.registry.execution import execute_capability
+from agent_foundry.registry.imports import resolve_handler_callable
 from agent_foundry.registry.registry import CapabilityRegistry
+from agent_foundry.registry.spec import CapabilitySpec
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +77,7 @@ def compile_plan(
 
     # Add nodes with loop-safe wrappers if needed
     for node in plan.nodes:
-        handler = _resolve_handler(node.id, node.capability, handler_registry)
+        handler = _resolve_handler(node.id, node.capability, handler_registry, registry)
 
         # Wrap with max_iterations if configured
         max_iter = node.config.get("max_iterations")
@@ -140,18 +144,52 @@ def compile_plan(
 
 
 def _resolve_handler(
-    node_id: str, capability: str, handler_registry: dict[str, Any]
+    node_id: str,
+    capability: str,
+    handler_registry: dict[str, Any],
+    registry: CapabilityRegistry,
 ) -> Callable:
+    # 1. Explicit handler_registry takes priority (backwards compat)
     handler = handler_registry.get(capability)
-    if handler is None:
-        return _make_passthrough(node_id)
-    if not callable(handler):
-        raise CapabilityInstantiationError(
-            message=f"Handler for node '{node_id}' (capability '{capability}') is not callable",
-            node_id=node_id,
-            capability=capability,
-        )
-    return handler
+    if handler is not None:
+        if not callable(handler):
+            raise CapabilityInstantiationError(
+                message=f"Handler for node '{node_id}' (capability '{capability}') is not callable",
+                node_id=node_id,
+                capability=capability,
+            )
+        return handler
+
+    # 2. Fall back to dynamic resolution from registry spec
+    spec = registry.get(capability)
+    if spec is not None:
+        try:
+            resolved = resolve_handler_callable(spec.implementation, spec)
+        except CapabilityImportError as e:
+            raise CapabilityInstantiationError(
+                message=f"Cannot resolve handler for node '{node_id}' (capability '{capability}'): {e}",
+                node_id=node_id,
+                capability=capability,
+            ) from e
+
+        if resolved is not None:
+            return _make_validated_handler(resolved, spec)
+
+    # 3. No handler found anywhere: passthrough
+    logger.warning(
+        "no_handler_found",
+        extra={"node": node_id, "capability": capability},
+    )
+    return _make_passthrough(node_id)
+
+
+def _make_validated_handler(
+    handler: Callable, spec: CapabilitySpec,
+) -> Callable:
+    """Wrap a handler with execute_capability for schema enforcement."""
+    def validated_handler(state: dict[str, Any]) -> dict[str, Any]:
+        return execute_capability(spec, state, handler)
+    return validated_handler
 
 
 def _make_passthrough(node_id: str) -> Callable:
