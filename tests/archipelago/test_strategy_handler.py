@@ -1,0 +1,60 @@
+"""StrategyHandler — unit tests for deterministic strategy handler."""
+
+from pathlib import Path
+
+import pytest
+
+from agent_foundry.registry.spec import CapabilitySpec, ImplementationPointer, load_capability_spec
+from archipelago.agents.strategy import StrategyHandler
+
+CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+
+
+def _make_spec() -> CapabilitySpec:
+    return load_capability_spec(CAPABILITIES_DIR / "strategy_generate_product_brief.yaml")
+
+
+class TestStrategyHandler:
+    def test_given_strategy_handler_when_instantiated_with_spec_then_stores_spec(self):
+        spec = _make_spec()
+        handler = StrategyHandler(spec)
+        assert handler.spec is spec
+
+    def test_given_product_brief_input_when_called_then_returns_state_with_product_brief(self):
+        handler = StrategyHandler(_make_spec())
+        state = {"product_brief_input": "Build a task management app"}
+        result = handler(state)
+        assert "product_brief" in result
+        assert isinstance(result["product_brief"], dict)
+
+    def test_given_product_brief_input_when_called_then_product_brief_has_required_fields(self):
+        handler = StrategyHandler(_make_spec())
+        state = {"product_brief_input": "Build a task management app"}
+        result = handler(state)
+        brief = result["product_brief"]
+        assert "name" in brief
+        assert "problem_statement" in brief
+        assert "target_personas" in brief
+        assert "success_metrics" in brief
+        assert isinstance(brief["target_personas"], list)
+        assert isinstance(brief["success_metrics"], list)
+
+    def test_given_same_input_when_called_twice_then_returns_identical_output(self):
+        handler = StrategyHandler(_make_spec())
+        state = {"product_brief_input": "Build a task management app"}
+        result1 = handler(state)
+        result2 = handler(state)
+        assert result1["product_brief"] == result2["product_brief"]
+
+    def test_given_missing_product_brief_input_when_called_then_raises_value_error(self):
+        handler = StrategyHandler(_make_spec())
+        with pytest.raises(ValueError, match="product_brief_input is required"):
+            handler({})
+
+    def test_given_product_brief_input_when_called_then_prints_to_stdout(self, capsys):
+        handler = StrategyHandler(_make_spec())
+        state = {"product_brief_input": "Build a task management app"}
+        handler(state)
+        captured = capsys.readouterr()
+        assert "[strategy]" in captured.out
+        assert "Product:" in captured.out

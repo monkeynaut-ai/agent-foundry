@@ -114,7 +114,7 @@ class TestStrategyHandler:
         spec = load_capability_spec(
             CAPABILITIES_DIR / "strategy_generate_product_brief.yaml"
         )
-        jsonschema.validate(result["product_brief"], spec.outputs_schema)
+        jsonschema.validate({"product_brief": result["product_brief"]}, spec.outputs_schema)
 
     def test_given_empty_input_when_handler_called_then_raises_value_error(self):
         state = {"product_brief_input": ""}
@@ -258,11 +258,11 @@ class TestHandlerRegistry:
         self,
     ):
         expected = {
-            "strategy_generate_product_brief",
             "architecture_generate_feature_arch",
             "spec_generate_feature_spec",
             "human_approval_gate",
             "dev_implement_feature_tdd",
+            "coding_implement_feature_from_spec",
         }
         assert set(ARCHIPELAGO_HANDLERS.keys()) == expected
 

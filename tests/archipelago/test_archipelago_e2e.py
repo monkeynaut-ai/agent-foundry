@@ -135,7 +135,7 @@ class TestEndToEnd:
         strategy_spec = load_capability_spec(
             CAPABILITIES_DIR / "strategy_generate_product_brief.yaml"
         )
-        jsonschema.validate(final_state["product_brief"], strategy_spec.outputs_schema)
+        jsonschema.validate({"product_brief": final_state["product_brief"]}, strategy_spec.outputs_schema)
 
         arch_spec = load_capability_spec(
             CAPABILITIES_DIR / "architecture_generate_feature_arch.yaml"

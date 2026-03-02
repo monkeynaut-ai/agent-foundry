@@ -2,7 +2,7 @@ name: strategy_generate_product_brief
 description: Generates a product brief from high-level input
 version: "1.0.0"
 implementation:
-  module: agent_foundry.archipelago.handlers
+  module: archipelago.agents.strategy
   class_name: StrategyHandler
 inputs_schema:
   type: object
@@ -14,27 +14,32 @@ inputs_schema:
 outputs_schema:
   type: object
   properties:
-    name:
-      type: string
-    problem_statement:
-      type: string
-    target_personas:
-      type: array
-      items:
-        type: string
-    success_metrics:
-      type: array
-      items:
-        type: string
-    constraints:
-      type: array
-      items:
-        type: string
+    product_brief:
+      type: object
+      properties:
+        name:
+          type: string
+        problem_statement:
+          type: string
+        target_personas:
+          type: array
+          items:
+            type: string
+        success_metrics:
+          type: array
+          items:
+            type: string
+        constraints:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+        - problem_statement
+        - target_personas
+        - success_metrics
   required:
-    - name
-    - problem_statement
-    - target_personas
-    - success_metrics
+    - product_brief
 tags:
   - archipelago
   - strategy

@@ -105,7 +105,7 @@ class TestStrategySpec:
         spec = load_capability_spec(
             CAPABILITIES_DIR / "strategy_generate_product_brief.yaml"
         )
-        data = _valid_product_brief_dump()
+        data = {"product_brief": _valid_product_brief_dump()}
         jsonschema.validate(data, spec.outputs_schema)
 
 
