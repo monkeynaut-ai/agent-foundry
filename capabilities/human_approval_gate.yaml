@@ -2,17 +2,15 @@ name: human_approval_gate
 description: Pauses execution for human approval before irreversible actions
 version: "1.0.0"
 implementation:
-  module: agent_foundry.capabilities.human_approval
-  class_name: HumanApprovalGateCapability
+  module: archipelago.agents.approval_gate
+  class_name: ApprovalGateHandler
 inputs_schema:
   type: object
   properties:
-    action_summary:
-      type: string
-    risk_level:
-      type: string
+    feature_spec:
+      type: object
   required:
-    - action_summary
+    - feature_spec
 outputs_schema:
   type: object
   properties:
