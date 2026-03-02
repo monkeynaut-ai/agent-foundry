@@ -128,7 +128,15 @@ def compile_plan(
     if not plan.edges and len(plan.nodes) == 1:
         graph.add_edge(plan.entry_point, END)
 
-    return graph.compile()
+    compile_kwargs: dict[str, Any] = {}
+
+    if plan.persistence is not None:
+        checkpointer = _create_checkpointer(plan.persistence.backend)
+        compile_kwargs["checkpointer"] = checkpointer
+        if plan.breakpoints:
+            compile_kwargs["interrupt_before"] = plan.breakpoints
+
+    return graph.compile(**compile_kwargs)
 
 
 def _resolve_handler(
@@ -193,6 +201,14 @@ def _make_router(
         return default_target
 
     return router
+
+
+def _create_checkpointer(backend: str) -> Any:
+    """Create a checkpointer for the given backend."""
+    if backend == "memory":
+        from langgraph.checkpoint.memory import MemorySaver
+        return MemorySaver()
+    raise PlanCompilationError(f"Unsupported persistence backend: {backend}")
 
 
 def _check_eval_gates_on_paths(plan: GraphWiringPlan) -> None:
