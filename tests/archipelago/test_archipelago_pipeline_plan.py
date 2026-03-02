@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from agent_foundry.planner.planner import WiringPlanner
 from agent_foundry.planner.validators import validate_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.registry import CapabilityRegistry
@@ -107,35 +106,3 @@ class TestValidatePlan:
             )
 
 
-# ── Commit 3: Planner extension tests ──
-
-
-class TestPlannerExtension:
-    def test_given_planner_with_registry_when_plan_archipelago_pipeline_then_returns_valid_plan(
-        self, registry
-    ):
-        planner = WiringPlanner(registry)
-        plan = planner.plan("archipelago-pipeline")
-        assert isinstance(plan, GraphWiringPlan)
-        assert plan.goal == "archipelago-pipeline"
-
-    def test_given_planner_when_plan_archipelago_pipeline_then_has_5_nodes(
-        self, registry
-    ):
-        planner = WiringPlanner(registry)
-        plan = planner.plan("archipelago-pipeline")
-        assert len(plan.nodes) == 5
-
-    def test_given_planner_when_plan_archipelago_pipeline_then_breakpoints_set(
-        self, registry
-    ):
-        planner = WiringPlanner(registry)
-        plan = planner.plan("archipelago-pipeline")
-        assert "spec_approval_gate" in plan.breakpoints
-
-    def test_given_planner_when_plan_archipelago_pipeline_then_validates_against_registry(
-        self, registry
-    ):
-        planner = WiringPlanner(registry)
-        plan = planner.plan("archipelago-pipeline")
-        validate_plan(plan, registry)

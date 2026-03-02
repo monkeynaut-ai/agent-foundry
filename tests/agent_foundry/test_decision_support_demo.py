@@ -31,8 +31,6 @@ from agent_foundry.observability.gates import (
     schema_validator_gate,
     uncertainty_completeness_gate,
 )
-from agent_foundry.planner.planner import WiringPlanner
-from agent_foundry.planner.validators import validate_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.registry import CapabilityRegistry
 
@@ -182,31 +180,6 @@ class TestDS7ToolCalling:
         result = graph.invoke({"question": "Calculate 2+2", "domain": "math", "constraints": []})
         assert result.get("tool_result") is not None
         assert result["tool_result"]["result"] == 4
-
-
-# --- DS8: Planner Produces Plan ---
-
-class TestDS8PlannerProducesPlan:
-    """Planner deterministically generates the Decision Support plan."""
-
-    def test_planner_emits_valid_plan(self, registry):
-        planner = WiringPlanner(registry=registry)
-        plan = planner.plan("decision-support")
-        validate_plan(plan, registry)
-
-    def test_planner_includes_required_node_types(self, registry):
-        planner = WiringPlanner(registry=registry)
-        plan = planner.plan("decision-support")
-        capabilities = {n.capability for n in plan.nodes}
-        assert "rag_retriever" in capabilities
-        assert "structured_output_pydantic" in capabilities
-        assert "schema_validator" in capabilities
-
-    def test_planner_output_is_deterministic(self, registry):
-        planner = WiringPlanner(registry=registry)
-        plan1 = planner.plan("decision-support")
-        plan2 = planner.plan("decision-support")
-        assert plan1.model_dump_json() == plan2.model_dump_json()
 
 
 # --- DS9: End-to-End Performance (Benchmark) ---

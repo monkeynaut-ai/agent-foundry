@@ -588,7 +588,7 @@ Separation is done in phases. Each phase is independently mergeable. The system 
 
 **Steps:**
 
-1. Move `_DECISION_SUPPORT_PLAN` and `_DECISION_SUPPORT_WITH_TOOLS_PLAN` into `examples/decision_support/plans.py` (or the demo runner directly).
+1. Move `_DECISION_SUPPORT_PLAN` and `_DECISION_SUPPORT_WITH_TOOLS_PLAN` into separate JSON files: `examples/decision_support/decision_support_plan.json` and `examples/decision_support/decision_support_with_tools_plan.json`.
 2. Delete `_ARCHIPELAGO_PIPELINE_PLAN` from `planner.py` (it already exists in `src/archipelago/pipeline_plan.json` in the product).
 3. Delete the `WiringPlanner` class from `planner.py`.
 4. Update or delete `planner.py`. If it becomes empty, delete it and adjust `__init__.py` exports.
