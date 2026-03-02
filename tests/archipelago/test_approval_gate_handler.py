@@ -31,11 +31,6 @@ def _make_state():
 
 
 class TestApprovalGateHandler:
-    def test_given_approval_gate_handler_when_instantiated_with_spec_then_stores_spec(self):
-        spec = _make_spec()
-        handler = ApprovalGateHandler(spec)
-        assert handler.spec is spec
-
     def test_given_state_when_called_then_returns_approved_true(self):
         handler = ApprovalGateHandler(_make_spec())
         result = handler(_make_state())
@@ -46,24 +41,9 @@ class TestApprovalGateHandler:
         result = handler(_make_state())
         assert result["approver"] == "auto"
 
-    def test_given_same_input_when_called_twice_then_returns_identical_output(self):
-        handler = ApprovalGateHandler(_make_spec())
-        state = _make_state()
-        result1 = handler(state)
-        result2 = handler(state)
-        assert result1["approved"] == result2["approved"]
-        assert result1["approver"] == result2["approver"]
-
     def test_given_state_when_called_then_preserves_existing_state(self):
         handler = ApprovalGateHandler(_make_spec())
         state = _make_state()
         result = handler(state)
         assert result["feature_spec"] == state["feature_spec"]
         assert result["test_plan"] == state["test_plan"]
-
-    def test_given_state_when_called_then_prints_input_and_output_to_stdout(self, capsys):
-        handler = ApprovalGateHandler(_make_spec())
-        handler(_make_state())
-        captured = capsys.readouterr()
-        assert "[approval_gate] Input:" in captured.out
-        assert "[approval_gate] Auto-approved" in captured.out

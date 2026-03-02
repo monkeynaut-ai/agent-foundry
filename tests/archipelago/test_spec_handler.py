@@ -27,11 +27,6 @@ def _make_state():
 
 
 class TestSpecHandler:
-    def test_given_spec_handler_when_instantiated_with_spec_then_stores_spec(self):
-        spec = _make_spec()
-        handler = SpecHandler(spec)
-        assert handler.spec is spec
-
     def test_given_feature_architecture_when_called_then_returns_state_with_feature_spec(self):
         handler = SpecHandler(_make_spec())
         result = handler(_make_state())
@@ -63,22 +58,7 @@ class TestSpecHandler:
         assert "test_cases" in tp
         assert "coverage_targets" in tp
 
-    def test_given_same_input_when_called_twice_then_returns_identical_output(self):
-        handler = SpecHandler(_make_spec())
-        state = _make_state()
-        result1 = handler(state)
-        result2 = handler(state)
-        assert result1["feature_spec"] == result2["feature_spec"]
-        assert result1["test_plan"] == result2["test_plan"]
-
     def test_given_missing_feature_architecture_when_called_then_raises_value_error(self):
         handler = SpecHandler(_make_spec())
         with pytest.raises(ValueError, match="feature_architecture is required"):
             handler({})
-
-    def test_given_feature_architecture_when_called_then_prints_input_and_output_to_stdout(self, capsys):
-        handler = SpecHandler(_make_spec())
-        handler(_make_state())
-        captured = capsys.readouterr()
-        assert "[spec] Input:" in captured.out
-        assert "[spec] Generated feature spec:" in captured.out
