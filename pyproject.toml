@@ -26,6 +26,9 @@ license = {text = "MIT"}
 [tool.pdm]
 distribution = false
 
+[tool.pdm.build]
+includes = ["src/agent_foundry/capabilities/*.yaml"]
+
 [tool.pdm.scripts]
 demo.cmd = "python -m agent_foundry.demo.cli"
 demo.env = {PYTHONPATH = "src"}

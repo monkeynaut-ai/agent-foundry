@@ -1,0 +1,29 @@
+name: human_approval_gate
+description: Pauses execution for human approval before irreversible actions
+version: "1.0.0"
+implementation:
+  module: archipelago.agents.approval_gate
+  class_name: ApprovalGateHandler
+inputs_schema:
+  type: object
+  properties:
+    feature_spec:
+      type: object
+  required:
+    - feature_spec
+outputs_schema:
+  type: object
+  properties:
+    approved:
+      type: boolean
+    approver:
+      type: string
+  required:
+    - approved
+tags:
+  - hitl
+  - approval
+  - gate
+quality_controls:
+  timeout_seconds: 300
+  max_retries: 0

@@ -1,0 +1,29 @@
+name: uncertainty_completeness_validator
+description: Validates that uncertainty fields (confidence, rationale) are complete
+version: "1.0.0"
+implementation:
+  module: agent_foundry.capabilities.uncertainty_validator
+  class_name: UncertaintyCompletenessValidatorCapability
+inputs_schema:
+  type: object
+  properties:
+    uncertainty:
+      type: object
+  required:
+    - uncertainty
+outputs_schema:
+  type: object
+  properties:
+    valid:
+      type: boolean
+    missing_fields:
+      type: array
+  required:
+    - valid
+tags:
+  - validation
+  - eval_gate
+  - uncertainty
+quality_controls:
+  timeout_seconds: 10
+  max_retries: 0
