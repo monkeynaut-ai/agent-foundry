@@ -106,9 +106,6 @@ def spec_approval_gate_handler(state: dict[str, Any]) -> dict[str, Any]:
 
 
 ARCHIPELAGO_HANDLERS: dict[str, Any] = {
-    "architecture_generate_feature_arch": architecture_handler,
-    "spec_generate_feature_spec": spec_handler,
-    "human_approval_gate": spec_approval_gate_handler,
     "dev_implement_feature_tdd": dev_test_handler,
     "coding_implement_feature_from_spec": dev_test_handler,
 }

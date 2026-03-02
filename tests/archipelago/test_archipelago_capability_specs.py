@@ -125,7 +125,7 @@ class TestArchitectureSpec:
         spec = load_capability_spec(
             CAPABILITIES_DIR / "architecture_generate_feature_arch.yaml"
         )
-        data = _valid_feature_architecture_dump()
+        data = {"feature_architecture": _valid_feature_architecture_dump()}
         jsonschema.validate(data, spec.outputs_schema)
 
 

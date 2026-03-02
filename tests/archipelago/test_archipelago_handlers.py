@@ -152,7 +152,7 @@ class TestArchitectureHandler:
         spec = load_capability_spec(
             CAPABILITIES_DIR / "architecture_generate_feature_arch.yaml"
         )
-        jsonschema.validate(result["feature_architecture"], spec.outputs_schema)
+        jsonschema.validate({"feature_architecture": result["feature_architecture"]}, spec.outputs_schema)
 
 
 class TestSpecHandler:
@@ -254,13 +254,10 @@ class TestGateHandler:
 
 
 class TestHandlerRegistry:
-    def test_given_archipelago_handlers_when_all_keys_checked_then_all_5_capabilities_present(
+    def test_given_archipelago_handlers_when_all_keys_checked_then_all_2_capabilities_present(
         self,
     ):
         expected = {
-            "architecture_generate_feature_arch",
-            "spec_generate_feature_spec",
-            "human_approval_gate",
             "dev_implement_feature_tdd",
             "coding_implement_feature_from_spec",
         }

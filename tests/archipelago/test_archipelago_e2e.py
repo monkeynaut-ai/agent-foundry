@@ -141,7 +141,7 @@ class TestEndToEnd:
             CAPABILITIES_DIR / "architecture_generate_feature_arch.yaml"
         )
         jsonschema.validate(
-            final_state["feature_architecture"], arch_spec.outputs_schema
+            {"feature_architecture": final_state["feature_architecture"]}, arch_spec.outputs_schema
         )
 
         spec_spec = load_capability_spec(
