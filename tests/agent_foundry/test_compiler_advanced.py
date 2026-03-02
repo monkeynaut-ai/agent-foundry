@@ -9,17 +9,14 @@ S5.7: Template expansion into subgraphs.
 S5.8: Runtime schema failures + compile-time performance budget.
 """
 
-import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.compiler.errors import (
     CapabilityInstantiationError,
-    MaxIterationsExceededError,
     PlanCompilationError,
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
@@ -55,6 +52,7 @@ HANDLERS = {
 
 # --- S5.2: Fail-Fast Compile Errors ---
 
+
 class TestCompileErrors:
     """Invalid plans and instantiation errors fail fast."""
 
@@ -84,6 +82,7 @@ class TestCompileErrors:
 
 
 # --- S5.3: Conditional Edges ---
+
 
 class TestConditionalEdges:
     """Conditional edges branch based on state."""
@@ -115,6 +114,7 @@ class TestConditionalEdges:
 
 # --- S5.4: Loop Safety ---
 
+
 class TestLoopSafety:
     """Loops enforce max-iterations."""
 
@@ -138,18 +138,20 @@ class TestLoopSafety:
         )
         handlers = {"rag_retriever": counting_handler}
         graph = compile_plan(plan, registry, handler_registry=handlers)
-        result = graph.invoke({"should_continue": True})
+        graph.invoke({"should_continue": True})
         # Should have stopped at max_iterations
         assert counter["count"] <= 4  # max_iterations + 1 safety margin
 
 
 # --- S5.7: Template Expansion ---
 
+
 class TestTemplateExpansion:
     """Template references expand to subgraph node types."""
 
     def test_draft_review_revise_template_expands(self, registry):
         from agent_foundry.compiler.templates import expand_template
+
         nodes = expand_template("draft_review_revise_loop")
         assert len(nodes) > 0
         for n in nodes:
@@ -157,11 +159,13 @@ class TestTemplateExpansion:
 
     def test_gather_verify_analyze_template_expands(self, registry):
         from agent_foundry.compiler.templates import expand_template
+
         nodes = expand_template("gather_verify_analyze_recommend")
         assert len(nodes) > 0
 
 
 # --- S5.8: Runtime Schema Failures ---
+
 
 class TestRuntimeSchemaFailures:
     """Invalid node output blocks downstream."""

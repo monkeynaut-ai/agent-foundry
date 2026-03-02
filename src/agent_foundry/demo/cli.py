@@ -7,7 +7,7 @@ import sys
 from agent_foundry.demo.runner import run_demo
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Decision Support Demo")
     parser.add_argument("question", help="The question to analyze")
     parser.add_argument("--domain", default="general", help="Domain context (default: general)")

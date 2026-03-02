@@ -23,8 +23,10 @@ FF_COMPILER = False
 
 
 EVAL_GATE_CAPABILITIES = {
-    "schema_validator", "citation_validator",
-    "uncertainty_completeness_validator", "evidence_first_contract",
+    "schema_validator",
+    "citation_validator",
+    "uncertainty_completeness_validator",
+    "evidence_first_contract",
 }
 
 
@@ -61,19 +63,11 @@ def compile_plan(
     if enforce_gates:
         _check_eval_gates_on_paths(plan)
 
-    graph = StateGraph(dict)
+    graph = StateGraph(dict)  # type: ignore[type-var]
 
     # Determine graph topology
     source_nodes = {e.source for e in plan.edges}
     terminal_nodes = node_ids - source_nodes
-
-    # Check for conditional edges
-    has_conditional = any(e.condition is not None for e in plan.edges)
-
-    # Check for loops (self-referencing or cycles)
-    has_loops = any(e.target in source_nodes and e.target == e.source or
-                    e.condition is not None for e in plan.edges
-                    if e.source != e.target) or any(e.source == e.target for e in plan.edges)
 
     # Add nodes with loop-safe wrappers if needed
     for node in plan.nodes:
@@ -167,7 +161,9 @@ def _resolve_handler(
             resolved = resolve_handler_callable(spec.implementation, spec)
         except CapabilityImportError as e:
             raise CapabilityInstantiationError(
-                message=f"Cannot resolve handler for node '{node_id}' (capability '{capability}'): {e}",
+                message=(
+                    f"Cannot resolve handler for node '{node_id}' (capability '{capability}'): {e}"
+                ),
                 node_id=node_id,
                 capability=capability,
             ) from e
@@ -184,23 +180,25 @@ def _resolve_handler(
 
 
 def _make_validated_handler(
-    handler: Callable, spec: CapabilitySpec,
+    handler: Callable,
+    spec: CapabilitySpec,
 ) -> Callable:
     """Wrap a handler with execute_capability for schema enforcement."""
+
     def validated_handler(state: dict[str, Any]) -> dict[str, Any]:
         return execute_capability(spec, state, handler)
+
     return validated_handler
 
 
 def _make_passthrough(node_id: str) -> Callable:
     def handler(state: dict[str, Any]) -> dict[str, Any]:
         return state
+
     return handler
 
 
-def _make_iteration_limiter(
-    handler: Callable, node_id: str, max_iterations: int
-) -> Callable:
+def _make_iteration_limiter(handler: Callable, node_id: str, max_iterations: int) -> Callable:
     counter = {"count": 0}
 
     def limited_handler(state: dict[str, Any]) -> dict[str, Any]:
@@ -214,9 +212,7 @@ def _make_iteration_limiter(
     return limited_handler
 
 
-def _make_router(
-    route_map: dict[str, str], default_target: str, source_id: str
-) -> Callable:
+def _make_router(route_map: dict[str, str], default_target: str, source_id: str) -> Callable:
     def router(state: dict[str, Any]) -> str:
         # Check if loop is exhausted
         if state.get("_loop_exhausted"):
@@ -245,13 +241,13 @@ def _create_checkpointer(backend: str) -> Any:
     """Create a checkpointer for the given backend."""
     if backend == "memory":
         from langgraph.checkpoint.memory import MemorySaver
+
         return MemorySaver()
     raise PlanCompilationError(f"Unsupported persistence backend: {backend}")
 
 
 def _check_eval_gates_on_paths(plan: GraphWiringPlan) -> None:
     """Ensure at least one eval gate is on every path from entry to terminal nodes."""
-    node_capabilities = {n.id: n.capability for n in plan.nodes}
     gate_nodes = {n.id for n in plan.nodes if n.capability in EVAL_GATE_CAPABILITIES}
 
     if not gate_nodes:
@@ -279,12 +275,7 @@ def _check_eval_gates_on_paths(plan: GraphWiringPlan) -> None:
         neighbors = adjacency.get(current, [])
         if not neighbors:
             return current in gate_nodes
-        return all(
-            _has_gate_on_path(n, visited.copy())
-            for n in neighbors if n not in visited
-        )
+        return all(_has_gate_on_path(n, visited.copy()) for n in neighbors if n not in visited)
 
     if not _has_gate_on_path(plan.entry_point, set()):
-        raise PlanCompilationError(
-            "Not all paths from entry to final pass through an eval gate."
-        )
+        raise PlanCompilationError("Not all paths from entry to final pass through an eval gate.")

@@ -5,7 +5,7 @@ Tests: missing/corrupt index raises IndexLoadError;
 """
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -52,6 +52,7 @@ class TestBackendOutage:
     def test_faiss_error_during_search_raises_error(self, tmp_path):
         """Simulate FAISS backend error during search."""
         from agent_foundry.registry.registry import CapabilityRegistry
+
         caps_dir = Path(__file__).parent.parent.parent / "capabilities"
         registry = CapabilityRegistry.from_directory(caps_dir)
 
@@ -60,7 +61,9 @@ class TestBackendOutage:
         indexer.build(registry)
 
         # Simulate backend failure
-        indexer._store.similarity_search = MagicMock(side_effect=RuntimeError("FAISS internal error"))
+        indexer._store.similarity_search = MagicMock(
+            side_effect=RuntimeError("FAISS internal error")
+        )
         with pytest.raises(RetrieverUnavailableError) as exc_info:
             indexer.retrieve("rag_retriever")
         assert "FAISS" in str(exc_info.value) or exc_info.value.__cause__ is not None

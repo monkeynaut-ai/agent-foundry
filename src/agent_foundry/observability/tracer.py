@@ -28,7 +28,7 @@ class Span:
 class ExecutionTracer:
     """Collects execution spans for observability."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._spans: list[Span] = []
 
     @property
@@ -56,11 +56,13 @@ class ExecutionTracer:
         result: Any,
     ) -> None:
         redacted_args = _redact_sensitive(args)
-        span.tool_calls.append({
-            "tool_name": tool_name,
-            "args": redacted_args,
-            "result": result,
-        })
+        span.tool_calls.append(
+            {
+                "tool_name": tool_name,
+                "args": redacted_args,
+                "result": result,
+            }
+        )
 
     def add_retrieval(
         self,
@@ -94,7 +96,7 @@ def _redact_sensitive(data: dict[str, Any]) -> dict[str, Any]:
         if key.lower() in _SENSITIVE_KEYS:
             result[key] = "[REDACTED]"
         elif isinstance(value, dict):
-            result[key] = _redact_sensitive(value)
+            result[key] = _redact_sensitive(value)  # type: ignore[assignment]
         else:
             result[key] = value
     return result

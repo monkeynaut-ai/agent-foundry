@@ -1,6 +1,6 @@
 """Docker worker container lifecycle — unit tests with mocked Docker SDK."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -26,9 +26,7 @@ def manager(mock_client):
 
 
 class TestCreateContainer:
-    def test_given_valid_config_when_create_called_then_returns_container_handle(
-        self, manager
-    ):
+    def test_given_valid_config_when_create_called_then_returns_container_handle(self, manager):
         handle = manager.create_container(workspace_volume="vol-1")
         assert isinstance(handle, ContainerHandle)
         assert handle.container_id == "container-abc123"
@@ -86,9 +84,7 @@ class TestCreateContainer:
 
 
 class TestStartContainer:
-    def test_given_created_container_when_start_called_then_status_becomes_running(
-        self, manager
-    ):
+    def test_given_created_container_when_start_called_then_status_becomes_running(self, manager):
         handle = manager.create_container()
         manager.start(handle)
         assert handle.status == "running"
@@ -104,9 +100,7 @@ class TestStartContainer:
 
 
 class TestStopContainer:
-    def test_given_running_container_when_stop_called_then_status_becomes_stopped(
-        self, manager
-    ):
+    def test_given_running_container_when_stop_called_then_status_becomes_stopped(self, manager):
         handle = manager.create_container()
         manager.start(handle)
         manager.stop(handle)
@@ -122,9 +116,7 @@ class TestStopContainer:
 
 
 class TestDestroyContainer:
-    def test_given_stopped_container_when_destroy_called_then_container_removed(
-        self, manager
-    ):
+    def test_given_stopped_container_when_destroy_called_then_container_removed(self, manager):
         handle = manager.create_container()
         manager.start(handle)
         manager.stop(handle)

@@ -50,10 +50,11 @@ class ContainerManager:
         if workspace_volume:
             volumes[workspace_volume] = {"bind": "/workspace", "mode": "rw"}
 
-        environment = {
-            k: v for k, v in (self._client.environment or {}).items()
-            if k in self._env_allowlist
-        } if hasattr(self._client, "environment") else {}
+        environment = (
+            {k: v for k, v in (self._client.environment or {}).items() if k in self._env_allowlist}
+            if hasattr(self._client, "environment")
+            else {}
+        )
 
         try:
             container = self._client.containers.create(

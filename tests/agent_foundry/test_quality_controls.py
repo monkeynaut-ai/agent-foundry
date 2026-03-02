@@ -28,9 +28,7 @@ def _make_spec(timeout_seconds: int = 30, max_retries: int = 0) -> CapabilitySpe
         inputs_schema={"type": "object", "properties": {}},
         outputs_schema={"type": "object", "properties": {}},
         tags=[],
-        quality_controls=QualityControls(
-            timeout_seconds=timeout_seconds, max_retries=max_retries
-        ),
+        quality_controls=QualityControls(timeout_seconds=timeout_seconds, max_retries=max_retries),
     )
 
 
@@ -113,6 +111,8 @@ class TestFeatureFlag:
 
     def test_flag_off_does_not_retry(self):
         spec = _make_spec(max_retries=3)
-        with patch("agent_foundry.registry.execution.FF_RETRY_TIMEOUTS", False):
-            with pytest.raises(RuntimeError):
-                execute_capability(spec, {}, _always_failing_handler)
+        with (
+            patch("agent_foundry.registry.execution.FF_RETRY_TIMEOUTS", False),
+            pytest.raises(RuntimeError),
+        ):
+            execute_capability(spec, {}, _always_failing_handler)

@@ -1,10 +1,11 @@
 """Deterministic architecture handler for the Archipelago pipeline."""
 
+from agent_foundry.registry.spec import CapabilitySpec
 from archipelago.models import FeatureArchitecture
 
 
 class ArchitectureHandler:
-    def __init__(self, spec):
+    def __init__(self, spec: CapabilitySpec) -> None:
         self.spec = spec
 
     def __call__(self, state: dict) -> dict:

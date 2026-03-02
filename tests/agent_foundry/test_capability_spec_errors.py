@@ -90,16 +90,16 @@ class TestProcessDoesNotCrash:
     """Invalid specs never cause unhandled exceptions."""
 
     def test_missing_fields_does_not_crash(self):
-        try:
+        import contextlib
+
+        with contextlib.suppress(CapabilitySpecValidationError):
             load_capability_spec(FIXTURES / "invalid_missing_name.yaml")
-        except CapabilitySpecValidationError:
-            pass  # Expected
 
     def test_parse_error_does_not_crash(self):
-        try:
+        import contextlib
+
+        with contextlib.suppress(CapabilitySpecParseError):
             load_capability_spec(FIXTURES / "invalid_parse_error.yaml")
-        except CapabilitySpecParseError:
-            pass  # Expected
 
     def test_nonexistent_file_raises_parse_error(self):
         with pytest.raises(CapabilitySpecParseError):

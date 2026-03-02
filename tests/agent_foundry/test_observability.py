@@ -10,23 +10,20 @@ S6.7: Non-functional: trace payload size + export latency budgets.
 
 import time
 from pathlib import Path
-from typing import Any
 
-import pytest
-
-from agent_foundry.observability.tracer import ExecutionTracer, Span
 from agent_foundry.observability.gates import (
-    schema_validator_gate,
     citation_validator_gate,
-    uncertainty_completeness_gate,
     evidence_first_gate,
+    schema_validator_gate,
+    uncertainty_completeness_gate,
 )
-from agent_foundry.registry.registry import CapabilityRegistry
+from agent_foundry.observability.tracer import ExecutionTracer
 
 CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
 
 
 # --- S6.1: Tracing Spans ---
+
 
 class TestTracingSpans:
     """Node execution emits spans with required fields."""
@@ -67,15 +64,19 @@ class TestTracingSpans:
 
 # --- S6.2: Tool and Retrieval Trace Enrichment ---
 
+
 class TestTraceEnrichment:
     """Tool calls and retrievals are captured in traces."""
 
     def test_tool_trace_redacts_secrets(self):
         tracer = ExecutionTracer()
         span = tracer.start_span(node_id="n1", capability="tool_calling")
-        tracer.add_tool_call(span, tool_name="api_call",
-                             args={"api_key": "sk-secret-123", "query": "test"},
-                             result={"data": "ok"})
+        tracer.add_tool_call(
+            span,
+            tool_name="api_call",
+            args={"api_key": "sk-secret-123", "query": "test"},
+            result={"data": "ok"},
+        )
         tracer.end_span(span, status="success")
         tool_calls = span.tool_calls
         assert len(tool_calls) == 1
@@ -112,22 +113,32 @@ class TestTraceEnrichment:
 
 # --- S6.3: Schema Validator Gate ---
 
+
 class TestSchemaValidatorGate:
     """Schema validator gate blocks on invalid output."""
 
     def test_valid_output_passes(self):
-        schema = {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        }
         result = schema_validator_gate({"name": "test"}, schema)
         assert result["valid"] is True
 
     def test_invalid_output_fails(self):
-        schema = {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        }
         result = schema_validator_gate({}, schema)
         assert result["valid"] is False
         assert len(result["errors"]) > 0
 
 
 # --- S6.4: Decision Eval Gates ---
+
 
 class TestCitationValidatorGate:
     """Citation gate checks evidence ID references."""
@@ -158,22 +169,16 @@ class TestUncertaintyGate:
         assert result["valid"] is True
 
     def test_missing_confidence_fails(self):
-        result = uncertainty_completeness_gate(
-            uncertainty={"rationale": "Some rationale"}
-        )
+        result = uncertainty_completeness_gate(uncertainty={"rationale": "Some rationale"})
         assert result["valid"] is False
         assert "confidence" in result["missing_fields"]
 
     def test_missing_rationale_fails(self):
-        result = uncertainty_completeness_gate(
-            uncertainty={"confidence": 0.5}
-        )
+        result = uncertainty_completeness_gate(uncertainty={"confidence": 0.5})
         assert result["valid"] is False
 
     def test_out_of_range_confidence_fails(self):
-        result = uncertainty_completeness_gate(
-            uncertainty={"confidence": 1.5, "rationale": "test"}
-        )
+        result = uncertainty_completeness_gate(uncertainty={"confidence": 1.5, "rationale": "test"})
         assert result["valid"] is False
 
 

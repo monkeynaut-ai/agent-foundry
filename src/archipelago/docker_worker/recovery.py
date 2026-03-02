@@ -1,7 +1,6 @@
 """Crash recovery: persist workspace state and restore into fresh containers."""
 
 import shutil
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +8,7 @@ from pydantic import BaseModel
 
 from archipelago.docker_worker.container import ContainerHandle, ContainerManager
 from archipelago.docker_worker.models import ProgressEvent, ResumePoint
-from archipelago.docker_worker.progress import get_resume_point, parse_progress
+from archipelago.docker_worker.progress import parse_progress
 from archipelago.docker_worker.session import SessionHandle, SessionManager
 
 

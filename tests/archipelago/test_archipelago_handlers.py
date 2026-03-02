@@ -1,5 +1,6 @@
 """Archipelago handlers — unit tests with mocked LLM."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import jsonschema
@@ -22,8 +23,6 @@ from archipelago.models import (
     TestPlan,
     TestResults,
 )
-
-from pathlib import Path
 
 PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 
@@ -111,9 +110,7 @@ class TestStrategyHandler:
         state = {"product_brief_input": "Build a test runner"}
         result = strategy_handler(state)
 
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml")
         jsonschema.validate({"product_brief": result["product_brief"]}, spec.outputs_schema)
 
     def test_given_empty_input_when_handler_called_then_raises_value_error(self):
@@ -149,10 +146,10 @@ class TestArchitectureHandler:
         state = {"product_brief": _mock_product_brief().model_dump()}
         result = architecture_handler(state)
 
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml"
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml")
+        jsonschema.validate(
+            {"feature_architecture": result["feature_architecture"]}, spec.outputs_schema
         )
-        jsonschema.validate({"feature_architecture": result["feature_architecture"]}, spec.outputs_schema)
 
 
 class TestSpecHandler:
@@ -162,10 +159,7 @@ class TestSpecHandler:
     ):
         mock_llm = MagicMock()
         mock_response = MagicMock()
-        mock_response.content = '{"feature_spec": %s, "test_plan": %s}' % (
-            _mock_feature_spec().model_dump_json(),
-            _mock_test_plan().model_dump_json(),
-        )
+        mock_response.content = f'{{"feature_spec": {_mock_feature_spec().model_dump_json()}, "test_plan": {_mock_test_plan().model_dump_json()}}}'
         mock_llm.invoke.return_value = mock_response
         mock_get_llm.return_value = mock_llm
 
@@ -180,19 +174,14 @@ class TestSpecHandler:
     ):
         mock_llm = MagicMock()
         mock_response = MagicMock()
-        mock_response.content = '{"feature_spec": %s, "test_plan": %s}' % (
-            _mock_feature_spec().model_dump_json(),
-            _mock_test_plan().model_dump_json(),
-        )
+        mock_response.content = f'{{"feature_spec": {_mock_feature_spec().model_dump_json()}, "test_plan": {_mock_test_plan().model_dump_json()}}}'
         mock_llm.invoke.return_value = mock_response
         mock_get_llm.return_value = mock_llm
 
         state = {"feature_architecture": _mock_feature_architecture().model_dump()}
         result = spec_handler(state)
 
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml")
         combined = {"feature_spec": result["feature_spec"], "test_plan": result["test_plan"]}
         jsonschema.validate(combined, spec.outputs_schema)
 
@@ -204,10 +193,7 @@ class TestDevTestHandler:
     ):
         mock_llm = MagicMock()
         mock_response = MagicMock()
-        mock_response.content = '{"code_patch": %s, "test_results": %s}' % (
-            _mock_code_patch().model_dump_json(),
-            _mock_test_results().model_dump_json(),
-        )
+        mock_response.content = f'{{"code_patch": {_mock_code_patch().model_dump_json()}, "test_results": {_mock_test_results().model_dump_json()}}}'
         mock_llm.invoke.return_value = mock_response
         mock_get_llm.return_value = mock_llm
 
@@ -225,10 +211,7 @@ class TestDevTestHandler:
     ):
         mock_llm = MagicMock()
         mock_response = MagicMock()
-        mock_response.content = '{"code_patch": %s, "test_results": %s}' % (
-            _mock_code_patch().model_dump_json(),
-            _mock_test_results().model_dump_json(),
-        )
+        mock_response.content = f'{{"code_patch": {_mock_code_patch().model_dump_json()}, "test_results": {_mock_test_results().model_dump_json()}}}'
         mock_llm.invoke.return_value = mock_response
         mock_get_llm.return_value = mock_llm
 
@@ -238,9 +221,7 @@ class TestDevTestHandler:
         }
         result = dev_test_handler(state)
 
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml")
         combined = {"code_patch": result["code_patch"], "test_results": result["test_results"]}
         jsonschema.validate(combined, spec.outputs_schema)
 

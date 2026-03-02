@@ -91,9 +91,7 @@ def _valid_test_results_dump() -> dict:
 
 class TestStrategySpec:
     def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml")
         assert isinstance(spec, CapabilitySpec)
         assert spec.name == "strategy_generate_product_brief"
         assert spec.version == "1.0.0"
@@ -102,18 +100,14 @@ class TestStrategySpec:
     def test_given_strategy_spec_when_outputs_schema_validates_model_dump_then_passes(
         self,
     ):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml")
         data = {"product_brief": _valid_product_brief_dump()}
         jsonschema.validate(data, spec.outputs_schema)
 
 
 class TestArchitectureSpec:
     def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml")
         assert isinstance(spec, CapabilitySpec)
         assert spec.name == "architecture_generate_feature_arch"
         assert spec.version == "1.0.0"
@@ -122,9 +116,7 @@ class TestArchitectureSpec:
     def test_given_architecture_spec_when_outputs_schema_validates_model_dump_then_passes(
         self,
     ):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml")
         data = {"feature_architecture": _valid_feature_architecture_dump()}
         jsonschema.validate(data, spec.outputs_schema)
 
@@ -134,9 +126,7 @@ class TestArchitectureSpec:
 
 class TestSpecSpec:
     def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml")
         assert isinstance(spec, CapabilitySpec)
         assert spec.name == "spec_generate_feature_spec"
         assert spec.version == "1.0.0"
@@ -145,9 +135,7 @@ class TestSpecSpec:
     def test_given_spec_spec_when_outputs_schema_validates_model_dump_then_passes(
         self,
     ):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml")
         data = {
             "feature_spec": _valid_feature_spec_dump(),
             "test_plan": _valid_test_plan_dump(),
@@ -157,18 +145,14 @@ class TestSpecSpec:
 
 class TestDevSpec:
     def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml")
         assert isinstance(spec, CapabilitySpec)
         assert spec.name == "dev_implement_feature_tdd"
         assert spec.version == "1.0.0"
         assert "archipelago" in spec.tags
 
     def test_given_dev_spec_when_outputs_schema_validates_model_dump_then_passes(self):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml")
         data = {
             "code_patch": _valid_code_patch_dump(),
             "test_results": _valid_test_results_dump(),
@@ -185,15 +169,11 @@ class TestRegistryIntegration:
     ):
         assert len(registry) == 12
 
-    def test_given_registry_when_searched_by_archipelago_tag_then_returns_exactly_4(
-        self, registry
-    ):
+    def test_given_registry_when_searched_by_archipelago_tag_then_returns_exactly_4(self, registry):
         results = registry.search(tags=["archipelago"])
         assert len(results) == 5
 
-    def test_given_each_archipelago_spec_when_name_queried_then_found_in_registry(
-        self, registry
-    ):
+    def test_given_each_archipelago_spec_when_name_queried_then_found_in_registry(self, registry):
         for name in ARCHIPELAGO_SPEC_NAMES:
             assert registry.get(name) is not None, f"Missing capability: {name}"
 
@@ -202,9 +182,7 @@ class TestRegistryIntegration:
         names = [s.name for s in results]
         assert names == sorted(names)
 
-    def test_given_archipelago_tag_search_then_returns_only_archipelago_specs(
-        self, registry
-    ):
+    def test_given_archipelago_tag_search_then_returns_only_archipelago_specs(self, registry):
         results = registry.search(tags=["archipelago"])
         names = {s.name for s in results}
         assert names == set(ARCHIPELAGO_SPEC_NAMES)

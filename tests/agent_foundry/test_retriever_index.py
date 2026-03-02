@@ -5,7 +5,6 @@ Feature flag: FF_RETRIEVER (default off until S2.3).
 """
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 

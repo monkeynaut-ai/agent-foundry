@@ -36,9 +36,7 @@ def test_cli_json_output(monkeypatch, capsys):
     out = capsys.readouterr().out
     payload = json.loads(out)
     assert payload["question"] == "What should we do?"
-    run_demo_mock.assert_called_once_with(
-        "What should we do?", domain="general", constraints=[]
-    )
+    run_demo_mock.assert_called_once_with("What should we do?", domain="general", constraints=[])
 
 
 def test_cli_human_readable_output(monkeypatch, capsys):
@@ -55,7 +53,11 @@ def test_cli_human_readable_output(monkeypatch, capsys):
 
 def test_cli_gate_failure_exits_nonzero(monkeypatch):
     monkeypatch.setattr("sys.argv", ["agent-foundry-demo", "What should we do?"])
-    with patch("agent_foundry.demo.cli.run_demo", return_value=_sample_result(gate_failure="schema")):
-        with pytest.raises(SystemExit) as exc_info:
-            cli.main()
+    with (
+        patch(
+            "agent_foundry.demo.cli.run_demo", return_value=_sample_result(gate_failure="schema")
+        ),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        cli.main()
     assert exc_info.value.code == 1

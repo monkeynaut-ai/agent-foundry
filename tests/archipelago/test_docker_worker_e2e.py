@@ -21,8 +21,11 @@ def _stub_strategy(state: dict[str, Any]) -> dict[str, Any]:
     return {
         **state,
         "product_brief": {
-            "name": "Test", "problem_statement": "Test",
-            "target_personas": ["eng"], "success_metrics": ["m1"], "constraints": [],
+            "name": "Test",
+            "problem_statement": "Test",
+            "target_personas": ["eng"],
+            "success_metrics": ["m1"],
+            "constraints": [],
         },
     }
 
@@ -31,8 +34,11 @@ def _stub_architecture(state: dict[str, Any]) -> dict[str, Any]:
     return {
         **state,
         "feature_architecture": {
-            "feature_name": "Test", "components": ["c1"],
-            "data_flow": "a->b", "technology_choices": ["Python"], "risks": [],
+            "feature_name": "Test",
+            "components": ["c1"],
+            "data_flow": "a->b",
+            "technology_choices": ["Python"],
+            "risks": [],
         },
     }
 
@@ -41,7 +47,8 @@ def _stub_spec(state: dict[str, Any]) -> dict[str, Any]:
     return {
         **state,
         "feature_spec": {
-            "title": "Test", "objective": "Test",
+            "title": "Test",
+            "objective": "Test",
             "acceptance_criteria": ["ac1"],
             "pr_slices": [{"title": "s1", "commits": ["c1"]}],
         },
@@ -64,13 +71,22 @@ def _stub_docker_worker(state: dict[str, Any]) -> dict[str, Any]:
             "result_summary": "Feature completed",
             "workspace_ref": "ws-test",
             "patches": [
-                {"pr_id": "pr-1", "branch_name": "feat/t", "files_changed": ["f.py"], "diff_summary": "diff"},
+                {
+                    "pr_id": "pr-1",
+                    "branch_name": "feat/t",
+                    "files_changed": ["f.py"],
+                    "diff_summary": "diff",
+                },
             ],
             "evidence": [
                 {
-                    "commit_id": "abc", "pr_id": "pr-1",
-                    "test_commands_run": ["pytest"], "test_output": "ok",
-                    "tests_passed": 5, "tests_failed": 0, "all_green": True,
+                    "commit_id": "abc",
+                    "pr_id": "pr-1",
+                    "test_commands_run": ["pytest"],
+                    "test_output": "ok",
+                    "tests_passed": 5,
+                    "tests_failed": 0,
+                    "all_green": True,
                 },
             ],
             "status": "completed",
@@ -111,12 +127,8 @@ class TestEndToEnd:
         assert "worker_result" in final_state
         assert final_state["worker_result"]["status"] == "completed"
 
-    def test_given_valid_input_when_pipeline_runs_then_worker_result_validates(
-        self, final_state
-    ):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "coding_implement_feature_from_spec.yaml"
-        )
+    def test_given_valid_input_when_pipeline_runs_then_worker_result_validates(self, final_state):
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "coding_implement_feature_from_spec.yaml")
         jsonschema.validate(final_state["worker_result"], spec.outputs_schema)
 
     def test_given_pipeline_with_tracer_when_run_then_docker_worker_span_emitted(
@@ -131,12 +143,10 @@ class TestEndToEnd:
                 result = original(state)
                 tracer.end_span(span, "ok")
                 return result
+
             return handler
 
-        traced = {
-            cap: _make_traced(nid, STUB_HANDLERS[cap])
-            for nid, cap in node_caps.items()
-        }
+        traced = {cap: _make_traced(nid, STUB_HANDLERS[cap]) for nid, cap in node_caps.items()}
         graph = compile_plan(plan, registry, handler_registry=traced)
         graph.invoke({"product_brief_input": "test"})
 
@@ -145,9 +155,7 @@ class TestEndToEnd:
         assert len(worker_spans) == 1
         assert worker_spans[0]["status"] == "ok"
 
-    def test_given_pipeline_with_tracer_when_run_then_all_5_spans_emitted(
-        self, registry, plan
-    ):
+    def test_given_pipeline_with_tracer_when_run_then_all_5_spans_emitted(self, registry, plan):
         tracer = ExecutionTracer()
         node_caps = {n.id: n.capability for n in plan.nodes}
 
@@ -157,12 +165,10 @@ class TestEndToEnd:
                 result = original(state)
                 tracer.end_span(span, "ok")
                 return result
+
             return handler
 
-        traced = {
-            cap: _make_traced(nid, STUB_HANDLERS[cap])
-            for nid, cap in node_caps.items()
-        }
+        traced = {cap: _make_traced(nid, STUB_HANDLERS[cap]) for nid, cap in node_caps.items()}
         graph = compile_plan(plan, registry, handler_registry=traced)
         graph.invoke({"product_brief_input": "test"})
 

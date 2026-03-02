@@ -4,9 +4,9 @@ Benchmark: 100 queries; median <= 50ms, p95 <= 200ms.
 Marked @pytest.mark.benchmark — excluded from normal test runs.
 """
 
+import os
 import statistics
 import time
-import os
 from pathlib import Path
 
 import pytest

@@ -11,9 +11,7 @@ from archipelago.docker_worker.session import SessionHandle, SessionManager
 
 logger = logging.getLogger(__name__)
 
-_INTERRUPT_PATTERN = re.compile(
-    r"^ARCHIPELAGO_NEED_(CLARIFICATION|PERMISSION)\s+(\{.*\})$"
-)
+_INTERRUPT_PATTERN = re.compile(r"^ARCHIPELAGO_NEED_(CLARIFICATION|PERMISSION)\s+(\{.*\})$")
 
 
 class InterruptDetector:
@@ -27,9 +25,7 @@ class InterruptDetector:
         self._on_clarification = on_clarification
         self._on_permission = on_permission
 
-    def scan_line(
-        self, line: str
-    ) -> ClarificationRequest | PermissionRequest | None:
+    def scan_line(self, line: str) -> ClarificationRequest | PermissionRequest | None:
         """Scan a single line for interrupt markers.
 
         Returns the parsed request model, or None if no marker found.
@@ -49,19 +45,19 @@ class InterruptDetector:
 
         if kind == "CLARIFICATION":
             try:
-                request = ClarificationRequest(**payload)
+                clarification = ClarificationRequest(**payload)
                 if self._on_clarification:
-                    self._on_clarification(request)
-                return request
+                    self._on_clarification(clarification)
+                return clarification
             except Exception:
                 logger.warning("Invalid ClarificationRequest payload: %s", payload)
                 return None
         else:
             try:
-                request = PermissionRequest(**payload)
+                permission = PermissionRequest(**payload)
                 if self._on_permission:
-                    self._on_permission(request)
-                return request
+                    self._on_permission(permission)
+                return permission
             except Exception:
                 logger.warning("Invalid PermissionRequest payload: %s", payload)
                 return None
@@ -132,9 +128,7 @@ class InterruptHandler:
 
         return state
 
-    def resume_after_response(
-        self, response_text: str, session_handle: SessionHandle
-    ) -> None:
+    def resume_after_response(self, response_text: str, session_handle: SessionHandle) -> None:
         """Send a response and resume the session."""
         self._session_manager.send_input(session_handle, response_text)
         self._session_manager.resume(session_handle)

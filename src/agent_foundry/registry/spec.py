@@ -123,10 +123,9 @@ def _validate_spec(data: dict, path: Path) -> CapabilitySpec:
         return CapabilitySpec(**data)
     except ValidationError as e:
         missing = [
-            err["loc"][0]
+            str(err["loc"][0])
             for err in e.errors()
-            if err["type"] == "missing"
-            and len(err["loc"]) > 0
+            if err["type"] == "missing" and len(err["loc"]) > 0
         ]
         raise CapabilitySpecValidationError(
             message=f"Validation error in {path}: {e}",

@@ -66,9 +66,11 @@ class TestFeatureFlag:
     """FF_RETRIEVER controls retrieval availability."""
 
     def test_flag_off_raises_error(self, retrieval_api):
-        with patch("agent_foundry.retriever.retrieval.FF_RETRIEVER", False):
-            with pytest.raises(RuntimeError, match="retriever.*disabled"):
-                retrieval_api.retrieve("rag_retriever")
+        with (
+            patch("agent_foundry.retriever.retrieval.FF_RETRIEVER", False),
+            pytest.raises(RuntimeError, match=r"retriever.*disabled"),
+        ):
+            retrieval_api.retrieve("rag_retriever")
 
     def test_flag_on_works(self, retrieval_api):
         with patch("agent_foundry.retriever.retrieval.FF_RETRIEVER", True):

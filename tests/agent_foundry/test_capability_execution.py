@@ -27,15 +27,15 @@ def _make_spec(
         name="test_cap",
         description="A test capability",
         version="1.0.0",
-        implementation=ImplementationPointer(
-            module="builtins", class_name="dict"
-        ),
-        inputs_schema=inputs_schema or {
+        implementation=ImplementationPointer(module="builtins", class_name="dict"),
+        inputs_schema=inputs_schema
+        or {
             "type": "object",
             "properties": {"query": {"type": "string"}},
             "required": ["query"],
         },
-        outputs_schema=outputs_schema or {
+        outputs_schema=outputs_schema
+        or {
             "type": "object",
             "properties": {"result": {"type": "string"}},
             "required": ["result"],

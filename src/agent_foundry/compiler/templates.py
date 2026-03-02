@@ -9,7 +9,11 @@ _TEMPLATES: dict[str, list[dict]] = {
     "gather_verify_analyze_recommend": [
         {"id": "gather", "capability": "rag_retriever", "config": {}},
         {"id": "verify", "capability": "citation_validator", "config": {}},
-        {"id": "analyze", "capability": "structured_output_pydantic", "config": {"role": "analyzer"}},
+        {
+            "id": "analyze",
+            "capability": "structured_output_pydantic",
+            "config": {"role": "analyzer"},
+        },
         {"id": "recommend", "capability": "evidence_first_contract", "config": {}},
     ],
     "plan_execute_test_fix_retest": [
@@ -38,4 +42,5 @@ def expand_template(template_name: str) -> list[dict]:
         raise ValueError(f"Unknown template: {template_name}")
     # Return deep copy to prevent mutation
     import copy
+
     return copy.deepcopy(_TEMPLATES[template_name])

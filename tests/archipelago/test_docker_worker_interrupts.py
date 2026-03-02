@@ -1,14 +1,10 @@
 """Docker worker interrupt protocol — detection, handling, and resume tests."""
 
-import json
 from unittest.mock import MagicMock
-
-import pytest
 
 from archipelago.docker_worker.interrupts import InterruptDetector, InterruptHandler
 from archipelago.docker_worker.models import ClarificationRequest, PermissionRequest
 from archipelago.docker_worker.session import SessionHandle, SessionManager
-
 
 # ── Commit 1: InterruptDetector ──
 
@@ -61,7 +57,9 @@ class TestInterruptHandler:
     def _make_handler(self, auto_approve=False):
         session_mgr = MagicMock(spec=SessionManager)
         detector = InterruptDetector()
-        return InterruptHandler(session_mgr, detector, auto_approve_low_risk=auto_approve), session_mgr
+        return InterruptHandler(
+            session_mgr, detector, auto_approve_low_risk=auto_approve
+        ), session_mgr
 
     def test_given_blocking_clarification_when_handled_then_session_paused(self):
         handler, session_mgr = self._make_handler()
@@ -74,9 +72,7 @@ class TestInterruptHandler:
         self,
     ):
         handler, _ = self._make_handler()
-        request = ClarificationRequest(
-            question="Which DB?", options=["pg"], blocking=True
-        )
+        request = ClarificationRequest(question="Which DB?", options=["pg"], blocking=True)
         session = SessionHandle(exec_id="e1", container_id="c1")
         result = handler.handle_interrupt(request, session, {"existing": True})
         assert "breakpoint_payload" in result
@@ -86,9 +82,7 @@ class TestInterruptHandler:
 
     def test_given_high_risk_permission_when_handled_then_session_paused(self):
         handler, session_mgr = self._make_handler()
-        request = PermissionRequest(
-            action="delete prod", risk_level="high", why_needed="cleanup"
-        )
+        request = PermissionRequest(action="delete prod", risk_level="high", why_needed="cleanup")
         session = SessionHandle(exec_id="e1", container_id="c1")
         handler.handle_interrupt(request, session, {})
         session_mgr.pause.assert_called_once_with(session)

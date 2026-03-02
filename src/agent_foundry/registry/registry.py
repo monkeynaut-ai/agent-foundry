@@ -42,7 +42,10 @@ def _load_directory_specs(directory: Path) -> dict[str, CapabilitySpec]:
     for name, paths in seen_paths.items():
         if len(paths) > 1:
             raise DuplicateCapabilityError(
-                message=f"Duplicate capability name '{name}' found in: {', '.join(str(p) for p in paths)}",
+                message=(
+                    f"Duplicate capability name '{name}' found in:"
+                    f" {', '.join(str(p) for p in paths)}"
+                ),
                 capability_name=name,
                 file_paths=paths,
             )
@@ -103,10 +106,7 @@ class CapabilityRegistry:
     def search(self, tags: list[str]) -> list[CapabilitySpec]:
         """Search for capabilities matching all given tags, sorted by name."""
         tag_set = set(tags)
-        matches = [
-            spec for spec in self._specs.values()
-            if tag_set.issubset(set(spec.tags))
-        ]
+        matches = [spec for spec in self._specs.values() if tag_set.issubset(set(spec.tags))]
         return sorted(matches, key=lambda s: s.name)
 
     def __len__(self) -> int:

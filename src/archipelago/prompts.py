@@ -31,8 +31,8 @@ Return a JSON object with these fields:
 - risks: A list of identified risks (can be empty)
 """
 
-SPEC_PROMPT = """You are a technical specification writer. Given the following feature architecture, \
-produce a feature specification and test plan.
+SPEC_PROMPT = """You are a technical specification writer. Given the following feature \
+architecture, produce a feature specification and test plan.
 
 Architecture:
 - Feature: {feature_name}

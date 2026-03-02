@@ -32,9 +32,7 @@ def registry():
 
 
 class TestParsePlan:
-    def test_given_pipeline_json_when_parsed_then_goal_is_archipelago_pipeline(
-        self, plan
-    ):
+    def test_given_pipeline_json_when_parsed_then_goal_is_archipelago_pipeline(self, plan):
         assert plan.goal == "archipelago-pipeline"
 
     def test_given_pipeline_json_when_parsed_then_has_5_nodes(self, plan):
@@ -51,9 +49,7 @@ class TestParsePlan:
     ):
         assert "spec_approval_gate" in plan.breakpoints
 
-    def test_given_pipeline_json_when_round_tripped_then_no_field_loss(
-        self, plan_data
-    ):
+    def test_given_pipeline_json_when_round_tripped_then_no_field_loss(self, plan_data):
         plan = GraphWiringPlan(**plan_data)
         dumped = json.loads(plan.model_dump_json())
         reconstructed = GraphWiringPlan(**dumped)
@@ -76,33 +72,23 @@ class TestValidatePlan:
     ):
         validate_plan(plan, registry)
 
-    def test_given_pipeline_plan_when_duplicate_check_runs_then_no_duplicate_ids(
-        self, plan
-    ):
+    def test_given_pipeline_plan_when_duplicate_check_runs_then_no_duplicate_ids(self, plan):
         node_ids = [n.id for n in plan.nodes]
         assert len(node_ids) == len(set(node_ids))
 
-    def test_given_pipeline_plan_when_dangling_edge_check_runs_then_no_dangles(
-        self, plan
-    ):
+    def test_given_pipeline_plan_when_dangling_edge_check_runs_then_no_dangles(self, plan):
         node_ids = {n.id for n in plan.nodes}
         for edge in plan.edges:
             assert edge.source in node_ids, f"Dangling source: {edge.source}"
             assert edge.target in node_ids, f"Dangling target: {edge.target}"
 
-    def test_given_pipeline_plan_when_breakpoint_check_runs_then_all_breakpoints_valid(
-        self, plan
-    ):
+    def test_given_pipeline_plan_when_breakpoint_check_runs_then_all_breakpoints_valid(self, plan):
         node_ids = {n.id for n in plan.nodes}
         for bp in plan.breakpoints:
             assert bp in node_ids, f"Breakpoint references non-existent node: {bp}"
 
-    def test_given_pipeline_plan_when_version_coverage_check_runs_then_all_covered(
-        self, plan
-    ):
+    def test_given_pipeline_plan_when_version_coverage_check_runs_then_all_covered(self, plan):
         for node in plan.nodes:
             assert node.capability in plan.capability_versions, (
                 f"Missing version for capability: {node.capability}"
             )
-
-

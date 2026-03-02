@@ -11,7 +11,7 @@ from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.planner.validators import validate_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.registry import CapabilityRegistry
-from archipelago.docker_worker.handler import DOCKER_WORKER_HANDLERS, docker_worker_handler
+from archipelago.docker_worker.handler import docker_worker_handler
 from archipelago.docker_worker.models import WorkerConstraints
 
 PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
@@ -58,9 +58,7 @@ class TestDockerWorkerHandler:
         assert "worker_result" in result
 
     @patch("archipelago.docker_worker.handler.docker")
-    def test_given_valid_worker_input_when_called_then_session_launched(
-        self, mock_docker
-    ):
+    def test_given_valid_worker_input_when_called_then_session_launched(self, mock_docker):
         mock_client = MagicMock()
         mock_container = MagicMock()
         mock_container.id = "c1"
@@ -74,9 +72,7 @@ class TestDockerWorkerHandler:
         mock_container.client.api.exec_create.assert_called_once()
 
     @patch("archipelago.docker_worker.handler.docker")
-    def test_given_successful_cc_run_when_called_then_worker_result_returned(
-        self, mock_docker
-    ):
+    def test_given_successful_cc_run_when_called_then_worker_result_returned(self, mock_docker):
         mock_client = MagicMock()
         mock_container = MagicMock()
         mock_container.id = "c1"
@@ -91,9 +87,7 @@ class TestDockerWorkerHandler:
         assert result["worker_result"]["status"] in ("completed", "failed")
 
     @patch("archipelago.docker_worker.handler.docker")
-    def test_given_docker_unavailable_when_called_then_status_is_failed(
-        self, mock_docker
-    ):
+    def test_given_docker_unavailable_when_called_then_status_is_failed(self, mock_docker):
         mock_docker.from_env.side_effect = Exception("Docker not running")
 
         state = {"worker_input": _valid_worker_input()}
@@ -102,9 +96,7 @@ class TestDockerWorkerHandler:
         assert "Docker unavailable" in result["worker_result"]["result_summary"]
 
     @patch("archipelago.docker_worker.handler.docker")
-    def test_given_handler_completes_when_called_then_container_destroyed(
-        self, mock_docker
-    ):
+    def test_given_handler_completes_when_called_then_container_destroyed(self, mock_docker):
         mock_client = MagicMock()
         mock_container = MagicMock()
         mock_container.id = "c1"
@@ -119,9 +111,7 @@ class TestDockerWorkerHandler:
 
 
 class TestPipelineIntegration:
-    def test_given_updated_plan_when_validated_then_all_7_checks_pass(
-        self, plan, registry
-    ):
+    def test_given_updated_plan_when_validated_then_all_7_checks_pass(self, plan, registry):
         validate_plan(plan, registry)
 
     def test_given_handler_registry_with_docker_worker_when_compile_plan_called_then_compiles(

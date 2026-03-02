@@ -23,47 +23,76 @@ def _make_logging_handler(node_id: str, state_updates: dict[str, Any]):
     def handler(state: dict[str, Any]) -> dict[str, Any]:
         _execution_log.append(node_id)
         return {**state, **state_updates}
+
     return handler
 
 
 STUB_HANDLERS = {
-    "strategy_generate_product_brief": _make_logging_handler("strategy", {
-        "product_brief": {
-            "name": "Test", "problem_statement": "Test",
-            "target_personas": ["eng"], "success_metrics": ["m1"], "constraints": [],
+    "strategy_generate_product_brief": _make_logging_handler(
+        "strategy",
+        {
+            "product_brief": {
+                "name": "Test",
+                "problem_statement": "Test",
+                "target_personas": ["eng"],
+                "success_metrics": ["m1"],
+                "constraints": [],
+            },
         },
-    }),
-    "architecture_generate_feature_arch": _make_logging_handler("architecture", {
-        "feature_architecture": {
-            "feature_name": "Test", "components": ["c1"],
-            "data_flow": "a->b", "technology_choices": ["Python"], "risks": [],
+    ),
+    "architecture_generate_feature_arch": _make_logging_handler(
+        "architecture",
+        {
+            "feature_architecture": {
+                "feature_name": "Test",
+                "components": ["c1"],
+                "data_flow": "a->b",
+                "technology_choices": ["Python"],
+                "risks": [],
+            },
         },
-    }),
-    "spec_generate_feature_spec": _make_logging_handler("spec", {
-        "feature_spec": {
-            "title": "Test", "objective": "Test",
-            "acceptance_criteria": ["ac1"],
-            "pr_slices": [{"title": "s1", "commits": ["c1"]}],
+    ),
+    "spec_generate_feature_spec": _make_logging_handler(
+        "spec",
+        {
+            "feature_spec": {
+                "title": "Test",
+                "objective": "Test",
+                "acceptance_criteria": ["ac1"],
+                "pr_slices": [{"title": "s1", "commits": ["c1"]}],
+            },
+            "test_plan": {
+                "feature_name": "Test",
+                "test_cases": [{"name": "t1", "type": "unit"}],
+                "coverage_targets": ["handler"],
+            },
         },
-        "test_plan": {
-            "feature_name": "Test",
-            "test_cases": [{"name": "t1", "type": "unit"}],
-            "coverage_targets": ["handler"],
+    ),
+    "human_approval_gate": _make_logging_handler(
+        "spec_approval_gate",
+        {
+            "approved": True,
+            "approver": "auto",
         },
-    }),
-    "human_approval_gate": _make_logging_handler("spec_approval_gate", {
-        "approved": True, "approver": "auto",
-    }),
-    "coding_implement_feature_from_spec": _make_logging_handler("dev_test", {
-        "code_patch": {
-            "feature_name": "Test", "files_changed": ["f.py"],
-            "diff_summary": "diff", "branch_name": "feat/t",
+    ),
+    "coding_implement_feature_from_spec": _make_logging_handler(
+        "dev_test",
+        {
+            "code_patch": {
+                "feature_name": "Test",
+                "files_changed": ["f.py"],
+                "diff_summary": "diff",
+                "branch_name": "feat/t",
+            },
+            "test_results": {
+                "feature_name": "Test",
+                "tests_passed": 1,
+                "tests_failed": 0,
+                "test_output": "ok",
+                "all_green": True,
+            },
         },
-        "test_results": {
-            "feature_name": "Test", "tests_passed": 1, "tests_failed": 0,
-            "test_output": "ok", "all_green": True,
-        },
-    }),
+    ),
 }
 
 

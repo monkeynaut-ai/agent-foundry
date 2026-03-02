@@ -28,8 +28,10 @@ HANDLERS = {
 }
 
 EVAL_GATE_CAPABILITIES = {
-    "schema_validator", "citation_validator",
-    "uncertainty_completeness_validator", "evidence_first_contract",
+    "schema_validator",
+    "citation_validator",
+    "uncertainty_completeness_validator",
+    "evidence_first_contract",
 }
 
 

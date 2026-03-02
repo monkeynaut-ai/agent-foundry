@@ -6,7 +6,6 @@ S3.6: capability_versions must cover all node types; loops require termination.
 """
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -44,6 +43,7 @@ def _make_plan(**overrides) -> GraphWiringPlan:
 
 # --- S3.4: Tool Calling Contract ---
 
+
 class TestToolCallingContract:
     """tool_calling nodes require tools list with unique names."""
 
@@ -73,7 +73,7 @@ class TestToolCallingContract:
             ],
             capability_versions={"tool_calling": "1.0.0"},
         )
-        with pytest.raises(PlanValidationError, match="duplicate.*tool"):
+        with pytest.raises(PlanValidationError, match=r"duplicate.*tool"):
             validate_plan(plan, registry)
 
     def test_tool_calling_with_valid_tools_passes(self, registry):
@@ -92,6 +92,7 @@ class TestToolCallingContract:
 
 
 # --- S3.5: Breakpoints and Persistence ---
+
 
 class TestBreakpoints:
     """Breakpoints must reference existing nodes."""
@@ -124,6 +125,7 @@ class TestPersistenceValidation:
 
 # --- S3.6: Versioning + Loop Termination ---
 
+
 class TestCapabilityVersionsCoverage:
     """capability_versions must cover all node types."""
 
@@ -148,7 +150,7 @@ class TestLoopTermination:
                 {"source": "n2", "target": "n1"},  # Loop!
             ]
         )
-        with pytest.raises(PlanValidationError, match="loop.*termination|cycle"):
+        with pytest.raises(PlanValidationError, match=r"loop.*termination|cycle"):
             validate_plan(plan, registry)
 
     def test_loop_with_condition_passes(self, registry):

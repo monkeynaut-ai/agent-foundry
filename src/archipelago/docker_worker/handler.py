@@ -2,20 +2,16 @@
 
 import logging
 import time
-from typing import Any
+from typing import Any, Literal
 
 import docker
 
 from archipelago.docker_worker.container import ContainerManager
 from archipelago.docker_worker.interrupts import InterruptDetector, InterruptHandler
 from archipelago.docker_worker.models import (
-    CommitEvidence,
-    PatchInfo,
-    WorkerConstraints,
     WorkerInput,
     WorkerResult,
 )
-from archipelago.docker_worker.progress import get_resume_point, parse_progress
 from archipelago.docker_worker.recovery import persist_workspace_state
 from archipelago.docker_worker.session import SessionManager
 
@@ -50,7 +46,8 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     session_mgr = SessionManager(container_mgr)
     detector = InterruptDetector()
     interrupt_handler = InterruptHandler(
-        session_mgr, detector,
+        session_mgr,
+        detector,
         auto_approve_low_risk=worker_input.constraints.network_policy != "none",
     )
 
@@ -78,16 +75,16 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         container_mgr.start(container_handle, repo_ref=worker_input.repo_ref)
 
         # Launch CC session
-        session = session_mgr.launch_session(
-            container_handle, "claude-code --yes"
-        )
+        session = session_mgr.launch_session(container_handle, "claude-code --yes")
 
         # Wait for session to exit or interrupt
         deadline = time.time() + worker_input.constraints.timeout_seconds
         while session.status == "running" and time.time() < deadline:
             if interrupt_request is not None:
                 updated = interrupt_handler.handle_interrupt(
-                    interrupt_request, session, state,
+                    interrupt_request,
+                    session,
+                    state,
                 )
                 if "breakpoint_payload" in updated:
                     return {**state, **updated, "worker_result": None}
@@ -95,6 +92,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
             time.sleep(0.1)
 
         # Determine status
+        status: Literal["completed", "failed", "timed_out"]
         if time.time() >= deadline:
             status = "timed_out"
         elif session.exit_code == 0:
@@ -104,7 +102,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
 
         # Parse progress
         from pathlib import Path
-        workspace_path = Path(container_handle.workspace_path)
+
         # In real usage, this would read from the container's mounted volume
         # For now, build result from available state
 
@@ -122,6 +120,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         if container_handle:
             try:
                 from pathlib import Path
+
                 persist_workspace_state(
                     Path(container_handle.workspace_path),
                     Path("/tmp/archipelago-recovery"),
@@ -139,10 +138,10 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         return {**state, "worker_result": result.model_dump()}
     finally:
         if container_handle:
-            try:
+            import contextlib
+
+            with contextlib.suppress(Exception):
                 container_mgr.destroy(container_handle)
-            except Exception:
-                pass
 
 
 DOCKER_WORKER_HANDLERS: dict[str, Any] = {

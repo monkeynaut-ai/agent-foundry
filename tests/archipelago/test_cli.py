@@ -1,12 +1,7 @@
 """Archipelago CLI — unit tests."""
 
-import subprocess
-import sys
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 import yaml
 
 
@@ -15,7 +10,10 @@ class TestCLI:
         input_file = tmp_path / "input.yaml"
         input_file.write_text(yaml.dump({"product_brief_input": "Build a task management app"}))
 
-        fake_result = {"product_brief_input": "Build a task management app", "product_brief": {"name": "Test"}}
+        fake_result = {
+            "product_brief_input": "Build a task management app",
+            "product_brief": {"name": "Test"},
+        }
 
         with patch("archipelago.cli.run_archipelago", return_value=fake_result) as mock_run:
             from archipelago.cli import main

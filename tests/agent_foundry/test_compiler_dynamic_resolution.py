@@ -1,6 +1,5 @@
 """Tests for dynamic handler resolution in the compiler via CapabilityRegistry."""
 
-from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -9,22 +8,24 @@ import pytest
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.compiler.errors import CapabilityInstantiationError
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.errors import CapabilityExecutionError
 from agent_foundry.registry.registry import CapabilityRegistry
 from agent_foundry.registry.spec import (
     CapabilitySpec,
     ImplementationPointer,
-    QualityControls,
 )
 
 
-def _make_spec(name, module, class_name, method="__call__", inputs_schema=None, outputs_schema=None):
+def _make_spec(
+    name, module, class_name, method="__call__", inputs_schema=None, outputs_schema=None
+):
     return CapabilitySpec(
         name=name,
         description="test",
         version="1.0.0",
         implementation=ImplementationPointer(
-            module=module, class_name=class_name, method=method,
+            module=module,
+            class_name=class_name,
+            method=method,
         ),
         inputs_schema=inputs_schema or {"type": "object", "properties": {}},
         outputs_schema=outputs_schema or {"type": "object", "properties": {}},
@@ -46,7 +47,6 @@ def _explicit_handler(state: dict[str, Any]) -> dict[str, Any]:
 
 
 class TestExplicitHandlerPriority:
-
     def test_given_capability_in_explicit_registry_when_compiled_then_uses_explicit_handler(self):
         spec = _make_spec("test_cap", "tests.agent_foundry.stub_handler", "StubHandler")
         registry = CapabilityRegistry(specs={"test_cap": spec})
@@ -88,8 +88,9 @@ class TestExplicitHandlerPriority:
 
 
 class TestDynamicResolution:
-
-    def test_given_capability_not_in_explicit_registry_but_in_capability_registry_when_compiled_then_dynamically_resolves(self):
+    def test_given_capability_not_in_explicit_registry_but_in_capability_registry_when_compiled_then_dynamically_resolves(
+        self,
+    ):
         spec = _make_spec("test_cap", "tests.agent_foundry.stub_handler", "StubHandler")
         registry = CapabilityRegistry(specs={"test_cap": spec})
 
@@ -110,7 +111,9 @@ class TestDynamicResolution:
         result = graph.invoke({"input": "hello"})
         assert result["custom"] is True
 
-    def test_given_dynamically_resolved_handler_when_graph_invoked_then_handler_executes_correctly(self):
+    def test_given_dynamically_resolved_handler_when_graph_invoked_then_handler_executes_correctly(
+        self,
+    ):
         spec = _make_spec("test_cap", "tests.agent_foundry.stub_handler", "StubHandler")
         registry = CapabilityRegistry(specs={"test_cap": spec})
 
@@ -122,8 +125,9 @@ class TestDynamicResolution:
 
 
 class TestDynamicResolutionWithSchemaValidation:
-
-    def test_given_dynamically_resolved_handler_when_invoked_with_valid_input_then_schema_validation_passes(self):
+    def test_given_dynamically_resolved_handler_when_invoked_with_valid_input_then_schema_validation_passes(
+        self,
+    ):
         spec = _make_spec(
             "test_cap",
             "tests.agent_foundry.stub_handler",
@@ -141,7 +145,9 @@ class TestDynamicResolutionWithSchemaValidation:
         result = graph.invoke({"input": "hello"})
         assert result["handled"] is True
 
-    def test_given_dynamically_resolved_handler_when_invoked_with_invalid_input_then_raises_execution_error(self):
+    def test_given_dynamically_resolved_handler_when_invoked_with_invalid_input_then_raises_execution_error(
+        self,
+    ):
         spec = _make_spec(
             "test_cap",
             "tests.agent_foundry.stub_handler",
@@ -162,7 +168,6 @@ class TestDynamicResolutionWithSchemaValidation:
 
 
 class TestFallbackToPassthrough:
-
     def test_given_capability_in_neither_registry_when_compiled_then_uses_passthrough(self):
         registry = CapabilityRegistry(specs={})
 
@@ -173,8 +178,9 @@ class TestFallbackToPassthrough:
 
 
 class TestDynamicResolutionErrors:
-
-    def test_given_dynamic_resolution_fails_import_when_compiled_then_raises_capability_instantiation_error(self):
+    def test_given_dynamic_resolution_fails_import_when_compiled_then_raises_capability_instantiation_error(
+        self,
+    ):
         spec = _make_spec("test_cap", "nonexistent.module", "BadClass")
         registry = CapabilityRegistry(specs={"test_cap": spec})
 

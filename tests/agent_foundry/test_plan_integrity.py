@@ -50,10 +50,14 @@ class TestUnknownCapability:
     """Nodes referencing capabilities not in registry are rejected."""
 
     def test_unknown_capability_raises_error(self, registry):
-        plan = _make_plan(nodes=[
-            {"id": "n1", "capability": "totally_fake_capability"},
-        ], edges=[], entry_point="n1",
-        capability_versions={"totally_fake_capability": "1.0.0"})
+        plan = _make_plan(
+            nodes=[
+                {"id": "n1", "capability": "totally_fake_capability"},
+            ],
+            edges=[],
+            entry_point="n1",
+            capability_versions={"totally_fake_capability": "1.0.0"},
+        )
         with pytest.raises(UnknownCapabilityError) as exc_info:
             validate_plan(plan, registry)
         assert "totally_fake_capability" in str(exc_info.value)
@@ -67,14 +71,18 @@ class TestDuplicateNodeIds:
     """Duplicate node IDs are detected."""
 
     def test_duplicate_ids_raises_error(self, registry):
-        plan = _make_plan(nodes=[
-            {"id": "same_id", "capability": "rag_retriever"},
-            {"id": "same_id", "capability": "schema_validator"},
-        ], edges=[], entry_point="same_id",
-        capability_versions={
-            "rag_retriever": "1.0.0",
-            "schema_validator": "1.0.0",
-        })
+        plan = _make_plan(
+            nodes=[
+                {"id": "same_id", "capability": "rag_retriever"},
+                {"id": "same_id", "capability": "schema_validator"},
+            ],
+            edges=[],
+            entry_point="same_id",
+            capability_versions={
+                "rag_retriever": "1.0.0",
+                "schema_validator": "1.0.0",
+            },
+        )
         with pytest.raises(DuplicateNodeIdError) as exc_info:
             validate_plan(plan, registry)
         assert "same_id" in str(exc_info.value)
@@ -100,9 +108,13 @@ class TestFeatureFlag:
     """FF_PLAN_VALIDATION controls validation."""
 
     def test_flag_off_skips_validation(self, registry):
-        plan = _make_plan(nodes=[
-            {"id": "n1", "capability": "totally_fake"},
-        ], edges=[], entry_point="n1",
-        capability_versions={"totally_fake": "1.0.0"})
+        plan = _make_plan(
+            nodes=[
+                {"id": "n1", "capability": "totally_fake"},
+            ],
+            edges=[],
+            entry_point="n1",
+            capability_versions={"totally_fake": "1.0.0"},
+        )
         with patch("agent_foundry.planner.validators.FF_PLAN_VALIDATION", False):
             validate_plan(plan, registry)  # Should not raise

@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from agent_foundry.registry.spec import load_capability_spec
 from archipelago.agents.approval_gate import ApprovalGateHandler
 

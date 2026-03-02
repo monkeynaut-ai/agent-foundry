@@ -1,10 +1,11 @@
 """Deterministic strategy handler for the Archipelago pipeline."""
 
+from agent_foundry.registry.spec import CapabilitySpec
 from archipelago.models import ProductBrief
 
 
 class StrategyHandler:
-    def __init__(self, spec):
+    def __init__(self, spec: CapabilitySpec) -> None:
         self.spec = spec
 
     def __call__(self, state: dict) -> dict:
@@ -16,7 +17,11 @@ class StrategyHandler:
             name=f"Product: {product_brief_input[:50]}",
             problem_statement=f"Users need a solution for: {product_brief_input}",
             target_personas=["Developer", "Product Manager", "End User"],
-            success_metrics=["User adoption rate", "Task completion time", "User satisfaction score"],
+            success_metrics=[
+                "User adoption rate",
+                "Task completion time",
+                "User satisfaction score",
+            ],
             constraints=["Must integrate with existing systems", "Budget-conscious deployment"],
         )
 

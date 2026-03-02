@@ -65,9 +65,7 @@ def _execute_with_quality_controls(
                 continue
 
     raise CapabilityExecutionError(
-        message=(
-            f"Capability '{spec.name}' failed after {max_attempts} attempts: {last_error}"
-        ),
+        message=(f"Capability '{spec.name}' failed after {max_attempts} attempts: {last_error}"),
         capability_name=spec.name,
         phase="retry_exhausted",
     )
@@ -83,12 +81,12 @@ def _execute_with_timeout(
         future = executor.submit(handler, inputs)
         try:
             return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
+        except concurrent.futures.TimeoutError as err:
             raise CapabilityExecutionError(
                 message=f"Capability '{capability_name}' timed out after {timeout}s",
                 capability_name=capability_name,
                 phase="timeout",
-            )
+            ) from err
 
 
 def _validate_schema(
@@ -101,8 +99,7 @@ def _validate_schema(
     errors = list(validator.iter_errors(data))
     if errors:
         field_paths = [
-            ".".join(str(p) for p in err.absolute_path) or err.json_path
-            for err in errors
+            ".".join(str(p) for p in err.absolute_path) or err.json_path for err in errors
         ]
         messages = [err.message for err in errors]
         raise CapabilityExecutionError(

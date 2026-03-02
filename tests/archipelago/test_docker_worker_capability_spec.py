@@ -7,7 +7,7 @@ import pytest
 
 from agent_foundry.registry.registry import CapabilityRegistry
 from agent_foundry.registry.spec import CapabilitySpec, load_capability_spec
-from archipelago.docker_worker.models import WorkerInput, WorkerConstraints, WorkerResult
+from archipelago.docker_worker.models import WorkerConstraints, WorkerInput, WorkerResult
 
 PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 
@@ -19,9 +19,7 @@ def registry():
 
 class TestCodingSpec:
     def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "coding_implement_feature_from_spec.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "coding_implement_feature_from_spec.yaml")
         assert isinstance(spec, CapabilitySpec)
         assert spec.name == "coding_implement_feature_from_spec"
         assert spec.version == "1.0.0"
@@ -30,9 +28,7 @@ class TestCodingSpec:
     def test_given_coding_spec_when_inputs_schema_validates_worker_input_then_passes(
         self,
     ):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "coding_implement_feature_from_spec.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "coding_implement_feature_from_spec.yaml")
         worker_input = WorkerInput(
             repo_ref="abc123",
             feature_spec={"title": "test"},
@@ -44,9 +40,7 @@ class TestCodingSpec:
     def test_given_coding_spec_when_outputs_schema_validates_worker_result_then_passes(
         self,
     ):
-        spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "coding_implement_feature_from_spec.yaml"
-        )
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "coding_implement_feature_from_spec.yaml")
         worker_result = WorkerResult(
             result_summary="done",
             workspace_ref="ws-1",

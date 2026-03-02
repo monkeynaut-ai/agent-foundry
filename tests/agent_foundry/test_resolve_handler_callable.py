@@ -15,7 +15,9 @@ def _make_spec(module, class_name, method="__call__"):
         description="test",
         version="1.0.0",
         implementation=ImplementationPointer(
-            module=module, class_name=class_name, method=method,
+            module=module,
+            class_name=class_name,
+            method=method,
         ),
         inputs_schema={"type": "object", "properties": {}},
         outputs_schema={"type": "object", "properties": {}},
@@ -23,7 +25,6 @@ def _make_spec(module, class_name, method="__call__"):
 
 
 class TestResolveHandlerCallable:
-
     def test_given_valid_pointer_with_default_method_when_resolved_then_returns_callable(self):
         spec = _make_spec("tests.agent_foundry.stub_handler", "StubHandler")
         handler = resolve_handler_callable(spec.implementation, spec)
@@ -31,20 +32,28 @@ class TestResolveHandlerCallable:
 
     def test_given_valid_pointer_with_custom_method_when_resolved_then_returns_bound_method(self):
         spec = _make_spec(
-            "tests.agent_foundry.stub_handler", "StubHandler", method="custom_method",
+            "tests.agent_foundry.stub_handler",
+            "StubHandler",
+            method="custom_method",
         )
         handler = resolve_handler_callable(spec.implementation, spec)
         assert callable(handler)
 
-    def test_given_pointer_to_class_that_fails_init_when_resolved_then_raises_capability_import_error(self):
+    def test_given_pointer_to_class_that_fails_init_when_resolved_then_raises_capability_import_error(
+        self,
+    ):
         spec = _make_spec("tests.agent_foundry.stub_handler", "BadInitHandler")
         with pytest.raises(CapabilityImportError) as exc_info:
             resolve_handler_callable(spec.implementation, spec)
         assert "BadInitHandler" in str(exc_info.value)
 
-    def test_given_pointer_with_nonexistent_method_when_resolved_then_raises_capability_import_error(self):
+    def test_given_pointer_with_nonexistent_method_when_resolved_then_raises_capability_import_error(
+        self,
+    ):
         spec = _make_spec(
-            "tests.agent_foundry.stub_handler", "StubHandler", method="no_such_method",
+            "tests.agent_foundry.stub_handler",
+            "StubHandler",
+            method="no_such_method",
         )
         with pytest.raises(CapabilityImportError) as exc_info:
             resolve_handler_callable(spec.implementation, spec)
@@ -62,9 +71,13 @@ class TestResolveHandlerCallable:
         result = handler({"input": "test"})
         assert result == {"input": "test", "handled": True}
 
-    def test_given_resolved_custom_method_when_invoked_with_state_then_returns_expected_output(self):
+    def test_given_resolved_custom_method_when_invoked_with_state_then_returns_expected_output(
+        self,
+    ):
         spec = _make_spec(
-            "tests.agent_foundry.stub_handler", "StubHandler", method="custom_method",
+            "tests.agent_foundry.stub_handler",
+            "StubHandler",
+            method="custom_method",
         )
         handler = resolve_handler_callable(spec.implementation, spec)
         result = handler({"input": "test"})

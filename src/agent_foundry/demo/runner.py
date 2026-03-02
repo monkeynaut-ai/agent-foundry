@@ -11,7 +11,6 @@ from agent_foundry.observability.gates import (
     schema_validator_gate,
     uncertainty_completeness_gate,
 )
-from agent_foundry.observability.tracer import ExecutionTracer
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.registry import CapabilityRegistry
 

@@ -33,7 +33,7 @@ class DeterministicEmbeddings(Embeddings):
         h = hashlib.sha256(text.encode()).digest()
         raw = [b / 255.0 for b in h]
         # Pad or truncate to dim
-        vec = (raw * (self._dim // len(raw) + 1))[:self._dim]
+        vec = (raw * (self._dim // len(raw) + 1))[: self._dim]
         return vec
 
 
@@ -130,9 +130,7 @@ class RegistryIndexer:
         try:
             results = self._store.similarity_search(query, k=k)
         except Exception as e:
-            raise RetrieverUnavailableError(
-                f"Search failed: {e}"
-            ) from e
+            raise RetrieverUnavailableError(f"Search failed: {e}") from e
         return results
 
     def _specs_to_documents(self, registry: CapabilityRegistry) -> list[Document]:
@@ -150,14 +148,16 @@ class RegistryIndexer:
                 f"Class: {spec.implementation.class_name}\n"
             )
             chunk_id = hashlib.sha256(f"spec:{spec.name}".encode()).hexdigest()[:16]
-            docs.append(Document(
-                page_content=content,
-                metadata={
-                    "source": f"registry:{spec.name}",
-                    "chunk_id": chunk_id,
-                    "type": "capability_spec",
-                },
-            ))
+            docs.append(
+                Document(
+                    page_content=content,
+                    metadata={
+                        "source": f"registry:{spec.name}",
+                        "chunk_id": chunk_id,
+                        "type": "capability_spec",
+                    },
+                )
+            )
         return docs
 
     def _docs_to_documents(self, docs_dir: Path) -> list[Document]:
@@ -169,12 +169,14 @@ class RegistryIndexer:
                 continue
             text = path.read_text()
             chunk_id = hashlib.sha256(f"doc:{path.name}".encode()).hexdigest()[:16]
-            docs.append(Document(
-                page_content=text,
-                metadata={
-                    "source": f"docs:{path.name}",
-                    "chunk_id": chunk_id,
-                    "type": "curated_doc",
-                },
-            ))
+            docs.append(
+                Document(
+                    page_content=text,
+                    metadata={
+                        "source": f"docs:{path.name}",
+                        "chunk_id": chunk_id,
+                        "type": "curated_doc",
+                    },
+                )
+            )
         return docs

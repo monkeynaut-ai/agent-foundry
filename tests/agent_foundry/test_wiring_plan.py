@@ -5,14 +5,8 @@ Tests: valid JSON parses; .model_dump_json() round-trips with no field loss.
 
 import json
 
-import pytest
-
 from agent_foundry.planner.wiring_plan import (
-    EdgeDef,
     GraphWiringPlan,
-    NodeDef,
-    PersistenceConfig,
-    ToolDef,
 )
 
 

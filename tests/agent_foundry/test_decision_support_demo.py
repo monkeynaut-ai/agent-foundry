@@ -11,7 +11,6 @@ DS8: Planner produces the Decision Support demo plan.
 DS9: Non-functional: end-to-end latency budgets.
 """
 
-import json
 import os
 import time
 from pathlib import Path
@@ -44,6 +43,7 @@ def registry():
 
 # --- DS1: Runnable Demo Entrypoint ---
 
+
 class TestDS1Entrypoint:
     """Runner loads plan JSON and executes graph."""
 
@@ -62,6 +62,7 @@ class TestDS1Entrypoint:
 
 
 # --- DS2: Evidence Retrieval ---
+
 
 class TestDS2EvidenceRetrieval:
     """Evidence retrieval populates state correctly."""
@@ -82,6 +83,7 @@ class TestDS2EvidenceRetrieval:
 
 # --- DS3: Structured Recommendation Schema ---
 
+
 class TestDS3StructuredRecommendation:
     """Recommendation output matches schema."""
 
@@ -98,6 +100,7 @@ class TestDS3StructuredRecommendation:
 
 
 # --- DS4: Citation Validator ---
+
 
 class TestDS4CitationValidator:
     """Citations reference valid evidence IDs."""
@@ -118,6 +121,7 @@ class TestDS4CitationValidator:
 
 # --- DS5: Uncertainty Completeness ---
 
+
 class TestDS5UncertaintyCompleteness:
     """Uncertainty fields are complete."""
 
@@ -132,6 +136,7 @@ class TestDS5UncertaintyCompleteness:
 
 
 # --- DS6: Evidence-First Contract ---
+
 
 class TestDS6EvidenceFirstContract:
     """Evidence-first policy is enforced."""
@@ -157,6 +162,7 @@ class TestDS6EvidenceFirstContract:
 
 # --- DS7: Tool Calling ---
 
+
 class TestDS7ToolCalling:
     """Tool calling with stub calculator."""
 
@@ -165,11 +171,14 @@ class TestDS7ToolCalling:
         plan = load_demo_plan()
         plan_data = plan.model_dump()
         # Add tool_calling node
-        plan_data["nodes"].insert(1, {
-            "id": "tools",
-            "capability": "tool_calling",
-            "config": {},
-        })
+        plan_data["nodes"].insert(
+            1,
+            {
+                "id": "tools",
+                "capability": "tool_calling",
+                "config": {},
+            },
+        )
         plan_data["edges"][0] = {"source": "retriever", "target": "tools"}
         plan_data["edges"].insert(1, {"source": "tools", "target": "output"})
         plan_data["tools"] = [{"name": "calculator", "args_schema": {"type": "object"}}]
@@ -183,6 +192,7 @@ class TestDS7ToolCalling:
 
 
 # --- DS9: End-to-End Performance (Benchmark) ---
+
 
 @pytest.mark.benchmark
 class TestDS9Performance:
@@ -203,8 +213,5 @@ class TestDS9Performance:
         timings.sort()
         p95 = timings[int(len(timings) * 0.95)]
         median = statistics.median(timings)
-        print(
-            f"\nDemo E2E: median={median:.1f}ms, p95={p95:.1f}ms, "
-            f"budget={p95_budget_ms:.1f}ms"
-        )
+        print(f"\nDemo E2E: median={median:.1f}ms, p95={p95:.1f}ms, budget={p95_budget_ms:.1f}ms")
         assert p95 <= p95_budget_ms, f"p95 {p95:.1f}ms exceeds {p95_budget_ms:.1f}ms budget"

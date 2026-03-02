@@ -7,7 +7,6 @@ from typing import Any
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.registry import CapabilityRegistry
-
 from archipelago.handlers import ARCHIPELAGO_HANDLERS
 
 PLAN_PATH = Path(__file__).parent / "pipeline_plan.json"
@@ -35,9 +34,7 @@ def run_archipelago(
         The final state dict with all pipeline artifacts.
     """
     if registry is None:
-        registry = CapabilityRegistry.with_product_specs(
-            Path(__file__).parent / "capabilities"
-        )
+        registry = CapabilityRegistry.with_product_specs(Path(__file__).parent / "capabilities")
 
     if plan is None:
         plan = load_archipelago_plan()

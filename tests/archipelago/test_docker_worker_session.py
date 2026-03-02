@@ -1,8 +1,7 @@
 """Docker worker PTY session — unit tests with mocked Docker SDK."""
 
-import threading
 import time
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -39,9 +38,7 @@ class TestLaunchSession:
         assert isinstance(session, SessionHandle)
         assert session.exec_id == "exec-abc"
 
-    def test_given_running_container_when_launch_called_then_tty_allocated(
-        self, session_manager
-    ):
+    def test_given_running_container_when_launch_called_then_tty_allocated(self, session_manager):
         handle = _mock_container_handle()
         session_manager.launch_session(handle, "claude-code")
         call_kwargs = handle._container.client.api.exec_create.call_args
@@ -66,14 +63,10 @@ class TestOutputStream:
     ):
         lines_received = []
         manager = SessionManager()
-        manager.register_output_callback(
-            lambda line, cid, ts: lines_received.append(line)
-        )
+        manager.register_output_callback(lambda line, cid, ts: lines_received.append(line))
 
         handle = _mock_container_handle()
-        handle._container.client.api.exec_start.return_value = iter(
-            [b"line1\nline2\n"]
-        )
+        handle._container.client.api.exec_start.return_value = iter([b"line1\nline2\n"])
         manager.launch_session(handle, "cmd")
         time.sleep(0.1)
 
@@ -85,9 +78,7 @@ class TestOutputStream:
     ):
         received_cids = []
         manager = SessionManager()
-        manager.register_output_callback(
-            lambda line, cid, ts: received_cids.append(cid)
-        )
+        manager.register_output_callback(lambda line, cid, ts: received_cids.append(cid))
 
         handle = _mock_container_handle()
         handle._container.client.api.exec_start.return_value = iter([b"hello\n"])
@@ -101,9 +92,7 @@ class TestOutputStream:
     ):
         received_ts = []
         manager = SessionManager()
-        manager.register_output_callback(
-            lambda line, cid, ts: received_ts.append(ts)
-        )
+        manager.register_output_callback(lambda line, cid, ts: received_ts.append(ts))
 
         handle = _mock_container_handle()
         handle._container.client.api.exec_start.return_value = iter([b"hello\n"])
@@ -119,12 +108,8 @@ class TestOutputStream:
         cb1_lines = []
         cb2_lines = []
         manager = SessionManager()
-        manager.register_output_callback(
-            lambda line, cid, ts: cb1_lines.append(line)
-        )
-        manager.register_output_callback(
-            lambda line, cid, ts: cb2_lines.append(line)
-        )
+        manager.register_output_callback(lambda line, cid, ts: cb1_lines.append(line))
+        manager.register_output_callback(lambda line, cid, ts: cb2_lines.append(line))
 
         handle = _mock_container_handle()
         handle._container.client.api.exec_start.return_value = iter([b"test\n"])
@@ -152,16 +137,12 @@ class TestSendInput:
 
 
 class TestPauseResume:
-    def test_given_active_session_when_paused_then_status_is_paused(
-        self, session_manager
-    ):
+    def test_given_active_session_when_paused_then_status_is_paused(self, session_manager):
         session = SessionHandle(exec_id="e1", container_id="c1")
         session_manager.pause(session)
         assert session.status == "paused"
 
-    def test_given_paused_session_when_resumed_then_status_is_running(
-        self, session_manager
-    ):
+    def test_given_paused_session_when_resumed_then_status_is_running(self, session_manager):
         session = SessionHandle(exec_id="e1", container_id="c1")
         session_manager.pause(session)
         session_manager.resume(session)

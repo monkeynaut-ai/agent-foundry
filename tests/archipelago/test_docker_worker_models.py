@@ -12,7 +12,6 @@ from archipelago.docker_worker.models import (
     PermissionRequest,
     ProgressEvent,
     ResumePoint,
-    TestRunRecord,
     WorkerConstraints,
     WorkerInput,
     WorkerResult,
@@ -168,9 +167,7 @@ class TestProgressEvent:
 
 class TestClarificationRequest:
     def test_given_valid_fields_when_instantiated_then_validates(self):
-        req = ClarificationRequest(
-            question="Which DB?", options=["pg", "mysql"], default="pg"
-        )
+        req = ClarificationRequest(question="Which DB?", options=["pg", "mysql"], default="pg")
         assert req.question == "Which DB?"
         assert len(req.options) == 2
 
@@ -195,9 +192,7 @@ class TestPermissionRequest:
         self,
     ):
         with pytest.raises(ValidationError):
-            PermissionRequest(
-                action="delete prod", risk_level="extreme", why_needed="test"
-            )
+            PermissionRequest(action="delete prod", risk_level="extreme", why_needed="test")
 
 
 class TestResumePoint:

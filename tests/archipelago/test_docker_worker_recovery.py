@@ -1,15 +1,11 @@
 """Docker worker recovery — workspace persistence and session restore tests."""
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock
-
-import pytest
 
 from archipelago.docker_worker.container import ContainerHandle, ContainerManager
 from archipelago.docker_worker.models import ResumePoint
 from archipelago.docker_worker.recovery import (
-    WorkspaceSnapshot,
     persist_workspace_state,
     recover_session,
 )
@@ -49,9 +45,7 @@ class TestPersistWorkspaceState:
         snapshot = persist_workspace_state(workspace, output, git_runner=git_runner)
         assert "+added line" in snapshot.working_tree_diff
 
-    def test_given_workspace_with_progress_file_when_persisted_then_events_included(
-        self, tmp_path
-    ):
+    def test_given_workspace_with_progress_file_when_persisted_then_events_included(self, tmp_path):
         workspace = tmp_path / "workspace"
         workspace.mkdir()
         output = tmp_path / "output"
@@ -80,11 +74,9 @@ class TestRecoverSession:
 
         mock_handle = ContainerHandle(container_id="new-c", status="created")
         container_mgr.create_container.return_value = mock_handle
-        session_mgr.launch_session.return_value = SessionHandle(
-            exec_id="e1", container_id="new-c"
-        )
+        session_mgr.launch_session.return_value = SessionHandle(exec_id="e1", container_id="new-c")
 
-        container, session = recover_session(
+        _container, _session = recover_session(
             container_mgr, session_mgr, "vol-1", {"title": "test"}
         )
         container_mgr.create_container.assert_called_once()
@@ -96,9 +88,7 @@ class TestRecoverSession:
 
         mock_handle = ContainerHandle(container_id="new-c", status="created")
         container_mgr.create_container.return_value = mock_handle
-        session_mgr.launch_session.return_value = SessionHandle(
-            exec_id="e1", container_id="new-c"
-        )
+        session_mgr.launch_session.return_value = SessionHandle(exec_id="e1", container_id="new-c")
 
         recover_session(container_mgr, session_mgr, "vol-workspace", {"title": "test"})
         call_kwargs = container_mgr.create_container.call_args
@@ -112,9 +102,7 @@ class TestRecoverSession:
 
         mock_handle = ContainerHandle(container_id="new-c", status="created")
         container_mgr.create_container.return_value = mock_handle
-        session_mgr.launch_session.return_value = SessionHandle(
-            exec_id="e1", container_id="new-c"
-        )
+        session_mgr.launch_session.return_value = SessionHandle(exec_id="e1", container_id="new-c")
 
         recover_session(container_mgr, session_mgr, "vol-1", {"title": "test"})
         session_mgr.launch_session.assert_called_once()
@@ -127,13 +115,14 @@ class TestRecoverSession:
 
         mock_handle = ContainerHandle(container_id="new-c", status="created")
         container_mgr.create_container.return_value = mock_handle
-        session_mgr.launch_session.return_value = SessionHandle(
-            exec_id="e1", container_id="new-c"
-        )
+        session_mgr.launch_session.return_value = SessionHandle(exec_id="e1", container_id="new-c")
 
         resume_point = ResumePoint(pr_id="pr2", commit_id="c1", status="blocked")
         recover_session(
-            container_mgr, session_mgr, "vol-1", {"title": "test"},
+            container_mgr,
+            session_mgr,
+            "vol-1",
+            {"title": "test"},
             last_checkpoint=resume_point,
         )
 

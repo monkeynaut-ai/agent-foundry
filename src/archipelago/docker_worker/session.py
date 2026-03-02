@@ -33,15 +33,11 @@ class SessionManager:
         self._paused.set()  # Start unpaused
         self._stream_thread: threading.Thread | None = None
 
-    def register_output_callback(
-        self, callback: Callable[[str, str, float], None]
-    ) -> None:
+    def register_output_callback(self, callback: Callable[[str, str, float], None]) -> None:
         """Register a callback receiving (line, container_id, timestamp)."""
         self._callbacks.append(callback)
 
-    def launch_session(
-        self, container_handle: ContainerHandle, command: str
-    ) -> SessionHandle:
+    def launch_session(self, container_handle: ContainerHandle, command: str) -> SessionHandle:
         """Launch a persistent PTY session via docker exec."""
         try:
             container = container_handle._container
@@ -57,9 +53,7 @@ class SessionManager:
                 exec_result["Id"], stream=True, socket=True, tty=True
             )
         except Exception as e:
-            raise SessionError(
-                str(e), container_id=container_handle.container_id
-            ) from e
+            raise SessionError(str(e), container_id=container_handle.container_id) from e
 
         handle = SessionHandle(
             exec_id=exec_result["Id"],
@@ -83,9 +77,7 @@ class SessionManager:
             try:
                 session_handle._socket._sock.sendall(text.encode())
             except Exception as e:
-                raise SessionError(
-                    str(e), container_id=session_handle.container_id
-                ) from e
+                raise SessionError(str(e), container_id=session_handle.container_id) from e
 
     def pause(self, session_handle: SessionHandle) -> None:
         """Pause output consumption. Container and PTY remain alive."""
@@ -117,9 +109,7 @@ class SessionManager:
             session_handle.status = "exited"
             # Try to get exit code
             try:
-                inspect = session_handle._socket.client.api.exec_inspect(
-                    session_handle.exec_id
-                )
+                inspect = session_handle._socket.client.api.exec_inspect(session_handle.exec_id)
                 session_handle.exit_code = inspect.get("ExitCode")
             except Exception:
                 pass

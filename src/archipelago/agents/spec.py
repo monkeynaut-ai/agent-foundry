@@ -1,10 +1,11 @@
 """Deterministic spec handler for the Archipelago pipeline."""
 
+from agent_foundry.registry.spec import CapabilitySpec
 from archipelago.models import FeatureSpec, TestPlan
 
 
 class SpecHandler:
-    def __init__(self, spec):
+    def __init__(self, spec: CapabilitySpec) -> None:
         self.spec = spec
 
     def __call__(self, state: dict) -> dict:
@@ -24,7 +25,10 @@ class SpecHandler:
                 "Error handling with meaningful messages",
             ],
             pr_slices=[
-                {"title": "Data models and migrations", "commits": ["Add schema", "Add migrations"]},
+                {
+                    "title": "Data models and migrations",
+                    "commits": ["Add schema", "Add migrations"],
+                },
                 {"title": "Core API endpoints", "commits": ["Add CRUD handlers", "Add routing"]},
                 {"title": "Integration tests", "commits": ["Add API tests", "Add edge case tests"]},
             ],

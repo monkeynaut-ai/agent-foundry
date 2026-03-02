@@ -20,7 +20,11 @@ def _make_state():
             "name": "Product: Build a task management app",
             "problem_statement": "Users need a solution for: Build a task management app",
             "target_personas": ["Developer", "Product Manager", "End User"],
-            "success_metrics": ["User adoption rate", "Task completion time", "User satisfaction score"],
+            "success_metrics": [
+                "User adoption rate",
+                "Task completion time",
+                "User satisfaction score",
+            ],
             "constraints": ["Must integrate with existing systems", "Budget-conscious deployment"],
         },
     }

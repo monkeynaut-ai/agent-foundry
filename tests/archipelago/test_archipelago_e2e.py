@@ -102,6 +102,7 @@ def registry():
 @pytest.fixture
 def plan():
     import json
+
     plan_data = json.loads(PLAN_PATH.read_text())
     return GraphWiringPlan(**plan_data)
 
@@ -129,13 +130,13 @@ class TestEndToEnd:
         for key in ARTIFACT_KEYS:
             assert key in final_state, f"Missing artifact: {key}"
 
-    def test_given_valid_input_when_pipeline_runs_then_all_artifacts_validate(
-        self, final_state
-    ):
+    def test_given_valid_input_when_pipeline_runs_then_all_artifacts_validate(self, final_state):
         strategy_spec = load_capability_spec(
             PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml"
         )
-        jsonschema.validate({"product_brief": final_state["product_brief"]}, strategy_spec.outputs_schema)
+        jsonschema.validate(
+            {"product_brief": final_state["product_brief"]}, strategy_spec.outputs_schema
+        )
 
         arch_spec = load_capability_spec(
             PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml"
@@ -144,27 +145,21 @@ class TestEndToEnd:
             {"feature_architecture": final_state["feature_architecture"]}, arch_spec.outputs_schema
         )
 
-        spec_spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml"
-        )
+        spec_spec = load_capability_spec(PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml")
         combined_spec = {
             "feature_spec": final_state["feature_spec"],
             "test_plan": final_state["test_plan"],
         }
         jsonschema.validate(combined_spec, spec_spec.outputs_schema)
 
-        dev_spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml"
-        )
+        dev_spec = load_capability_spec(PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml")
         combined_dev = {
             "code_patch": final_state["code_patch"],
             "test_results": final_state["test_results"],
         }
         jsonschema.validate(combined_dev, dev_spec.outputs_schema)
 
-    def test_given_pipeline_with_tracer_when_run_then_5_spans_exported(
-        self, registry, plan
-    ):
+    def test_given_pipeline_with_tracer_when_run_then_5_spans_exported(self, registry, plan):
         tracer = ExecutionTracer()
         node_caps = {n.id: n.capability for n in plan.nodes}
 
@@ -174,11 +169,11 @@ class TestEndToEnd:
                 result = original(state)
                 tracer.end_span(span, "ok")
                 return result
+
             return handler
 
         traced_handlers = {
-            cap: _make_traced_handler(nid, STUB_HANDLERS[cap])
-            for nid, cap in node_caps.items()
+            cap: _make_traced_handler(nid, STUB_HANDLERS[cap]) for nid, cap in node_caps.items()
         }
 
         graph = compile_plan(plan, registry, handler_registry=traced_handlers)
@@ -199,11 +194,11 @@ class TestEndToEnd:
                 result = original(state)
                 tracer.end_span(span, "ok")
                 return result
+
             return handler
 
         traced_handlers = {
-            cap: _make_traced_handler(nid, STUB_HANDLERS[cap])
-            for nid, cap in node_caps.items()
+            cap: _make_traced_handler(nid, STUB_HANDLERS[cap]) for nid, cap in node_caps.items()
         }
 
         graph = compile_plan(plan, registry, handler_registry=traced_handlers)
@@ -225,11 +220,11 @@ class TestEndToEnd:
                 result = original(state)
                 tracer.end_span(span, "ok")
                 return result
+
             return handler
 
         traced_handlers = {
-            cap: _make_traced_handler(nid, STUB_HANDLERS[cap])
-            for nid, cap in node_caps.items()
+            cap: _make_traced_handler(nid, STUB_HANDLERS[cap]) for nid, cap in node_caps.items()
         }
 
         graph = compile_plan(plan, registry, handler_registry=traced_handlers)

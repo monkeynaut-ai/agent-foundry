@@ -1,11 +1,8 @@
 """Docker worker progress parsing — checkpoint file and resume point tests."""
 
 import json
-import time
 
-import pytest
-
-from archipelago.docker_worker.models import ProgressEvent, ResumePoint
+from archipelago.docker_worker.models import ProgressEvent
 from archipelago.docker_worker.progress import get_resume_point, parse_progress
 
 
@@ -20,9 +17,7 @@ def _event(type_: str, pr_id: str, commit_id: str, ts: float) -> dict:
 
 
 class TestParseProgress:
-    def test_given_valid_jsonl_file_when_parsed_then_returns_progress_events(
-        self, tmp_path
-    ):
+    def test_given_valid_jsonl_file_when_parsed_then_returns_progress_events(self, tmp_path):
         lines = [
             json.dumps(_event("commit_started", "pr1", "c1", 1.0)),
             json.dumps(_event("commit_green", "pr1", "c1", 2.0)),
@@ -37,9 +32,7 @@ class TestParseProgress:
         events = parse_progress(tmp_path)
         assert events == []
 
-    def test_given_invalid_json_line_when_parsed_then_skips_line_and_logs_warning(
-        self, tmp_path
-    ):
+    def test_given_invalid_json_line_when_parsed_then_skips_line_and_logs_warning(self, tmp_path):
         lines = [
             json.dumps(_event("commit_started", "pr1", "c1", 1.0)),
             "not valid json",
@@ -49,9 +42,7 @@ class TestParseProgress:
         events = parse_progress(tmp_path)
         assert len(events) == 2
 
-    def test_given_events_out_of_order_when_parsed_then_returns_sorted_by_timestamp(
-        self, tmp_path
-    ):
+    def test_given_events_out_of_order_when_parsed_then_returns_sorted_by_timestamp(self, tmp_path):
         lines = [
             json.dumps(_event("commit_green", "pr1", "c1", 5.0)),
             json.dumps(_event("commit_started", "pr1", "c1", 1.0)),

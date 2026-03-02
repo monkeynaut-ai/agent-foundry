@@ -72,16 +72,12 @@ def _check_tool_calling_contract(plan: GraphWiringPlan) -> None:
         return
 
     if not plan.tools:
-        raise PlanValidationError(
-            "Plan has tool_calling node but no tools defined"
-        )
+        raise PlanValidationError("Plan has tool_calling node but no tools defined")
 
     tool_names: set[str] = set()
     for tool in plan.tools:
         if tool.name in tool_names:
-            raise PlanValidationError(
-                f"duplicate tool name '{tool.name}' in plan tools list"
-            )
+            raise PlanValidationError(f"duplicate tool name '{tool.name}' in plan tools list")
         tool_names.add(tool.name)
 
 
@@ -89,9 +85,7 @@ def _check_breakpoints(plan: GraphWiringPlan) -> None:
     node_ids = {node.id for node in plan.nodes}
     for bp in plan.breakpoints:
         if bp not in node_ids:
-            raise PlanValidationError(
-                f"breakpoint references non-existent node '{bp}'"
-            )
+            raise PlanValidationError(f"breakpoint references non-existent node '{bp}'")
 
 
 def _check_capability_versions_coverage(plan: GraphWiringPlan) -> None:
@@ -133,9 +127,8 @@ def _check_loop_termination(plan: GraphWiringPlan) -> None:
         return False
 
     for node_id in {n.id for n in plan.nodes}:
-        if node_id not in visited:
-            if _dfs(node_id):
-                break
+        if node_id not in visited and _dfs(node_id):
+            break
 
     if not cycle_nodes:
         return
@@ -152,5 +145,6 @@ def _check_loop_termination(plan: GraphWiringPlan) -> None:
         if config.get("max_iterations") is not None:
             continue
         raise PlanValidationError(
-            f"cycle detected involving node '{cycle_nodes[0]}' without termination condition or max_iterations"
+            f"cycle detected involving node '{cycle_nodes[0]}'"
+            " without termination condition or max_iterations"
         )
