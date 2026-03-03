@@ -1,7 +1,5 @@
 """Deterministic approval gate handler for the Archipelago pipeline."""
 
-from typing import Any
-
 from agent_foundry.registry.spec import CapabilitySpec
 
 

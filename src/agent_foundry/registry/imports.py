@@ -86,4 +86,4 @@ def resolve_handler_callable(
             pointer=pointer,
         )
 
-    return handler
+    return handler  # type: ignore[return-value]

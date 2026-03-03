@@ -49,14 +49,14 @@ lint.cmd = "ruff check src/ tests/"
 lint.env = {PYTHONPATH = "src"}
 format.cmd = "ruff format src/ tests/"
 format.env = {PYTHONPATH = "src"}
-typecheck.cmd = "mypy"
+typecheck.cmd = "pyright"
 typecheck.env = {PYTHONPATH = "src"}
 
 [dependency-groups]
 dev = [
     "import-linter>=2.10",
     "ruff>=0.15.4",
-    "mypy>=1.19.1",
+    "pyright>=1.1.408",
 ]
 
 [tool.ruff]
@@ -82,34 +82,17 @@ select = [
 [tool.ruff.format]
 quote-style = "double"
 
-[tool.mypy]
-python_version = "3.13"
-mypy_path = "src"
-packages = ["agent_foundry", "archipelago"]
-strict = false
-warn_return_any = false
-warn_unused_configs = true
-disallow_untyped_defs = true
-check_untyped_defs = true
-
-[[tool.mypy.overrides]]
-module = [
-    "langgraph.*",
-    "langchain.*",
-    "langchain_anthropic.*",
-    "langchain_core.*",
-    "langchain_community.*",
-    "langchain_huggingface.*",
-    "faiss.*",
-    "docker.*",
-    "jsonschema.*",
-    "yaml.*",
-]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["archipelago.handlers"]
-disable_error_code = ["call-arg", "union-attr", "call-overload"]
+[tool.pyright]
+pythonVersion = "3.13"
+pythonPlatform = "Linux"
+venvPath = "."
+venv = ".venv"
+extraPaths = ["src"]
+include = ["src"]
+typeCheckingMode = "basic"
+reportMissingImports = "warning"
+reportMissingTypeStubs = false
+ignore = ["src/archipelago/handlers.py"]
 
 [tool.importlinter]
 root_packages = ["agent_foundry", "archipelago"]

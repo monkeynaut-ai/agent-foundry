@@ -83,9 +83,10 @@ def _parse_yaml(text: str, path: Path) -> dict:
         data = yaml.safe_load(text)
     except yaml.YAMLError as e:
         line = column = None
-        if hasattr(e, "problem_mark") and e.problem_mark is not None:
-            line = e.problem_mark.line + 1
-            column = e.problem_mark.column + 1
+        mark = getattr(e, "problem_mark", None)
+        if mark is not None:
+            line = mark.line + 1
+            column = mark.column + 1
         raise CapabilitySpecParseError(
             message=f"YAML parse error in {path}: {e}",
             file_path=path,
