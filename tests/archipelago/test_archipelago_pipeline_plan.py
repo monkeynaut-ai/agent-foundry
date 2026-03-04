@@ -7,10 +7,8 @@ import pytest
 
 from agent_foundry.planner.validators import validate_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
 
 PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "pipeline_plan.json"
-PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 
 
 @pytest.fixture
@@ -21,11 +19,6 @@ def plan_data():
 @pytest.fixture
 def plan(plan_data):
     return GraphWiringPlan(**plan_data)
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.with_product_specs(PRODUCT_CAPS_DIR)
 
 
 # ── Commit 1: Parse tests ──

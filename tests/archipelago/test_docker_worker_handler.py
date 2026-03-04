@@ -1,7 +1,7 @@
 """Docker worker handler — unit tests with mocked Docker and pipeline integration."""
 
 import json
-import time
+import threading
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -11,17 +11,10 @@ import pytest
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.planner.validators import validate_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
 from archipelago.docker_worker.handler import docker_worker_handler
 from archipelago.docker_worker.models import WorkerConstraints, WorkerResult
 
-PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "pipeline_plan.json"
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.with_product_specs(PRODUCT_CAPS_DIR)
 
 
 @pytest.fixture
@@ -40,17 +33,30 @@ def _valid_worker_input() -> dict:
     }
 
 
+class DockerTestHelper:
+    """Encapsulates the multi-level mock chain for Docker handler tests."""
+
+    def __init__(self, mock_docker, stream=None):
+        self.client = MagicMock()
+        self.container = MagicMock()
+        self.container.id = "c1"
+        self.container.exec_run.return_value = (0, b"/home/claude/.local/bin/claude")
+        self.client.containers.create.return_value = self.container
+        self.container.client.api.exec_create.return_value = {"Id": "e1"}
+        self.container.client.api.exec_start.return_value = (
+            stream if stream is not None else iter([])
+        )
+        mock_docker.from_env.return_value = self.client
+
+    @property
+    def exec_api(self):
+        return self.container.client.api
+
+
 def _mock_docker_env(mock_docker, stream=None):
     """Create a standard mock Docker client/container for handler tests."""
-    mock_client = MagicMock()
-    mock_container = MagicMock()
-    mock_container.id = "c1"
-    mock_container.exec_run.return_value = (0, b"/home/claude/.local/bin/claude")
-    mock_client.containers.create.return_value = mock_container
-    mock_container.client.api.exec_create.return_value = {"Id": "e1"}
-    mock_container.client.api.exec_start.return_value = stream if stream is not None else iter([])
-    mock_docker.from_env.return_value = mock_client
-    return mock_client, mock_container
+    helper = DockerTestHelper(mock_docker, stream)
+    return helper.client, helper.container
 
 
 class TestDockerWorkerHandler:
@@ -112,9 +118,11 @@ class TestDockerWorkerHandler:
 
     @patch("archipelago.docker_worker.handler.docker")
     def test_given_cc_timeout_when_called_then_status_is_timed_out(self, mock_docker):
+        block = threading.Event()
+
         def _slow_stream():
             yield b"working...\n"
-            time.sleep(5)
+            block.wait(timeout=10)
 
         _mock_docker_env(mock_docker, stream=_slow_stream())
 
@@ -122,18 +130,22 @@ class TestDockerWorkerHandler:
         worker_input["constraints"]["timeout_seconds"] = 0
         state = {"worker_input": worker_input}
         result = docker_worker_handler(state)
+        block.set()  # unblock the generator so the thread can exit
         assert result["worker_result"]["status"] == "timed_out"
 
     @patch("archipelago.docker_worker.handler.docker")
     def test_given_interrupt_during_run_when_called_then_breakpoint_payload_set(self, mock_docker):
+        block = threading.Event()
+
         def _interrupt_stream():
             yield b'ARCHIPELAGO_NEED_CLARIFICATION {"question": "Which DB?", "options": ["pg"], "default": "pg", "blocking": true}\n'
-            time.sleep(5)
+            block.wait(timeout=10)
 
         _mock_docker_env(mock_docker, stream=_interrupt_stream())
 
         state = {"worker_input": _valid_worker_input()}
         result = docker_worker_handler(state)
+        block.set()  # unblock the generator so the thread can exit
         assert result.get("breakpoint_payload") is not None
         assert result["breakpoint_payload"]["type"] == "clarification"
         assert result["worker_result"] is None

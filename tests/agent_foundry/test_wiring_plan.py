@@ -3,8 +3,6 @@
 Tests: valid JSON parses; .model_dump_json() round-trips with no field loss.
 """
 
-import json
-
 from agent_foundry.planner.wiring_plan import (
     GraphWiringPlan,
 )
@@ -79,27 +77,13 @@ class TestJsonRoundTrip:
         reconstructed = GraphWiringPlan(**dumped)
         assert reconstructed == plan
 
-    def test_json_is_valid_json(self):
-        plan = GraphWiringPlan(**_minimal_plan())
-        json_str = plan.model_dump_json()
-        parsed = json.loads(json_str)
-        assert isinstance(parsed, dict)
-        assert "nodes" in parsed
-
-
 class TestOptionalFields:
     """Optional fields have correct defaults."""
 
-    def test_tools_default_empty(self):
+    def test_optional_fields_have_expected_defaults(self):
         plan = GraphWiringPlan(**_minimal_plan())
         assert plan.tools == []
-
-    def test_breakpoints_default_empty(self):
-        plan = GraphWiringPlan(**_minimal_plan())
         assert plan.breakpoints == []
-
-    def test_persistence_default_none(self):
-        plan = GraphWiringPlan(**_minimal_plan())
         assert plan.persistence is None
 
     def test_plan_with_tools(self):

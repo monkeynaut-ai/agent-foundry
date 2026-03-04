@@ -37,15 +37,16 @@ def _slow_handler(inputs: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-_call_count = 0
+def _make_flaky_handler(fail_until: int):
+    counter = {"n": 0}
 
+    def handler(inputs: dict[str, Any]) -> dict[str, Any]:
+        counter["n"] += 1
+        if counter["n"] < fail_until:
+            raise RuntimeError("Transient failure")
+        return {}
 
-def _flaky_handler(inputs: dict[str, Any]) -> dict[str, Any]:
-    global _call_count
-    _call_count += 1
-    if _call_count < 3:
-        raise RuntimeError("Transient failure")
-    return {}
+    return handler
 
 
 def _always_failing_handler(inputs: dict[str, Any]) -> dict[str, Any]:
@@ -77,11 +78,9 @@ class TestRetries:
     """Flaky nodes retry up to max_retries then error."""
 
     def test_flaky_node_succeeds_after_retries(self):
-        global _call_count
-        _call_count = 0
         spec = _make_spec(max_retries=3)
         with patch("agent_foundry.registry.execution.FF_RETRY_TIMEOUTS", True):
-            result = execute_capability(spec, {}, _flaky_handler)
+            result = execute_capability(spec, {}, _make_flaky_handler(3))
         assert result == {}
 
     def test_always_failing_node_exhausts_retries(self):
@@ -96,7 +95,7 @@ class TestRetries:
         with patch("agent_foundry.registry.execution.FF_RETRY_TIMEOUTS", True):
             with pytest.raises(CapabilityExecutionError) as exc_info:
                 execute_capability(spec, {}, _always_failing_handler)
-            assert "3" in str(exc_info.value)  # 1 initial + 2 retries
+            assert "3 attempts" in str(exc_info.value)  # 1 initial + 2 retries
 
 
 class TestFeatureFlag:

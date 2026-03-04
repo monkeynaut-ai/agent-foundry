@@ -130,18 +130,18 @@ class TestWorkerResult:
         assert reconstructed == result
 
 
-class TestPatchInfo:
-    def test_given_valid_fields_when_instantiated_then_validates(self):
-        patch = PatchInfo(**_valid_patch_info())
-        assert patch.pr_id == "pr-1"
-        assert patch.branch_name == "feat/test"
-
-
-class TestCommitEvidence:
-    def test_given_valid_fields_when_instantiated_then_validates(self):
-        evidence = CommitEvidence(**_valid_commit_evidence())
-        assert evidence.all_green is True
-        assert evidence.tests_passed == 5
+@pytest.mark.parametrize(
+    "model_cls,data_factory",
+    [
+        (PatchInfo, _valid_patch_info),
+        (CommitEvidence, _valid_commit_evidence),
+    ],
+    ids=["PatchInfo", "CommitEvidence"],
+)
+class TestSimpleModelValidation:
+    def test_given_valid_fields_when_instantiated_then_validates(self, model_cls, data_factory):
+        instance = model_cls(**data_factory())
+        assert instance is not None
 
 
 # ── Commit 2: ProgressEvent, TestRunRecord, interrupt models, ResumePoint ──

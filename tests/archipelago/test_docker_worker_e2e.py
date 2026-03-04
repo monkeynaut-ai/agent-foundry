@@ -10,10 +10,10 @@ import pytest
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.observability.tracer import ExecutionTracer
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
 from agent_foundry.registry.spec import load_capability_spec
 
-PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
+from .conftest import PRODUCT_CAPS_DIR
+
 PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "pipeline_plan.json"
 
 
@@ -101,11 +101,6 @@ STUB_HANDLERS = {
     "human_approval_gate": _stub_gate,
     "coding_implement_feature_from_spec": _stub_docker_worker,
 }
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.with_product_specs(PRODUCT_CAPS_DIR)
 
 
 @pytest.fixture

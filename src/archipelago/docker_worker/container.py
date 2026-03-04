@@ -38,7 +38,6 @@ class ContainerManager:
     def create_container(
         self,
         image: str | None = None,
-        repo_ref: str = "main",
         workspace_volume: str = "",
         constraints: WorkerConstraints | None = None,
     ) -> ContainerHandle:

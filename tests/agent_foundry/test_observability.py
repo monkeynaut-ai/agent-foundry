@@ -9,7 +9,6 @@ S6.7: Non-functional: trace payload size + export latency budgets.
 """
 
 import time
-from pathlib import Path
 
 from agent_foundry.observability.gates import (
     citation_validator_gate,
@@ -18,8 +17,6 @@ from agent_foundry.observability.gates import (
     uncertainty_completeness_gate,
 )
 from agent_foundry.observability.tracer import ExecutionTracer
-
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
 
 
 # --- S6.1: Tracing Spans ---
@@ -109,6 +106,32 @@ class TestTraceEnrichment:
         args = span.tool_calls[0]["args"]
         assert args["headers"]["authorization"] == "[REDACTED]"
         assert args["auth"]["token"] == "[REDACTED]"
+
+    def test_tool_trace_redacts_all_sensitive_keys(self):
+        tracer = ExecutionTracer()
+        span = tracer.start_span(node_id="n1", capability="tool_calling")
+        tracer.add_tool_call(
+            span,
+            tool_name="api_call",
+            args={
+                "api_key": "key1",
+                "secret": "sec1",
+                "password": "pw1",
+                "token": "tok1",
+                "authorization": "auth1",
+                "safe_field": "visible",
+            },
+            result={},
+        )
+        tracer.end_span(span, status="success")
+
+        args = span.tool_calls[0]["args"]
+        assert args["api_key"] == "[REDACTED]"
+        assert args["secret"] == "[REDACTED]"
+        assert args["password"] == "[REDACTED]"
+        assert args["token"] == "[REDACTED]"
+        assert args["authorization"] == "[REDACTED]"
+        assert args["safe_field"] == "visible"
 
 
 # --- S6.3: Schema Validator Gate ---

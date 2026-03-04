@@ -9,7 +9,6 @@ S5.7: Template expansion into subgraphs.
 S5.8: Runtime schema failures + compile-time performance budget.
 """
 
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -20,14 +19,6 @@ from agent_foundry.compiler.errors import (
     PlanCompilationError,
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
-
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
 
 
 def _stub_handler(state: dict[str, Any]) -> dict[str, Any]:
@@ -149,19 +140,35 @@ class TestLoopSafety:
 class TestTemplateExpansion:
     """Template references expand to subgraph node types."""
 
-    def test_draft_review_revise_template_expands(self, registry):
+    def test_draft_review_revise_template_has_3_nodes_with_correct_ids(self):
         from agent_foundry.compiler.templates import expand_template
 
         nodes = expand_template("draft_review_revise_loop")
-        assert len(nodes) > 0
-        for n in nodes:
-            assert registry.get(n["capability"]) is not None
+        assert len(nodes) == 3
+        assert [n["id"] for n in nodes] == ["draft", "review", "revise"]
 
-    def test_gather_verify_analyze_template_expands(self, registry):
+    def test_gather_verify_analyze_recommend_has_4_nodes_with_correct_ids(self):
         from agent_foundry.compiler.templates import expand_template
 
         nodes = expand_template("gather_verify_analyze_recommend")
-        assert len(nodes) > 0
+        assert len(nodes) == 4
+        assert [n["id"] for n in nodes] == ["gather", "verify", "analyze", "recommend"]
+
+    def test_unknown_template_raises_value_error(self):
+        from agent_foundry.compiler.templates import expand_template
+
+        with pytest.raises(ValueError, match="Unknown template"):
+            expand_template("nonexistent_template")
+
+    def test_expanded_twice_returns_equal_but_independent_copies(self):
+        from agent_foundry.compiler.templates import expand_template
+
+        nodes1 = expand_template("draft_review_revise_loop")
+        nodes2 = expand_template("draft_review_revise_loop")
+        assert nodes1 == nodes2
+        # Verify independence (deep copy)
+        nodes1[0]["id"] = "mutated"
+        assert nodes2[0]["id"] == "draft"
 
 
 # --- S5.8: Runtime Schema Failures ---

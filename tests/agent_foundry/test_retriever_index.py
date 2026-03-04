@@ -4,19 +4,9 @@ Tests: build index creates files; reload works; rebuild not required.
 Feature flag: FF_RETRIEVER (default off until S2.3).
 """
 
-from pathlib import Path
-
 import pytest
 
-from agent_foundry.registry.registry import CapabilityRegistry
 from agent_foundry.retriever.indexer import RegistryIndexer
-
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
 
 
 @pytest.fixture
@@ -79,3 +69,20 @@ class TestFeatureFlag:
         indexer = RegistryIndexer(index_dir=index_dir)
         indexer.build(registry)
         assert indexer.is_loaded
+
+
+class TestGetBySource:
+    """RegistryIndexer.get_by_source returns documents by source metadata."""
+
+    def test_valid_source_returns_document(self, registry, index_dir):
+        indexer = RegistryIndexer(index_dir=index_dir)
+        indexer.build(registry)
+        doc = indexer.get_by_source("registry:rag_retriever")
+        assert doc is not None
+        assert "rag_retriever" in doc.page_content
+
+    def test_invalid_source_returns_none(self, registry, index_dir):
+        indexer = RegistryIndexer(index_dir=index_dir)
+        indexer.build(registry)
+        doc = indexer.get_by_source("nonexistent:source")
+        assert doc is None

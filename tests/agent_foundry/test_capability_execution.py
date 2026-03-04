@@ -119,6 +119,7 @@ class TestOutputValidation:
             execute_capability(spec, {"query": "hello"}, _bad_output_handler)
         assert exc_info.value.field_paths is not None
         assert len(exc_info.value.field_paths) > 0
+        assert "result" in str(exc_info.value)
 
 
 class TestFeatureFlag:

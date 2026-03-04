@@ -4,21 +4,10 @@ Tests: compile returns runnable; invocation produces expected state mutation.
 Feature flag: FF_COMPILER (default off until S5.2).
 """
 
-from pathlib import Path
 from typing import Any
-
-import pytest
 
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
-
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
 
 
 def _one_node_plan() -> GraphWiringPlan:
@@ -69,6 +58,7 @@ class TestCompileAndRun:
         plan = _one_node_plan()
         graph = compile_plan(plan, registry, handler_registry=HANDLER_REGISTRY)
         assert graph is not None
+        assert hasattr(graph, "invoke")
 
     def test_single_node_execution(self, registry):
         plan = _one_node_plan()

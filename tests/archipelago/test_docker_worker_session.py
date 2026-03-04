@@ -1,6 +1,6 @@
 """Docker worker PTY session — unit tests with mocked Docker SDK."""
 
-import time
+import threading
 from unittest.mock import MagicMock
 
 import pytest
@@ -62,13 +62,21 @@ class TestOutputStream:
         self,
     ):
         lines_received = []
+        done = threading.Event()
+        expected_lines = {"line1", "line2"}
+
+        def _callback(line, cid, ts):
+            lines_received.append(line)
+            if expected_lines.issubset(set(lines_received)):
+                done.set()
+
         manager = SessionManager()
-        manager.register_output_callback(lambda line, cid, ts: lines_received.append(line))
+        manager.register_output_callback(_callback)
 
         handle = _mock_container_handle()
         handle._container.client.api.exec_start.return_value = iter([b"line1\nline2\n"])
         manager.launch_session(handle, "cmd")
-        time.sleep(0.1)
+        done.wait(timeout=2.0)
 
         assert "line1" in lines_received
         assert "line2" in lines_received
@@ -77,13 +85,19 @@ class TestOutputStream:
         self,
     ):
         received_cids = []
+        done = threading.Event()
+
         manager = SessionManager()
-        manager.register_output_callback(lambda line, cid, ts: received_cids.append(cid))
+        def _cb(line, cid, ts):
+            received_cids.append(cid)
+            done.set()
+
+        manager.register_output_callback(_cb)
 
         handle = _mock_container_handle()
         handle._container.client.api.exec_start.return_value = iter([b"hello\n"])
         manager.launch_session(handle, "cmd")
-        time.sleep(0.1)
+        done.wait(timeout=2.0)
 
         assert "c-123" in received_cids
 
@@ -91,13 +105,19 @@ class TestOutputStream:
         self,
     ):
         received_ts = []
+        done = threading.Event()
+
         manager = SessionManager()
-        manager.register_output_callback(lambda line, cid, ts: received_ts.append(ts))
+        def _cb(line, cid, ts):
+            received_ts.append(ts)
+            done.set()
+
+        manager.register_output_callback(_cb)
 
         handle = _mock_container_handle()
         handle._container.client.api.exec_start.return_value = iter([b"hello\n"])
         manager.launch_session(handle, "cmd")
-        time.sleep(0.1)
+        done.wait(timeout=2.0)
 
         assert len(received_ts) >= 1
         assert received_ts[0] > 0
@@ -107,14 +127,21 @@ class TestOutputStream:
     ):
         cb1_lines = []
         cb2_lines = []
+        done = threading.Event()
+
         manager = SessionManager()
         manager.register_output_callback(lambda line, cid, ts: cb1_lines.append(line))
-        manager.register_output_callback(lambda line, cid, ts: cb2_lines.append(line))
+
+        def _cb2(line, cid, ts):
+            cb2_lines.append(line)
+            done.set()
+
+        manager.register_output_callback(_cb2)
 
         handle = _mock_container_handle()
         handle._container.client.api.exec_start.return_value = iter([b"test\n"])
         manager.launch_session(handle, "cmd")
-        time.sleep(0.1)
+        done.wait(timeout=2.0)
 
         assert "test" in cb1_lines
         assert "test" in cb2_lines
@@ -152,8 +179,14 @@ class TestPauseResume:
         self,
     ):
         lines = []
+        resume_done = threading.Event()
+
         manager = SessionManager()
-        manager.register_output_callback(lambda line, cid, ts: lines.append(line))
+        def _cb(line, cid, ts):
+            lines.append(line)
+            resume_done.set()
+
+        manager.register_output_callback(_cb)
 
         # Pre-pause before launching
         dummy_session = SessionHandle(exec_id="e", container_id="c")
@@ -162,14 +195,19 @@ class TestPauseResume:
         handle = _mock_container_handle()
         handle._container.client.api.exec_start.return_value = iter([b"blocked\n"])
         session = manager.launch_session(handle, "cmd")
-        time.sleep(0.1)
+
+        # Give stream thread time to reach the pause point
+        # The thread should block on _paused.wait()
+        import time
+
+        time.sleep(0.05)
 
         # Should not have received the line yet (paused)
         assert "blocked" not in lines
 
         # Resume
         manager.resume(session)
-        time.sleep(0.1)
+        resume_done.wait(timeout=2.0)
 
         assert "blocked" in lines
 
@@ -177,10 +215,15 @@ class TestPauseResume:
 class TestExitDetection:
     def test_given_session_when_process_exits_then_status_is_exited(self):
         manager = SessionManager()
+
         handle = _mock_container_handle()
         handle._container.client.api.exec_start.return_value = iter([])
         session = manager.launch_session(handle, "cmd")
-        time.sleep(0.1)
+
+        # Wait for thread to complete
+        if manager._stream_thread:
+            manager._stream_thread.join(timeout=2.0)
+
         assert session.status == "exited"
 
     def test_given_session_when_process_exits_then_exit_code_captured(self):
@@ -190,8 +233,11 @@ class TestExitDetection:
         handle._container.client.api.exec_inspect.return_value = {"ExitCode": 0}
 
         session = manager.launch_session(handle, "cmd")
-        time.sleep(0.1)
+
+        # Wait for thread to complete
+        if manager._stream_thread:
+            manager._stream_thread.join(timeout=2.0)
+
         assert session.status == "exited"
         assert session.exit_code == 0
-        # Verify we used _client_api (stored from container.client.api), not _socket
         handle._container.client.api.exec_inspect.assert_called_once_with("exec-abc")

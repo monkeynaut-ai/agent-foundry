@@ -8,9 +8,7 @@ import pytest
 
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
 
-PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
 PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "pipeline_plan.json"
 
 
@@ -94,11 +92,6 @@ STUB_HANDLERS = {
         },
     ),
 }
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.with_product_specs(PRODUCT_CAPS_DIR)
 
 
 @pytest.fixture

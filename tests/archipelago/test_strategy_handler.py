@@ -1,13 +1,11 @@
 """StrategyHandler — unit tests for deterministic strategy handler."""
 
-from pathlib import Path
-
 import pytest
 
 from agent_foundry.registry.spec import CapabilitySpec, load_capability_spec
 from archipelago.agents.strategy import StrategyHandler
 
-PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
+from .conftest import PRODUCT_CAPS_DIR
 
 
 def _make_spec() -> CapabilitySpec:

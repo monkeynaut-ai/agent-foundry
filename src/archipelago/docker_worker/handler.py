@@ -62,7 +62,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     interrupt_request = None
     update_available: dict[str, str] | None = None
 
-    def _output_callback(line: str, container_id: str, timestamp: float) -> None:
+    def _output_callback(line: str, _container_id: str, _timestamp: float) -> None:
         nonlocal interrupt_request, update_available
         output_lines.append(line)
         detected = detector.scan_line(line)
@@ -77,7 +77,6 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     try:
         # Create and start container
         container_handle = container_mgr.create_container(
-            repo_ref=worker_input.repo_ref,
             workspace_volume=f"archipelago-{int(time.time())}",
             constraints=worker_input.constraints,
         )
@@ -143,7 +142,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
             status=status,
         )
         result_state = {**state, "worker_result": result.model_dump()}
-        if update_available:
+        if update_available:  # pyright: ignore[reportUnreachable] — reachable via nonlocal mutation from _output_callback thread
             result_state["update_available"] = update_available
         return result_state
 

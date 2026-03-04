@@ -5,19 +5,9 @@ Tests: same query twice returns identical ids + ordering;
 Feature flag: FF_DETERMINISTIC_RETRIEVAL (default on).
 """
 
-from pathlib import Path
-
 import pytest
 
-from agent_foundry.registry.registry import CapabilityRegistry
-from agent_foundry.retriever.indexer import RegistryIndexer
-
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
+from agent_foundry.retriever.indexer import DeterministicEmbeddings, RegistryIndexer
 
 
 @pytest.fixture
@@ -69,3 +59,30 @@ class TestStableIds:
                 ids2.add(r.metadata["chunk_id"])
 
         assert ids1 == ids2
+
+
+class TestDeterministicEmbeddings:
+    """DeterministicEmbeddings produces consistent, correct-dimension vectors."""
+
+    def test_same_text_embedded_twice_yields_identical_vectors(self):
+        emb = DeterministicEmbeddings()
+        v1 = emb.embed_query("hello world")
+        v2 = emb.embed_query("hello world")
+        assert v1 == v2
+
+    def test_different_texts_yield_different_vectors(self):
+        emb = DeterministicEmbeddings()
+        v1 = emb.embed_query("hello")
+        v2 = emb.embed_query("goodbye")
+        assert v1 != v2
+
+    def test_custom_dim_yields_correct_length(self):
+        emb = DeterministicEmbeddings(dim=128)
+        v = emb.embed_query("test")
+        assert len(v) == 128
+
+    def test_embed_query_and_embed_documents_consistent(self):
+        emb = DeterministicEmbeddings()
+        query_vec = emb.embed_query("test text")
+        doc_vecs = emb.embed_documents(["test text"])
+        assert query_vec == doc_vecs[0]

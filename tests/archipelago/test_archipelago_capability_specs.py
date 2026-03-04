@@ -1,11 +1,8 @@
 """Archipelago capability specs — loading, schema validation, and registry integration."""
 
-from pathlib import Path
-
 import jsonschema
 import pytest
 
-from agent_foundry.registry.registry import CapabilityRegistry
 from agent_foundry.registry.spec import CapabilitySpec, load_capability_spec
 from archipelago.models import (
     CodePatch,
@@ -16,7 +13,7 @@ from archipelago.models import (
     TestResults,
 )
 
-PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
+from .conftest import PRODUCT_CAPS_DIR
 
 ARCHIPELAGO_SPEC_NAMES = [
     "architecture_generate_feature_arch",
@@ -25,11 +22,6 @@ ARCHIPELAGO_SPEC_NAMES = [
     "spec_generate_feature_spec",
     "strategy_generate_product_brief",
 ]
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.with_product_specs(PRODUCT_CAPS_DIR)
 
 
 def _valid_product_brief_dump() -> dict:

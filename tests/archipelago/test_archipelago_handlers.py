@@ -1,6 +1,5 @@
 """Archipelago handlers — unit tests with mocked LLM."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import jsonschema
@@ -24,7 +23,7 @@ from archipelago.models import (
     TestResults,
 )
 
-PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
+from .conftest import PRODUCT_CAPS_DIR
 
 
 def _mock_product_brief():
@@ -83,15 +82,21 @@ def _mock_test_results():
     )
 
 
+def _mock_llm(mock_get_llm, return_value):
+    """Configure mock LLM to return a structured output value."""
+    mock = MagicMock()
+    mock.with_structured_output.return_value = mock
+    mock.invoke.return_value = return_value
+    mock_get_llm.return_value = mock
+    return mock
+
+
 class TestStrategyHandler:
     @patch("archipelago.handlers._get_llm")
     def test_given_valid_input_when_handler_called_then_state_contains_product_brief(
         self, mock_get_llm
     ):
-        mock_llm = MagicMock()
-        mock_llm.with_structured_output.return_value = mock_llm
-        mock_llm.invoke.return_value = _mock_product_brief()
-        mock_get_llm.return_value = mock_llm
+        _mock_llm(mock_get_llm, _mock_product_brief())
 
         state = {"product_brief_input": "Build a test runner"}
         result = strategy_handler(state)
@@ -102,10 +107,7 @@ class TestStrategyHandler:
     def test_given_valid_input_when_handler_called_then_product_brief_validates_against_schema(
         self, mock_get_llm
     ):
-        mock_llm = MagicMock()
-        mock_llm.with_structured_output.return_value = mock_llm
-        mock_llm.invoke.return_value = _mock_product_brief()
-        mock_get_llm.return_value = mock_llm
+        _mock_llm(mock_get_llm, _mock_product_brief())
 
         state = {"product_brief_input": "Build a test runner"}
         result = strategy_handler(state)
@@ -124,10 +126,7 @@ class TestArchitectureHandler:
     def test_given_state_with_product_brief_when_called_then_state_contains_feature_architecture(
         self, mock_get_llm
     ):
-        mock_llm = MagicMock()
-        mock_llm.with_structured_output.return_value = mock_llm
-        mock_llm.invoke.return_value = _mock_feature_architecture()
-        mock_get_llm.return_value = mock_llm
+        _mock_llm(mock_get_llm, _mock_feature_architecture())
 
         state = {"product_brief": _mock_product_brief().model_dump()}
         result = architecture_handler(state)
@@ -138,10 +137,7 @@ class TestArchitectureHandler:
     def test_given_state_with_product_brief_when_called_then_feature_architecture_validates(
         self, mock_get_llm
     ):
-        mock_llm = MagicMock()
-        mock_llm.with_structured_output.return_value = mock_llm
-        mock_llm.invoke.return_value = _mock_feature_architecture()
-        mock_get_llm.return_value = mock_llm
+        _mock_llm(mock_get_llm, _mock_feature_architecture())
 
         state = {"product_brief": _mock_product_brief().model_dump()}
         result = architecture_handler(state)

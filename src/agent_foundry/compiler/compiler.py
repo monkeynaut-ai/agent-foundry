@@ -76,7 +76,7 @@ def compile_plan(
         # Wrap with max_iterations if configured
         max_iter = node.config.get("max_iterations")
         if max_iter is not None:
-            handler = _make_iteration_limiter(handler, node.id, max_iter)
+            handler = _make_iteration_limiter(handler, max_iter)
 
         graph.add_node(node.id, handler)
 
@@ -176,7 +176,7 @@ def _resolve_handler(
         "no_handler_found",
         extra={"node": node_id, "capability": capability},
     )
-    return _make_passthrough(node_id)
+    return _make_passthrough()
 
 
 def _make_validated_handler(
@@ -191,14 +191,14 @@ def _make_validated_handler(
     return validated_handler
 
 
-def _make_passthrough(node_id: str) -> Callable:
+def _make_passthrough() -> Callable:
     def handler(state: dict[str, Any]) -> dict[str, Any]:
         return state
 
     return handler
 
 
-def _make_iteration_limiter(handler: Callable, node_id: str, max_iterations: int) -> Callable:
+def _make_iteration_limiter(handler: Callable, max_iterations: int) -> Callable:
     counter = {"count": 0}
 
     def limited_handler(state: dict[str, Any]) -> dict[str, Any]:

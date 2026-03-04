@@ -1,20 +1,12 @@
 """Docker worker capability spec — loading, schema validation, and registry tests."""
 
-from pathlib import Path
-
 import jsonschema
 import pytest
 
-from agent_foundry.registry.registry import CapabilityRegistry
 from agent_foundry.registry.spec import CapabilitySpec, load_capability_spec
 from archipelago.docker_worker.models import WorkerConstraints, WorkerInput, WorkerResult
 
-PRODUCT_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "archipelago" / "capabilities"
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.with_product_specs(PRODUCT_CAPS_DIR)
+from .conftest import PRODUCT_CAPS_DIR
 
 
 class TestCodingSpec:

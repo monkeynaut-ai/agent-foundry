@@ -163,3 +163,63 @@ class TestDestroyContainer:
         manager.stop(handle)
         manager.destroy(handle, remove_volume=False)
         handle._container.remove.assert_called_once_with(v=False)
+
+
+# ── Commit 4a: cleanup_all ──
+
+
+class TestCleanupAll:
+    def _make_multi_container_manager(self):
+        """Create a manager that returns distinct mock containers."""
+        client = MagicMock()
+        containers = []
+
+        def _create_side_effect(*args, **kwargs):
+            c = MagicMock()
+            c.id = f"container-{len(containers)}"
+            c.exec_run.return_value = (0, b"/usr/bin/claude")
+            containers.append(c)
+            return c
+
+        client.containers.create.side_effect = _create_side_effect
+        return ContainerManager(client)
+
+    def test_given_two_created_containers_when_cleanup_all_called_then_both_removed(self):
+        manager = self._make_multi_container_manager()
+        h1 = manager.create_container()
+        h2 = manager.create_container()
+        manager.cleanup_all()
+        h1._container.remove.assert_called_once()
+        h2._container.remove.assert_called_once()
+        assert h1.status == "destroyed"
+        assert h2.status == "destroyed"
+
+    def test_given_one_destroyed_and_one_running_when_cleanup_all_called_then_only_running_cleaned(
+        self,
+    ):
+        manager = self._make_multi_container_manager()
+        h1 = manager.create_container()
+        h2 = manager.create_container()
+        manager.destroy(h1)
+        h1._container.remove.reset_mock()
+
+        manager.cleanup_all()
+        # h1 was already destroyed, so remove should NOT be called again
+        h1._container.remove.assert_not_called()
+        h2._container.remove.assert_called_once()
+
+
+# ── Commit 4b: validate_image (isolated) ──
+
+
+class TestValidateImage:
+    def test_given_container_with_claude_available_then_no_error(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (0, b"/usr/local/bin/claude")
+        manager.validate_image(handle)  # Should not raise
+
+    def test_given_container_missing_claude_then_raises_with_actionable_message(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (1, b"")
+        with pytest.raises(ContainerCreationError, match="claude"):
+            manager.validate_image(handle)

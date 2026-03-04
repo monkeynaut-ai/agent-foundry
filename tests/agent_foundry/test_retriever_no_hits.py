@@ -4,7 +4,6 @@ Tests: nonsense query returns []; log captured contains "no_hits".
 """
 
 import logging
-from pathlib import Path
 
 import pytest
 
@@ -12,7 +11,7 @@ from agent_foundry.registry.registry import CapabilityRegistry
 from agent_foundry.retriever.indexer import RegistryIndexer
 from agent_foundry.retriever.retrieval import RetrievalAPI
 
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+from .conftest import CAPABILITIES_DIR
 
 
 @pytest.fixture

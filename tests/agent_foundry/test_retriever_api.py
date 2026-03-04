@@ -4,21 +4,12 @@ Tests: query="rag_retriever" returns snippet referencing that spec in top-3.
 Feature flag: FF_RETRIEVER (default on after this slice).
 """
 
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from agent_foundry.registry.registry import CapabilityRegistry
 from agent_foundry.retriever.indexer import RegistryIndexer
 from agent_foundry.retriever.retrieval import RetrievalAPI
-
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
 
 
 @pytest.fixture

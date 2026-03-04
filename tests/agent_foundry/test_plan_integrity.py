@@ -6,7 +6,6 @@ Tests: unknown capability -> UnknownCapabilityError;
 Feature flag: FF_PLAN_VALIDATION (default on).
 """
 
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -14,36 +13,12 @@ import pytest
 from agent_foundry.planner.errors import (
     DanglingEdgeError,
     DuplicateNodeIdError,
+    PlanningTimeoutError,
     UnknownCapabilityError,
 )
 from agent_foundry.planner.validators import validate_plan
-from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
 
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
-
-
-def _make_plan(**overrides) -> GraphWiringPlan:
-    defaults = {
-        "goal": "test",
-        "nodes": [
-            {"id": "n1", "capability": "rag_retriever"},
-            {"id": "n2", "capability": "schema_validator"},
-        ],
-        "edges": [{"source": "n1", "target": "n2"}],
-        "entry_point": "n1",
-        "capability_versions": {
-            "rag_retriever": "1.0.0",
-            "schema_validator": "1.0.0",
-        },
-    }
-    defaults.update(overrides)
-    return GraphWiringPlan(**defaults)
+from .conftest import make_plan as _make_plan
 
 
 class TestUnknownCapability:
@@ -118,3 +93,9 @@ class TestFeatureFlag:
         )
         with patch("agent_foundry.planner.validators.FF_PLAN_VALIDATION", False):
             validate_plan(plan, registry)  # Should not raise
+
+
+class TestPlanningTimeoutError:
+    def test_raise_and_catch_planning_timeout_error(self):
+        with pytest.raises(PlanningTimeoutError, match="exceeded"):
+            raise PlanningTimeoutError("Planning time exceeded")

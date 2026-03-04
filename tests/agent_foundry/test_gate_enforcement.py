@@ -3,21 +3,11 @@
 Tests: plan missing gate on one path fails compilation.
 """
 
-from pathlib import Path
-
 import pytest
 
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.compiler.errors import PlanCompilationError
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
-
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
 
 
 HANDLERS = {
@@ -55,6 +45,37 @@ class TestGateEnforcement:
         with pytest.raises(PlanCompilationError, match="eval gate"):
             compile_plan(plan, registry, handler_registry=HANDLERS, enforce_gates=True)
 
+
+class TestGateEnforcementEdgeCases:
+    """Edge cases for _check_eval_gates_on_paths."""
+
+    def test_single_node_no_gate_raises_error(self, registry):
+        plan = GraphWiringPlan(
+            goal="test",
+            nodes=[{"id": "n1", "capability": "rag_retriever"}],
+            edges=[],
+            entry_point="n1",
+            capability_versions={"rag_retriever": "1.0.0"},
+        )
+        with pytest.raises(PlanCompilationError, match="eval gate"):
+            compile_plan(plan, registry, handler_registry=HANDLERS, enforce_gates=True)
+
+    def test_gate_is_terminal_node_passes(self, registry):
+        plan = GraphWiringPlan(
+            goal="test",
+            nodes=[
+                {"id": "n1", "capability": "rag_retriever"},
+                {"id": "gate", "capability": "schema_validator"},
+            ],
+            edges=[{"source": "n1", "target": "gate"}],
+            entry_point="n1",
+            capability_versions={
+                "rag_retriever": "1.0.0",
+                "schema_validator": "1.0.0",
+            },
+        )
+        graph = compile_plan(plan, registry, handler_registry=HANDLERS, enforce_gates=True)
+        assert graph is not None
     def test_plan_with_gate_passes(self, registry):
         plan = GraphWiringPlan(
             goal="test",

@@ -13,7 +13,6 @@ DS9: Non-functional: end-to-end latency budgets.
 
 import os
 import time
-from pathlib import Path
 
 import pytest
 
@@ -31,14 +30,6 @@ from agent_foundry.observability.gates import (
     uncertainty_completeness_gate,
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
-
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
 
 
 # --- DS1: Runnable Demo Entrypoint ---

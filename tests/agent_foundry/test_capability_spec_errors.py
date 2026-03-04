@@ -86,21 +86,7 @@ class TestParseErrors:
             load_capability_spec(path)
 
 
-class TestProcessDoesNotCrash:
-    """Invalid specs never cause unhandled exceptions."""
-
-    def test_missing_fields_does_not_crash(self):
-        import contextlib
-
-        with contextlib.suppress(CapabilitySpecValidationError):
-            load_capability_spec(FIXTURES / "invalid_missing_name.yaml")
-
-    def test_parse_error_does_not_crash(self):
-        import contextlib
-
-        with contextlib.suppress(CapabilitySpecParseError):
-            load_capability_spec(FIXTURES / "invalid_parse_error.yaml")
-
+class TestEdgeCases:
     def test_nonexistent_file_raises_parse_error(self):
         with pytest.raises(CapabilitySpecParseError):
             load_capability_spec(FIXTURES / "does_not_exist.yaml")

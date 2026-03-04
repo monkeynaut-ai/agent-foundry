@@ -5,13 +5,7 @@ Tests: registry contains all minimum capability names;
 Feature flag: FF_MIN_CAP_SET (default on).
 """
 
-from pathlib import Path
-
 import pytest
-
-from agent_foundry.registry.registry import CapabilityRegistry
-
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
 
 MINIMUM_CAPABILITIES = [
     "citation_validator",
@@ -23,11 +17,6 @@ MINIMUM_CAPABILITIES = [
     "tool_calling",
     "uncertainty_completeness_validator",
 ]
-
-
-@pytest.fixture
-def registry():
-    return CapabilityRegistry.from_directory(CAPABILITIES_DIR)
 
 
 class TestMinimumCapabilitySet:
