@@ -3,7 +3,11 @@
 from unittest.mock import MagicMock
 
 from archipelago.docker_worker.interrupts import InterruptDetector, InterruptHandler
-from archipelago.docker_worker.models import ClarificationRequest, PermissionRequest
+from archipelago.docker_worker.models import (
+    ClarificationRequest,
+    PermissionRequest,
+    UpdateAvailable,
+)
 from archipelago.docker_worker.session import SessionHandle, SessionManager
 
 # ── Commit 1: InterruptDetector ──
@@ -48,6 +52,26 @@ class TestInterruptDetector:
         line = 'ARCHIPELAGO_NEED_PERMISSION {"action": "delete prod", "risk_level": "high", "why_needed": "cleanup"}'
         result = detector.scan_line(line)
         assert result.risk_level == "high"
+
+    def test_given_update_available_line_when_scanned_then_returns_update_available(self):
+        detector = InterruptDetector()
+        line = 'ARCHIPELAGO_UPDATE_AVAILABLE {"installed": "2.1.60", "latest": "2.1.66"}'
+        result = detector.scan_line(line)
+        assert isinstance(result, UpdateAvailable)
+        assert result.installed == "2.1.60"
+        assert result.latest == "2.1.66"
+
+    def test_given_update_available_when_detected_then_session_not_paused(self):
+        """UpdateAvailable is non-blocking — it should not trigger a pause."""
+        session_mgr = MagicMock(spec=SessionManager)
+        detector = InterruptDetector()
+        handler = InterruptHandler(session_mgr, detector)
+        session = SessionHandle(exec_id="e1", container_id="c1")
+
+        update = UpdateAvailable(installed="2.1.60", latest="2.1.66")
+        result = handler.handle_interrupt(update, session, {})
+        session_mgr.pause.assert_not_called()
+        assert "breakpoint_payload" not in result
 
 
 # ── Commit 2: InterruptHandler breakpoint integration ──

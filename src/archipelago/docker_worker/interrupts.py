@@ -6,12 +6,17 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from archipelago.docker_worker.models import ClarificationRequest, PermissionRequest
+from archipelago.docker_worker.models import (
+    ClarificationRequest,
+    PermissionRequest,
+    UpdateAvailable,
+)
 from archipelago.docker_worker.session import SessionHandle, SessionManager
 
 logger = logging.getLogger(__name__)
 
 _INTERRUPT_PATTERN = re.compile(r"^ARCHIPELAGO_NEED_(CLARIFICATION|PERMISSION)\s+(\{.*\})$")
+_UPDATE_PATTERN = re.compile(r"^ARCHIPELAGO_UPDATE_AVAILABLE\s+(\{.*\})$")
 
 
 class InterruptDetector:
@@ -21,16 +26,35 @@ class InterruptDetector:
         self,
         on_clarification: Callable[[ClarificationRequest], None] | None = None,
         on_permission: Callable[[PermissionRequest], None] | None = None,
+        on_update_available: Callable[[UpdateAvailable], None] | None = None,
     ):
         self._on_clarification = on_clarification
         self._on_permission = on_permission
+        self._on_update_available = on_update_available
 
-    def scan_line(self, line: str) -> ClarificationRequest | PermissionRequest | None:
-        """Scan a single line for interrupt markers.
+    def scan_line(
+        self, line: str
+    ) -> ClarificationRequest | PermissionRequest | UpdateAvailable | None:
+        """Scan a single line for interrupt or notification markers.
 
         Returns the parsed request model, or None if no marker found.
         """
-        match = _INTERRUPT_PATTERN.match(line.strip())
+        stripped = line.strip()
+
+        # Check for update notification (non-blocking)
+        update_match = _UPDATE_PATTERN.match(stripped)
+        if update_match:
+            try:
+                payload = json.loads(update_match.group(1))
+                update = UpdateAvailable(**payload)
+                if self._on_update_available:
+                    self._on_update_available(update)
+                return update
+            except (json.JSONDecodeError, Exception):
+                logger.warning("Invalid UpdateAvailable payload: %s", line)
+                return None
+
+        match = _INTERRUPT_PATTERN.match(stripped)
         if not match:
             return None
 
@@ -78,7 +102,7 @@ class InterruptHandler:
 
     def handle_interrupt(
         self,
-        request: ClarificationRequest | PermissionRequest,
+        request: ClarificationRequest | PermissionRequest | UpdateAvailable,
         session_handle: SessionHandle,
         state: dict[str, Any],
     ) -> dict[str, Any]:
@@ -86,7 +110,17 @@ class InterruptHandler:
 
         Returns updated state dict. If a breakpoint is needed,
         state will contain 'breakpoint_payload'.
+        UpdateAvailable is non-blocking and does not pause the session.
         """
+        if isinstance(request, UpdateAvailable):
+            return {
+                **state,
+                "update_available": {
+                    "installed": request.installed,
+                    "latest": request.latest,
+                },
+            }
+
         if isinstance(request, ClarificationRequest) and request.blocking:
             self._session_manager.pause(session_handle)
             return {

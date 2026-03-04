@@ -27,7 +27,7 @@ class ContainerManager:
     def __init__(
         self,
         client: Any,
-        default_image: str = "python:3.13-slim",
+        default_image: str = "archipelago-cc-worker:latest",
         env_allowlist: set[str] | None = None,
     ):
         self._client = client
@@ -108,7 +108,7 @@ class ContainerManager:
         command is missing.
         """
         if required_commands is None:
-            required_commands = ["claude-code"]
+            required_commands = ["claude"]
 
         for cmd in required_commands:
             exit_code, _ = handle._container.exec_run(f"which {cmd}")

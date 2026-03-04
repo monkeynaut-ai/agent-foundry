@@ -15,7 +15,7 @@ def mock_client():
     mock_container = MagicMock()
     mock_container.id = "container-abc123"
     # Default exec_run returns success (exit_code=0) for image validation
-    mock_container.exec_run.return_value = (0, b"/usr/local/bin/claude-code")
+    mock_container.exec_run.return_value = (0, b"/home/claude/.local/bin/claude")
     client.containers.create.return_value = mock_container
     return client
 
@@ -118,15 +118,15 @@ class TestStartContainer:
         self, manager
     ):
         handle = manager.create_container()
-        # Mock exec_run to simulate 'which claude-code' failing (exit code 1)
+        # Mock exec_run to simulate 'which claude' failing (exit code 1)
         handle._container.exec_run.return_value = (1, b"")
-        with pytest.raises(ContainerCreationError, match="claude-code"):
+        with pytest.raises(ContainerCreationError, match="claude"):
             manager.start(handle)
 
     def test_given_image_with_cc_when_start_called_then_no_validation_error(self, manager):
         handle = manager.create_container()
-        # Mock exec_run to simulate 'which claude-code' succeeding
-        handle._container.exec_run.return_value = (0, b"/usr/local/bin/claude-code")
+        # Mock exec_run to simulate 'which claude' succeeding
+        handle._container.exec_run.return_value = (0, b"/home/claude/.local/bin/claude")
         manager.start(handle)
         assert handle.status == "running"
 

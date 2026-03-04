@@ -91,7 +91,7 @@ def recover_session(
     feature_spec: dict,
     last_checkpoint: ResumePoint | None = None,
     image: str | None = None,
-    command: str = "claude-code --yes",
+    command: str = "/home/claude/entrypoint.sh",
 ) -> tuple[ContainerHandle, SessionHandle]:
     """Restore a crashed session into a fresh container.
 

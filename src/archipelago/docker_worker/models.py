@@ -100,6 +100,13 @@ class PermissionRequest(BaseModel):
     alternatives: list[str] = Field(default_factory=list)
 
 
+class UpdateAvailable(BaseModel):
+    """Parsed payload from ARCHIPELAGO_UPDATE_AVAILABLE marker."""
+
+    installed: str
+    latest: str
+
+
 class ResumePoint(BaseModel):
     """Identifies where to resume work after a crash or pause."""
 

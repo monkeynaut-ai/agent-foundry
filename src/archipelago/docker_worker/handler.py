@@ -13,6 +13,7 @@ from archipelago.docker_worker.interrupts import InterruptDetector, InterruptHan
 from archipelago.docker_worker.models import (
     CommitEvidence,
     PatchInfo,
+    UpdateAvailable,
     WorkerInput,
     WorkerResult,
 )
@@ -56,15 +57,18 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         auto_approve_low_risk=worker_input.constraints.network_policy != "none",
     )
 
-    # Collect output lines and detect interrupts
+    # Collect output lines and detect interrupts/notifications
     output_lines: list[str] = []
     interrupt_request = None
+    update_available: dict[str, str] | None = None
 
     def _output_callback(line: str, container_id: str, timestamp: float) -> None:
-        nonlocal interrupt_request
+        nonlocal interrupt_request, update_available
         output_lines.append(line)
         detected = detector.scan_line(line)
-        if detected is not None:
+        if isinstance(detected, UpdateAvailable):
+            update_available = {"installed": detected.installed, "latest": detected.latest}
+        elif detected is not None:
             interrupt_request = detected
 
     session_mgr.register_output_callback(_output_callback)
@@ -80,7 +84,9 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         container_mgr.start(container_handle, repo_ref=worker_input.repo_ref)
 
         # Launch CC session
-        session = session_mgr.launch_session(container_handle, "claude-code --yes")
+        session = session_mgr.launch_session(
+            container_handle, "/home/claude/entrypoint.sh"
+        )
 
         # Wait for session to exit or interrupt
         deadline = time.time() + worker_input.constraints.timeout_seconds
@@ -136,7 +142,10 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
             evidence=evidence,
             status=status,
         )
-        return {**state, "worker_result": result.model_dump()}
+        result_state = {**state, "worker_result": result.model_dump()}
+        if update_available:
+            result_state["update_available"] = update_available
+        return result_state
 
     except Exception as e:
         logger.error("Docker worker error: %s", e)
