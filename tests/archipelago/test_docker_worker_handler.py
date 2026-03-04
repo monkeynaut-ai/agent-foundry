@@ -64,7 +64,7 @@ class TestDockerWorkerHandler:
     def test_given_valid_worker_input_when_called_then_container_created_and_started(
         self, mock_docker
     ):
-        mock_client, _mock_container = _mock_docker_env(mock_docker)
+        mock_client, _ = _mock_docker_env(mock_docker)
 
         state = {"worker_input": _valid_worker_input()}
         result = docker_worker_handler(state)
@@ -149,6 +149,37 @@ class TestDockerWorkerHandler:
         assert result.get("breakpoint_payload") is not None
         assert result["breakpoint_payload"]["type"] == "clarification"
         assert result["worker_result"] is None
+
+
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_successful_cc_run_when_called_then_progress_read_from_container(
+        self, mock_docker
+    ):
+        _, mock_container = _mock_docker_env(mock_docker, stream=iter([b"done\n"]))
+
+        state = {"worker_input": _valid_worker_input()}
+        docker_worker_handler(state)
+        # Verify get_archive was called to read progress from inside container
+        get_archive_calls = [
+            c for c in mock_container.get_archive.call_args_list
+            if "progress.jsonl" in str(c)
+        ]
+        assert len(get_archive_calls) > 0
+
+    @patch("archipelago.docker_worker.handler.persist_workspace_state")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_cc_crash_when_called_then_workspace_state_persisted(
+        self, mock_docker, mock_persist
+    ):
+        _, mock_container = _mock_docker_env(mock_docker)
+        # Make session launch raise to simulate CC crash
+        mock_container.client.api.exec_create.side_effect = RuntimeError("CC crashed")
+
+        state = {"worker_input": _valid_worker_input()}
+        result = docker_worker_handler(state)
+
+        assert result["worker_result"]["status"] == "failed"
+        mock_persist.assert_called_once()
 
 
 class TestPipelineIntegration:

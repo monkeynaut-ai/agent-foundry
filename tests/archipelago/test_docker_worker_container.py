@@ -1,5 +1,7 @@
 """Docker worker container lifecycle — unit tests with mocked Docker SDK."""
 
+import io
+import tarfile
 from unittest.mock import MagicMock
 
 import pytest
@@ -156,12 +158,12 @@ class TestDestroyContainer:
         handle._container.remove.assert_called_once()
         assert handle.status == "destroyed"
 
-    def test_given_stopped_container_when_destroy_with_retain_volume_then_workspace_preserved(
+    def test_given_stopped_container_when_destroy_called_then_volumes_never_removed(
         self, manager
     ):
         handle = manager.create_container()
         manager.stop(handle)
-        manager.destroy(handle, remove_volume=False)
+        manager.destroy(handle)
         handle._container.remove.assert_called_once_with(v=False)
 
 
@@ -223,3 +225,55 @@ class TestValidateImage:
         handle._container.exec_run.return_value = (1, b"")
         with pytest.raises(ContainerCreationError, match="claude"):
             manager.validate_image(handle)
+
+
+def _make_tar_bytes(filename: str, content: str) -> bytes:
+    """Helper: create an in-memory tar archive containing a single file."""
+    buf = io.BytesIO()
+    data = content.encode()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        info = tarfile.TarInfo(name=filename)
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+class TestContainerFileIO:
+    def test_given_running_container_when_read_file_then_contents_returned(self, manager):
+        handle = manager.create_container()
+        tar_bytes = _make_tar_bytes("progress.jsonl", '{"type":"ok"}\n')
+        handle._container.get_archive.return_value = (iter([tar_bytes]), {"size": len(tar_bytes)})
+
+        result = manager.read_file_from_container(handle, "/workspace/progress.jsonl")
+        assert result == '{"type":"ok"}\n'
+        handle._container.get_archive.assert_called_once_with("/workspace/progress.jsonl")
+
+    def test_given_running_container_when_read_nonexistent_file_then_returns_none(self, manager):
+        handle = manager.create_container()
+        from docker.errors import NotFound
+
+        handle._container.get_archive.side_effect = NotFound("not found")
+
+        result = manager.read_file_from_container(handle, "/workspace/missing.txt")
+        assert result is None
+
+    def test_given_running_container_when_copy_from_container_then_file_written_to_host(
+        self, manager, tmp_path
+    ):
+        handle = manager.create_container()
+        tar_bytes = _make_tar_bytes("progress.jsonl", "line1\nline2\n")
+        handle._container.get_archive.return_value = (iter([tar_bytes]), {"size": len(tar_bytes)})
+
+        dest = tmp_path / "progress.jsonl"
+        result = manager.copy_from_container(handle, "/workspace/progress.jsonl", dest)
+        assert result is True
+        assert dest.read_text() == "line1\nline2\n"
+
+    def test_given_running_container_when_write_file_to_container_then_put_archive_called(
+        self, manager
+    ):
+        handle = manager.create_container()
+        manager.write_file_to_container(handle, "/workspace/spec.json", '{"title":"x"}')
+        handle._container.put_archive.assert_called_once()
+        call_args = handle._container.put_archive.call_args
+        assert call_args.args[0] == "/workspace"

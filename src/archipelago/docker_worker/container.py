@@ -1,7 +1,11 @@
 """Container lifecycle manager wrapping Docker SDK."""
 
+import io
+import os
+import tarfile
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from archipelago.docker_worker.errors import ContainerCreationError, ContainerLifecycleError
@@ -127,13 +131,49 @@ class ContainerManager:
         except Exception as e:
             raise ContainerLifecycleError(str(e), container_id=handle.container_id) from e
 
-    def destroy(self, handle: ContainerHandle, remove_volume: bool = False) -> None:
-        """Remove a container, optionally retaining the workspace volume."""
+    def destroy(self, handle: ContainerHandle) -> None:
+        """Remove a container. Workspace volumes are always preserved."""
         try:
-            handle._container.remove(v=remove_volume)
+            handle._container.remove(v=False)
             handle.status = "destroyed"
         except Exception as e:
             raise ContainerLifecycleError(str(e), container_id=handle.container_id) from e
+
+    def read_file_from_container(self, handle: ContainerHandle, path: str) -> str | None:
+        """Read a file from inside a container. Returns None if not found."""
+        try:
+            chunks, _ = handle._container.get_archive(path)
+            raw = b"".join(chunks)
+            with tarfile.open(fileobj=io.BytesIO(raw)) as tar:
+                member = tar.getmembers()[0]
+                f = tar.extractfile(member)
+                if f is None:
+                    return None
+                return f.read().decode()
+        except Exception:
+            return None
+
+    def copy_from_container(self, handle: ContainerHandle, container_path: str, host_path: Path) -> bool:
+        """Copy a file from inside a container to the host filesystem."""
+        content = self.read_file_from_container(handle, container_path)
+        if content is None:
+            return False
+        host_path.parent.mkdir(parents=True, exist_ok=True)
+        host_path.write_text(content)
+        return True
+
+    def write_file_to_container(self, handle: ContainerHandle, container_path: str, content: str) -> None:
+        """Write a file into a container via put_archive."""
+        dir_path = os.path.dirname(container_path)
+        filename = os.path.basename(container_path)
+        buf = io.BytesIO()
+        data = content.encode()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            info = tarfile.TarInfo(name=filename)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        buf.seek(0)
+        handle._container.put_archive(dir_path, buf)
 
     def cleanup_all(self) -> None:
         """Emergency cleanup of all tracked containers."""

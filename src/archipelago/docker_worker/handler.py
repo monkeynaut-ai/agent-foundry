@@ -60,14 +60,14 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     # Collect output lines and detect interrupts/notifications
     output_lines: list[str] = []
     interrupt_request = None
-    update_available: dict[str, str] | None = None
+    mutable: dict[str, Any] = {"update_available": None}
 
     def _output_callback(line: str, _container_id: str, _timestamp: float) -> None:
-        nonlocal interrupt_request, update_available
+        nonlocal interrupt_request
         output_lines.append(line)
         detected = detector.scan_line(line)
         if isinstance(detected, UpdateAvailable):
-            update_available = {"installed": detected.installed, "latest": detected.latest}
+            mutable["update_available"] = {"installed": detected.installed, "latest": detected.latest}
         elif detected is not None:
             interrupt_request = detected
 
@@ -110,8 +110,14 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         else:
             status = "failed"
 
-        # Parse progress from workspace
-        events = parse_progress(Path(container_handle.workspace_path))
+        # Copy progress file from container, then parse locally
+        progress_dir = Path(tempfile.mkdtemp(prefix="archipelago-progress-"))
+        container_mgr.copy_from_container(
+            container_handle,
+            f"{container_handle.workspace_path}/progress.jsonl",
+            progress_dir / "progress.jsonl",
+        )
+        events = parse_progress(progress_dir)
 
         patches = []
         evidence = []
@@ -142,8 +148,8 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
             status=status,
         )
         result_state = {**state, "worker_result": result.model_dump()}
-        if update_available:  # pyright: ignore[reportUnreachable] — reachable via nonlocal mutation from _output_callback thread
-            result_state["update_available"] = update_available
+        if mutable["update_available"]:
+            result_state["update_available"] = mutable["update_available"]
         return result_state
 
     except Exception as e:
@@ -152,8 +158,10 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
             try:
                 recovery_dir = Path(tempfile.mkdtemp(prefix="archipelago-recovery-"))
                 persist_workspace_state(
-                    Path(container_handle.workspace_path),
-                    recovery_dir,
+                    workspace_path=None,
+                    output_path=recovery_dir,
+                    container_mgr=container_mgr,
+                    container_handle=container_handle,
                 )
             except Exception:
                 pass

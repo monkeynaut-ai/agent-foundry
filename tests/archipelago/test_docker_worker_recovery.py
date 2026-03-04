@@ -67,6 +67,52 @@ class TestPersistWorkspaceState:
         assert snapshot.progress_events[0].pr_id == "pr1"
 
 
+    def test_given_container_when_persist_called_then_git_state_read_via_exec(self, tmp_path):
+        output = tmp_path / "output"
+
+        container_mgr = MagicMock(spec=ContainerManager)
+        container_handle = ContainerHandle(container_id="c1", workspace_path="/workspace")
+        container_handle._container = MagicMock()
+        container_handle._container.exec_run.side_effect = [
+            (0, b"abc123def\n"),  # git rev-parse HEAD
+            (0, b"+added line\n"),  # git diff
+        ]
+        container_mgr.read_file_from_container.return_value = None  # no progress file
+
+        snapshot = persist_workspace_state(
+            workspace_path=None,
+            output_path=output,
+            container_mgr=container_mgr,
+            container_handle=container_handle,
+        )
+        assert snapshot.commit_sha == "abc123def"
+        assert "+added line" in snapshot.working_tree_diff
+        assert container_handle._container.exec_run.call_count == 2
+
+    def test_given_container_when_persist_called_then_progress_read_via_api(self, tmp_path):
+        output = tmp_path / "output"
+
+        container_mgr = MagicMock(spec=ContainerManager)
+        container_handle = ContainerHandle(container_id="c1", workspace_path="/workspace")
+        container_handle._container = MagicMock()
+        container_handle._container.exec_run.side_effect = [
+            (0, b"abc123\n"),
+            (0, b""),
+        ]
+        progress_line = '{"type":"commit_green","pr_id":"pr1","commit_id":"c1","status":"ok","timestamp":1.0}'
+        container_mgr.read_file_from_container.return_value = progress_line
+        container_mgr.copy_from_container.return_value = True
+
+        snapshot = persist_workspace_state(
+            workspace_path=None,
+            output_path=output,
+            container_mgr=container_mgr,
+            container_handle=container_handle,
+        )
+        assert len(snapshot.progress_events) == 1
+        assert snapshot.progress_events[0].pr_id == "pr1"
+
+
 class TestRecoverSession:
     def test_given_crashed_session_when_recovered_then_fresh_container_created(self):
         container_mgr = MagicMock(spec=ContainerManager)
@@ -106,6 +152,22 @@ class TestRecoverSession:
 
         recover_session(container_mgr, session_mgr, "vol-1", {"title": "test"})
         session_mgr.launch_session.assert_called_once()
+
+    def test_given_feature_spec_when_recovered_then_spec_written_inside_container(self):
+        container_mgr = MagicMock(spec=ContainerManager)
+        session_mgr = MagicMock(spec=SessionManager)
+
+        mock_handle = ContainerHandle(
+            container_id="new-c", status="created", workspace_path="/workspace"
+        )
+        container_mgr.create_container.return_value = mock_handle
+        session_mgr.launch_session.return_value = SessionHandle(exec_id="e1", container_id="new-c")
+
+        recover_session(container_mgr, session_mgr, "vol-1", {"title": "test-spec"})
+        container_mgr.write_file_to_container.assert_called_once()
+        call_args = container_mgr.write_file_to_container.call_args
+        assert call_args.args[1] == "/workspace/feature_spec.json"
+        assert "test-spec" in call_args.args[2]
 
     def test_given_resume_point_at_pr2_c1_when_recovered_then_cc_starts_from_pr2_c1(
         self,
