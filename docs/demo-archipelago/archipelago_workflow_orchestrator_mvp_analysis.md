@@ -1,4 +1,4 @@
-# Analysis of the attached build instructions in the context of “Workflow Orchestrator MVP (Control Plane Lite)”
+Analysis of the "agent foundry initial build instructions" document in the context of “Workflow Orchestrator MVP (Control Plane Lite)”
 
 ## Executive summary
 The attached document describes a plan-compiled orchestration platform that closely matches the “Control Plane Lite” requirements: (1) a DAG of agent/tool steps with typed inputs/outputs, (2) a capability registry that defines runnable units and enforces schemas, (3) breakpoint-driven human gates plus checkpoint/resume, and (4) tracing/observability as a core primitive.

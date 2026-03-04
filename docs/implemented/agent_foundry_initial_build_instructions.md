@@ -1,4 +1,18 @@
-# LangGraph + LangChain Agentic Systems — Build Instructions (for Claude Code / Codex)
+# Agent Foundry — Build Instructions
+
+## Post-Build Decisions
+
+The following architectural decisions were made after the initial build and diverge from the original spec:
+
+1. **Step 4 (Wiring Planner) — Removed.** Products own their wiring plans as JSON files. The framework provides schema validation and compilation, but no LLM-driven plan generation. Slices S4.1–S4.7 are no longer applicable.
+
+2. **`structured_output_pydantic` — Removed as a built-in capability.** It is an implementation pattern (using Pydantic for structured LLM output), not a discrete graph node. The capability *name* is still used in demo plans and templates, but no built-in spec ships for it.
+
+3. **DS8 (Planner generates Decision Support plan) — Deferred.** The demo uses a static JSON plan. Dynamic plan generation depends on the removed WiringPlanner.
+
+4. **Separation boundary established.** Agent Foundry (`agent_foundry.*`) must never import from product code (`archipelago.*`). Enforced via `import-linter`. See `docs/agent-foundry-separation-spec.md`.
+
+---
 
 ## Objective
 Build a **reusable agentic workflow platform** on **LangGraph** (orchestration) using **LangChain** as a component library (models, tools, retrieval, structured outputs, integrations), and use that platform to deliver **one runnable reference demo**: **Decision Support (multi-domain)**.
@@ -52,6 +66,8 @@ Agents must implement slices in **this exact sequence**, where **each slice is a
   - flag ON behavior (the feature),
   each covered by independent tests.
 - **No human-in-the-loop required to build.** Any HITL/breakpoint features are implemented and tested via simulated approvals/interrupt payloads; do not require interactive input.
+
+
 
 ---
 
@@ -609,7 +625,7 @@ A single runnable workflow that:
 ## Acceptance Criteria
 A build is acceptable when:
 1) You can load the Capability Registry and retrieve capability specs.
-2) Planner can produce a valid Wiring Plan for Decision Support (or a static plan is available as fallback).
+2) A valid Wiring Plan for Decision Support is available as a static JSON file (planner-based generation deferred — see Post-Build Decisions).
 3) Compiler can compile the Decision Support plan into a runnable LangGraph.
 4) The Decision Support demo runs at least one end-to-end workflow.
 5) Eval gates prevent final output when validators fail (schema, citations, uncertainty, evidence contract).
