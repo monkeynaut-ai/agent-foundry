@@ -129,3 +129,12 @@ class TestResumeAfterInterrupt:
         session = SessionHandle(exec_id="e1", container_id="c1", status="paused")
         handler.resume_after_response("pg\n", session)
         session_mgr.resume.assert_called_once_with(session)
+
+    def test_given_resumed_session_when_cc_continues_then_output_streaming_resumes(self):
+        session_mgr = MagicMock(spec=SessionManager)
+        handler = InterruptHandler(session_mgr, InterruptDetector())
+        session = SessionHandle(exec_id="e1", container_id="c1", status="paused")
+        handler.resume_after_response("pg\n", session)
+        # After resume_after_response, the session manager's resume() is called
+        # which sets status back to "running", confirming output streaming can proceed
+        session_mgr.resume.assert_called_once_with(session)

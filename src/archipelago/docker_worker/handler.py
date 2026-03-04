@@ -1,7 +1,9 @@
 """Docker worker handler: orchestrates container lifecycle behind the standard handler interface."""
 
 import logging
+import tempfile
 import time
+from pathlib import Path
 from typing import Any, Literal
 
 import docker
@@ -9,9 +11,12 @@ import docker
 from archipelago.docker_worker.container import ContainerManager
 from archipelago.docker_worker.interrupts import InterruptDetector, InterruptHandler
 from archipelago.docker_worker.models import (
+    CommitEvidence,
+    PatchInfo,
     WorkerInput,
     WorkerResult,
 )
+from archipelago.docker_worker.progress import parse_progress
 from archipelago.docker_worker.recovery import persist_workspace_state
 from archipelago.docker_worker.session import SessionManager
 
@@ -100,17 +105,35 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         else:
             status = "failed"
 
-        # Parse progress
-        from pathlib import Path
+        # Parse progress from workspace
+        events = parse_progress(Path(container_handle.workspace_path))
 
-        # In real usage, this would read from the container's mounted volume
-        # For now, build result from available state
+        patches = []
+        evidence = []
+        for event in events:
+            if event.type == "pr_completed":
+                patches.append(PatchInfo(
+                    pr_id=event.pr_id,
+                    branch_name=event.commit_id,
+                    files_changed=event.files_changed,
+                    diff_summary=event.notes,
+                ))
+            if event.type == "commit_green":
+                evidence.append(CommitEvidence(
+                    commit_id=event.commit_id,
+                    pr_id=event.pr_id,
+                    test_commands_run=[r.command for r in event.tests_run],
+                    test_output=event.notes,
+                    tests_passed=sum(1 for r in event.tests_run if r.exit_code == 0),
+                    tests_failed=sum(1 for r in event.tests_run if r.exit_code != 0),
+                    all_green=all(r.exit_code == 0 for r in event.tests_run),
+                ))
 
         result = WorkerResult(
             result_summary=f"Worker {status} with {len(output_lines)} output lines",
             workspace_ref=container_handle.workspace_path,
-            patches=[],
-            evidence=[],
+            patches=patches,
+            evidence=evidence,
             status=status,
         )
         return {**state, "worker_result": result.model_dump()}
@@ -119,11 +142,10 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         logger.error("Docker worker error: %s", e)
         if container_handle:
             try:
-                from pathlib import Path
-
+                recovery_dir = Path(tempfile.mkdtemp(prefix="archipelago-recovery-"))
                 persist_workspace_state(
                     Path(container_handle.workspace_path),
-                    Path("/tmp/archipelago-recovery"),
+                    recovery_dir,
                 )
             except Exception:
                 pass
@@ -142,6 +164,16 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
 
             with contextlib.suppress(Exception):
                 container_mgr.destroy(container_handle)
+
+
+class DockerWorkerHandler:
+    """Wrapper class matching the ImplementationPointer pattern (cls(spec).__call__)."""
+
+    def __init__(self, spec: Any = None):
+        self.spec = spec
+
+    def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
+        return docker_worker_handler(state)
 
 
 DOCKER_WORKER_HANDLERS: dict[str, Any] = {

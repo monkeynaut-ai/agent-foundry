@@ -189,9 +189,9 @@ class TestExitDetection:
         handle._container.client.api.exec_start.return_value = iter([])
         handle._container.client.api.exec_inspect.return_value = {"ExitCode": 0}
 
-        # The stream's client needs to be accessible for exit code inspection
         session = manager.launch_session(handle, "cmd")
         time.sleep(0.1)
-        # Exit code capture depends on the socket having a client attr
-        # With mocks, this may or may not work, but status should be exited
         assert session.status == "exited"
+        assert session.exit_code == 0
+        # Verify we used _client_api (stored from container.client.api), not _socket
+        handle._container.client.api.exec_inspect.assert_called_once_with("exec-abc")

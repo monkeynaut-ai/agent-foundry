@@ -66,10 +66,10 @@ class ContainerManager:
                 read_only=True,
                 tmpfs={"/tmp": "size=256m"},
                 volumes=volumes,
-                mem_limit=f"{constraints.timeout_seconds}m" if False else None,
+                mem_limit=f"{constraints.mem_limit_mb}m",
                 environment=environment,
-                cpu_quota=getattr(constraints, "cpu_quota", None),
-                pids_limit=getattr(constraints, "pids_limit", None),
+                cpu_quota=constraints.cpu_quota,
+                pids_limit=constraints.pids_limit,
             )
         except Exception as e:
             raise ContainerCreationError(str(e), image=image) from e
@@ -83,16 +83,42 @@ class ContainerManager:
         return handle
 
     def start(self, handle: ContainerHandle, repo_ref: str = "main") -> None:
-        """Start a container and clone the repo."""
+        """Start a container, validate required commands, and clone the repo."""
         try:
             handle._container.start()
             handle.status = "running"
+            self.validate_image(handle)
             handle._container.exec_run(
                 f"git clone --branch {repo_ref} /repo /workspace || true",
                 user="1000:1000",
             )
+        except (ContainerCreationError, ContainerLifecycleError):
+            raise
         except Exception as e:
             raise ContainerLifecycleError(str(e), container_id=handle.container_id) from e
+
+    def validate_image(
+        self,
+        handle: ContainerHandle,
+        required_commands: list[str] | None = None,
+    ) -> None:
+        """Verify required commands are available in the container image.
+
+        Raises ContainerCreationError with an actionable message if any
+        command is missing.
+        """
+        if required_commands is None:
+            required_commands = ["claude-code"]
+
+        for cmd in required_commands:
+            exit_code, _ = handle._container.exec_run(f"which {cmd}")
+            if exit_code != 0:
+                raise ContainerCreationError(
+                    f"Required command '{cmd}' not found in container image. "
+                    f"Ensure the Docker image includes '{cmd}' "
+                    f"before using it with the Docker worker.",
+                    image=self._default_image,
+                )
 
     def stop(self, handle: ContainerHandle, timeout: int = 10) -> None:
         """Stop a container gracefully."""

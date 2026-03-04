@@ -12,6 +12,9 @@ class WorkerConstraints(BaseModel):
     max_cost_usd: float | None = None
     allowed_commands: list[str] = Field(default_factory=list)
     network_policy: str = "none"
+    mem_limit_mb: int = 512
+    cpu_quota: int | None = None
+    pids_limit: int | None = None
 
 
 class WorkerInput(BaseModel):

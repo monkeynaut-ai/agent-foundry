@@ -173,3 +173,64 @@ class TestEndToEnd:
         graph.invoke({"product_brief_input": "test"})
 
         assert len(tracer.export()) == 5
+
+    def test_given_interrupt_during_pipeline_when_breakpoint_hit_then_state_contains_payload(
+        self, registry, plan
+    ):
+        """Use a stub handler that returns breakpoint_payload; verify state."""
+
+        def _stub_docker_worker_interrupt(state: dict[str, Any]) -> dict[str, Any]:
+            return {
+                **state,
+                "breakpoint_payload": {
+                    "type": "clarification",
+                    "question": "Which DB?",
+                    "options": ["pg"],
+                    "default": "pg",
+                },
+                "worker_result": None,
+            }
+
+        handlers = {**STUB_HANDLERS, "coding_implement_feature_from_spec": _stub_docker_worker_interrupt}
+        graph = compile_plan(plan, registry, handler_registry=handlers)
+        final = graph.invoke({"product_brief_input": "test"})
+        assert final.get("breakpoint_payload") is not None
+        assert final["breakpoint_payload"]["type"] == "clarification"
+        assert final["worker_result"] is None
+
+    def test_given_resumed_after_interrupt_when_pipeline_continues_then_completes(
+        self, registry, plan
+    ):
+        """Simulate resuming after a breakpoint by running with a completing handler."""
+        call_count = {"n": 0}
+
+        def _stub_docker_worker_resume(state: dict[str, Any]) -> dict[str, Any]:
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                # First call: simulate interrupt
+                return {
+                    **state,
+                    "breakpoint_payload": {
+                        "type": "clarification",
+                        "question": "Which DB?",
+                        "options": ["pg"],
+                        "default": "pg",
+                    },
+                    "worker_result": None,
+                }
+            # Second call: complete successfully
+            return _stub_docker_worker(state)
+
+        # Run pipeline — first invocation hits breakpoint
+        handlers = {**STUB_HANDLERS, "coding_implement_feature_from_spec": _stub_docker_worker_resume}
+        graph = compile_plan(plan, registry, handler_registry=handlers)
+        first_result = graph.invoke({"product_brief_input": "test"})
+        assert first_result.get("breakpoint_payload") is not None
+
+        # Simulate resume by re-invoking with breakpoint cleared
+        resumed_state = {**first_result, "breakpoint_payload": None}
+        handlers2 = {**STUB_HANDLERS, "coding_implement_feature_from_spec": _stub_docker_worker}
+        graph2 = compile_plan(plan, registry, handler_registry=handlers2)
+        final = graph2.invoke(resumed_state)
+        assert final["worker_result"] is not None
+        assert final["worker_result"]["status"] == "completed"

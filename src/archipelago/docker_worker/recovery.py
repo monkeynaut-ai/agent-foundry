@@ -1,5 +1,6 @@
 """Crash recovery: persist workspace state and restore into fresh containers."""
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -102,6 +103,11 @@ def recover_session(
         workspace_volume=workspace_volume,
     )
     container_manager.start(container)
+
+    # Write feature spec so CC has access to it
+    if feature_spec:
+        spec_path = Path(container.workspace_path) / "feature_spec.json"
+        spec_path.write_text(json.dumps(feature_spec, indent=2))
 
     # Build resume context for CC
     resume_cmd = command

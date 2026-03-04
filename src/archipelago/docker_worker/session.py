@@ -21,6 +21,7 @@ class SessionHandle:
     started_at: float = field(default_factory=time.time)
     _socket: Any = field(default=None, repr=False)
     _stream: Any = field(default=None, repr=False)
+    _client_api: Any = field(default=None, repr=False)
 
 
 class SessionManager:
@@ -60,6 +61,7 @@ class SessionManager:
             container_id=container_handle.container_id,
             _socket=stream,
             _stream=stream,
+            _client_api=container.client.api,
         )
 
         self._stream_thread = threading.Thread(
@@ -109,7 +111,7 @@ class SessionManager:
             session_handle.status = "exited"
             # Try to get exit code
             try:
-                inspect = session_handle._socket.client.api.exec_inspect(session_handle.exec_id)
+                inspect = session_handle._client_api.exec_inspect(session_handle.exec_id)
                 session_handle.exit_code = inspect.get("ExitCode")
             except Exception:
                 pass

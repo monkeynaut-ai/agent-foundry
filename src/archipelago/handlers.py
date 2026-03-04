@@ -5,6 +5,7 @@ from typing import Any
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
 
+from archipelago.docker_worker.handler import docker_worker_handler
 from archipelago.models import (
     CodePatch,
     FeatureArchitecture,
@@ -107,5 +108,5 @@ def spec_approval_gate_handler(state: dict[str, Any]) -> dict[str, Any]:
 
 ARCHIPELAGO_HANDLERS: dict[str, Any] = {
     "dev_implement_feature_tdd": dev_test_handler,
-    "coding_implement_feature_from_spec": dev_test_handler,
+    "coding_implement_feature_from_spec": docker_worker_handler,
 }

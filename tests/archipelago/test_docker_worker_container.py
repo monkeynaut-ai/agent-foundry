@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from archipelago.docker_worker.container import ContainerHandle, ContainerManager
+from archipelago.docker_worker.errors import ContainerCreationError
 from archipelago.docker_worker.models import WorkerConstraints
 
 
@@ -13,6 +14,8 @@ def mock_client():
     client = MagicMock()
     mock_container = MagicMock()
     mock_container.id = "container-abc123"
+    # Default exec_run returns success (exit_code=0) for image validation
+    mock_container.exec_run.return_value = (0, b"/usr/local/bin/claude-code")
     client.containers.create.return_value = mock_container
     return client
 
@@ -56,10 +59,21 @@ class TestCreateContainer:
     def test_given_resource_limits_when_create_called_then_limits_applied(
         self, manager, mock_client
     ):
-        constraints = WorkerConstraints()
+        constraints = WorkerConstraints(mem_limit_mb=1024, cpu_quota=50000, pids_limit=100)
         manager.create_container(constraints=constraints)
         call_kwargs = mock_client.containers.create.call_args
         assert call_kwargs.kwargs["tmpfs"] == {"/tmp": "size=256m"}
+        assert call_kwargs.kwargs["mem_limit"] == "1024m"
+        assert call_kwargs.kwargs["cpu_quota"] == 50000
+        assert call_kwargs.kwargs["pids_limit"] == 100
+
+    def test_given_default_constraints_when_create_called_then_mem_limit_applied(
+        self, manager, mock_client
+    ):
+        constraints = WorkerConstraints()
+        manager.create_container(constraints=constraints)
+        call_kwargs = mock_client.containers.create.call_args
+        assert call_kwargs.kwargs["mem_limit"] == "512m"
 
     def test_given_env_vars_when_create_called_then_only_allowlisted_vars_passed(
         self,
@@ -94,9 +108,27 @@ class TestStartContainer:
     ):
         handle = manager.create_container()
         manager.start(handle, repo_ref="feat/test")
-        handle._container.exec_run.assert_called_once()
-        call_args = handle._container.exec_run.call_args
-        assert "feat/test" in call_args.args[0]
+        handle._container.exec_run.assert_called()
+        call_args = handle._container.exec_run.call_args_list
+        # The git clone call should reference the branch
+        git_clone_call = [c for c in call_args if "feat/test" in str(c)]
+        assert len(git_clone_call) > 0
+
+    def test_given_image_without_cc_when_start_called_then_raises_with_actionable_message(
+        self, manager
+    ):
+        handle = manager.create_container()
+        # Mock exec_run to simulate 'which claude-code' failing (exit code 1)
+        handle._container.exec_run.return_value = (1, b"")
+        with pytest.raises(ContainerCreationError, match="claude-code"):
+            manager.start(handle)
+
+    def test_given_image_with_cc_when_start_called_then_no_validation_error(self, manager):
+        handle = manager.create_container()
+        # Mock exec_run to simulate 'which claude-code' succeeding
+        handle._container.exec_run.return_value = (0, b"/usr/local/bin/claude-code")
+        manager.start(handle)
+        assert handle.status == "running"
 
 
 class TestStopContainer:
