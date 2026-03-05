@@ -256,11 +256,11 @@ class TestDockerWorkerHandler:
         t.join(timeout=5)
 
         calls = mock_session_mgr.send_input.call_args_list
-        # First call: trust confirmation (\r), second: the feature spec prompt ending with \r
-        assert len(calls) >= 2, f"Expected at least 2 send_input calls, got {len(calls)}: {calls}"
-        assert calls[0][0][1] == "\r"
-        assert "Test" in calls[1][0][1]  # feature_spec title appears in prompt
-        assert calls[1][0][1].endswith("\r")  # prompt ends with \r for PTY submit
+        # With retry loop, there may be multiple \r calls before the prompt
+        trust_calls = [c for c in calls if c[0][1] == "\r"]
+        prompt_calls = [c for c in calls if "Test" in c[0][1] and c[0][1].endswith("\r")]
+        assert len(trust_calls) >= 1, f"Expected at least 1 trust \\r, got: {calls}"
+        assert len(prompt_calls) == 1, f"Expected exactly 1 prompt call, got: {calls}"
 
 
 class TestICRNLFix:
@@ -306,11 +306,12 @@ class TestICRNLFix:
         t.join(timeout=5)
 
         calls = mock_session_mgr.send_input.call_args_list
-        assert len(calls) >= 1
-        # Trust confirmation must be \r, not \n
-        trust_call = calls[0][0][1]
-        assert trust_call == "\r", f"Expected '\\r' for trust confirm, got {trust_call!r}"
-        assert "\n" not in trust_call
+        # All trust confirmation calls must be \r, not \n
+        trust_calls = [c for c in calls if c[0][1] == "\r"]
+        assert len(trust_calls) >= 1, f"Expected at least 1 trust \\r, got: {calls}"
+        # No \n calls should exist
+        newline_calls = [c for c in calls if c[0][1] == "\n"]
+        assert len(newline_calls) == 0, f"Found \\n calls (should be \\r): {newline_calls}"
 
     @patch("archipelago.docker_worker.handler.SessionManager")
     @patch("archipelago.docker_worker.handler.docker")
@@ -352,8 +353,9 @@ class TestICRNLFix:
         t.join(timeout=5)
 
         calls = mock_session_mgr.send_input.call_args_list
-        assert len(calls) >= 2
-        prompt_call = calls[1][0][1]
+        prompt_calls = [c for c in calls if "Test" in c[0][1]]
+        assert len(prompt_calls) == 1, f"Expected 1 prompt call, got: {calls}"
+        prompt_call = prompt_calls[0][0][1]
         assert prompt_call.endswith("\r"), f"Expected prompt to end with '\\r', got {prompt_call[-5:]!r}"
         assert not prompt_call.endswith("\n")
 
@@ -421,6 +423,106 @@ class TestICRNLFix:
         entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
         content = entrypoint.read_text()
         assert "stty -icrnl" in content, "entrypoint.sh must contain 'stty -icrnl'"
+
+    @patch("archipelago.docker_worker.handler.TRUST_RETRY_INTERVAL", 0.5)
+    @patch("archipelago.docker_worker.handler.TRUST_FLUSH_DELAY", 0.1)
+    @patch("archipelago.docker_worker.handler.TRUST_POLL_INTERVAL", 0.05)
+    @patch("archipelago.docker_worker.handler.SessionManager")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_slow_cc_startup_when_trust_prompt_delayed_then_retry_loop_sends_multiple_cr(
+        self, mock_docker, mock_session_cls
+    ):
+        """When CC takes several seconds to render trust prompt, handler retries \\r."""
+        _mock_docker_env(mock_docker)
+
+        mock_session_mgr = MagicMock()
+        mock_session_cls.return_value = mock_session_mgr
+        mock_session = MagicMock()
+        mock_session.status = "exited"
+        mock_session.exit_code = 0
+        mock_session_mgr.launch_session.return_value = mock_session
+
+        captured_callbacks = []
+        mock_session_mgr.register_output_callback.side_effect = lambda cb: captured_callbacks.append(cb)
+
+        state = {"worker_input": _valid_worker_input()}
+
+        import time
+
+        result_holder = []
+        def _run():
+            result_holder.append(docker_worker_handler(state))
+
+        t = threading.Thread(target=_run)
+        t.start()
+
+        # Simulate version check output (triggers first_output)
+        time.sleep(0.3)
+        for cb in captured_callbacks:
+            cb("ARCHIPELAGO_UPDATE_AVAILABLE {}", "c1", 0.0)
+
+        # Wait long enough for multiple retries (0.5s interval, wait ~2s)
+        time.sleep(2)
+
+        # NOW simulate CC trust accepted (new output)
+        for cb in captured_callbacks:
+            cb("Claude Code main UI ready", "c1", 0.0)
+
+        time.sleep(1)
+        t.join(timeout=5)
+
+        calls = mock_session_mgr.send_input.call_args_list
+        cr_calls = [c for c in calls if c[0][1] == "\r"]
+        assert len(cr_calls) >= 2, (
+            f"Expected multiple \\r retries, got {len(cr_calls)}: {calls}"
+        )
+
+    @patch("archipelago.docker_worker.handler.TRUST_TIMEOUT", 1.0)
+    @patch("archipelago.docker_worker.handler.TRUST_RETRY_INTERVAL", 0.3)
+    @patch("archipelago.docker_worker.handler.TRUST_FLUSH_DELAY", 0.1)
+    @patch("archipelago.docker_worker.handler.TRUST_POLL_INTERVAL", 0.05)
+    @patch("archipelago.docker_worker.handler.SessionManager")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_trust_timeout_when_cc_never_starts_then_prompt_still_sent(
+        self, mock_docker, mock_session_cls
+    ):
+        """When trust loop times out, the prompt is still sent (graceful degradation)."""
+        _mock_docker_env(mock_docker)
+
+        mock_session_mgr = MagicMock()
+        mock_session_cls.return_value = mock_session_mgr
+        mock_session = MagicMock()
+        mock_session.status = "exited"
+        mock_session.exit_code = 0
+        mock_session_mgr.launch_session.return_value = mock_session
+
+        captured_callbacks = []
+        mock_session_mgr.register_output_callback.side_effect = lambda cb: captured_callbacks.append(cb)
+
+        state = {"worker_input": _valid_worker_input()}
+
+        import time
+
+        result_holder = []
+        def _run():
+            result_holder.append(docker_worker_handler(state))
+
+        t = threading.Thread(target=_run)
+        t.start()
+
+        # Simulate version check only — never simulate trust acceptance
+        time.sleep(0.3)
+        for cb in captured_callbacks:
+            cb("ARCHIPELAGO_UPDATE_AVAILABLE {}", "c1", 0.0)
+
+        # Wait for trust timeout (1s) + some margin
+        time.sleep(3)
+        t.join(timeout=5)
+
+        calls = mock_session_mgr.send_input.call_args_list
+        # Prompt should still be sent even though trust loop timed out
+        prompt_calls = [c for c in calls if "Test" in c[0][1]]
+        assert len(prompt_calls) == 1, f"Expected prompt sent after timeout, got: {calls}"
 
 
 class TestPipelineIntegration:

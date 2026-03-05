@@ -26,6 +26,12 @@ from archipelago.docker_worker.session import SessionManager
 
 logger = logging.getLogger(__name__)
 
+# Trust confirmation timing constants (module-level for testability)
+TRUST_RETRY_INTERVAL = 2.0   # seconds between \r attempts
+TRUST_TIMEOUT = 30.0          # total seconds for trust confirmation
+TRUST_FLUSH_DELAY = 0.5       # seconds to let entrypoint output flush
+TRUST_POLL_INTERVAL = 0.1     # seconds between output count checks
+
 
 def _build_prompt(worker_input: WorkerInput) -> str:
     """Format the worker input into a prompt string for Claude Code."""
@@ -125,18 +131,29 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         def _confirm_trust_and_prompt() -> None:
             # Wait for first output (entrypoint version check or CC trust prompt)
             first_output.wait(timeout=30)
-            # Give CC a moment to render the trust prompt after first output
-            time.sleep(1)
-            try:
-                session_mgr.send_input(session, "\r")
-            except Exception:
-                pass
-            # Wait for next output line (trust accepted, CC ready)
-            current_count = len(output_lines)
-            for _ in range(50):  # up to 5 seconds
-                if len(output_lines) > current_count:
+
+            # Brief pause to let entrypoint output flush before capturing baseline
+            time.sleep(TRUST_FLUSH_DELAY)
+
+            # Retry-loop trust confirmation: send \r every TRUST_RETRY_INTERVAL
+            # seconds until output count increases (indicating CC accepted trust
+            # and rendered its main UI). Extra \r presses are harmless.
+            baseline_count = len(output_lines)
+            deadline = time.time() + TRUST_TIMEOUT
+            last_send_time = 0.0  # force immediate first send
+
+            while time.time() < deadline:
+                if len(output_lines) > baseline_count:
                     break
-                time.sleep(0.1)
+                now = time.time()
+                if now - last_send_time >= TRUST_RETRY_INTERVAL:
+                    try:
+                        session_mgr.send_input(session, "\r")
+                    except Exception:
+                        pass
+                    last_send_time = now
+                time.sleep(TRUST_POLL_INTERVAL)
+
             prompt = _build_prompt(worker_input)
             try:
                 session_mgr.send_input(session, prompt + "\r")
