@@ -91,11 +91,30 @@ class SessionManager:
         self._paused.set()
         session_handle.status = "running"
 
+    @staticmethod
+    def _read_chunks(session_handle: SessionHandle):
+        """Yield data chunks from the exec stream.
+
+        The Docker SDK returns a SocketIO wrapper when socket=True.
+        Use recv() on the underlying socket for reliable reads.
+        Falls back to iteration for non-socket streams (e.g. in tests).
+        """
+        sock = session_handle._socket
+        raw = getattr(sock, "_sock", None)
+        if raw is not None and hasattr(raw, "recv"):
+            while True:
+                data = raw.recv(4096)
+                if not data:
+                    break
+                yield data
+        else:
+            yield from session_handle._stream
+
     def _stream_output(self, session_handle: SessionHandle) -> None:
         """Background thread that reads from the exec stream and invokes callbacks."""
         buffer = ""
         try:
-            for chunk in session_handle._stream:
+            for chunk in self._read_chunks(session_handle):
                 if isinstance(chunk, bytes):
                     chunk = chunk.decode("utf-8", errors="replace")
                 buffer += chunk

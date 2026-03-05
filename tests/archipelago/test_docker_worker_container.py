@@ -37,6 +37,14 @@ class TestCreateContainer:
         assert handle.container_id == "container-abc123"
         assert handle.status == "created"
 
+    def test_given_valid_config_when_create_called_then_entrypoint_overridden_to_sleep(
+        self, manager, mock_client
+    ):
+        manager.create_container()
+        call_kwargs = mock_client.containers.create.call_args
+        assert call_kwargs.kwargs["entrypoint"] == "sleep"
+        assert call_kwargs.kwargs["command"] == "infinity"
+
     def test_given_valid_config_when_create_called_then_container_uses_non_root_user(
         self, manager, mock_client
     ):
@@ -51,12 +59,12 @@ class TestCreateContainer:
         call_kwargs = mock_client.containers.create.call_args
         assert call_kwargs.kwargs["cap_drop"] == ["ALL"]
 
-    def test_given_valid_config_when_create_called_then_rootfs_is_read_only(
+    def test_given_valid_config_when_create_called_then_rootfs_is_writable(
         self, manager, mock_client
     ):
         manager.create_container()
         call_kwargs = mock_client.containers.create.call_args
-        assert call_kwargs.kwargs["read_only"] is True
+        assert call_kwargs.kwargs["read_only"] is False
 
     def test_given_resource_limits_when_create_called_then_limits_applied(
         self, manager, mock_client
@@ -119,19 +127,17 @@ class TestStartContainer:
         git_clone_call = [c for c in call_args if "feat/test" in str(c)]
         assert len(git_clone_call) > 0
 
-    def test_given_image_without_cc_when_start_called_then_raises_with_actionable_message(
+    def test_given_image_without_cc_when_validate_called_then_raises_with_actionable_message(
         self, manager
     ):
         handle = manager.create_container()
         # Mock exec_run to simulate 'which claude' failing (exit code 1)
         handle._container.exec_run.return_value = (1, b"")
         with pytest.raises(ContainerCreationError, match="claude"):
-            manager.start(handle)
+            manager.validate_image(handle)
 
     def test_given_image_with_cc_when_start_called_then_no_validation_error(self, manager):
         handle = manager.create_container()
-        # Mock exec_run to simulate 'which claude' succeeding
-        handle._container.exec_run.return_value = (0, b"/home/claude/.local/bin/claude")
         manager.start(handle)
         assert handle.status == "running"
 

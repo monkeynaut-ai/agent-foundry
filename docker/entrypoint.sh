@@ -17,16 +17,21 @@ fi
 # Check for Claude Code updates and notify via PTY protocol.
 # This is non-blocking — the container proceeds with the installed version
 # regardless. Agent Foundry handles image rebuild if needed.
-INSTALLED=$(claude --version 2>/dev/null || echo "unknown")
+INSTALLED=$(/home/claude/.local/bin/claude --version 2>/dev/null || echo "unknown")
 LATEST=$(curl -sf https://registry.npmjs.org/@anthropic-ai/claude-code/latest | jq -r .version 2>/dev/null || echo "unknown")
 
 if [ "$INSTALLED" != "unknown" ] && [ "$LATEST" != "unknown" ] && [ "$INSTALLED" != "$LATEST" ]; then
   echo "ARCHIPELAGO_UPDATE_AVAILABLE {\"installed\": \"$INSTALLED\", \"latest\": \"$LATEST\"}"
 fi
 
+# Disable ICRNL so programmatic \r reaches Ink as \r (not converted to \n).
+# Without this, the PTY line discipline converts \r → \n, and Ink's
+# parse-keypress never sees 'return', so submit never fires.
+stty -icrnl 2>/dev/null || true
+
 # If a TTY is attached, run interactively; otherwise run headless
 if [ -t 0 ]; then
-  exec claude "$@"
+  exec /home/claude/.local/bin/claude "$@"
 else
-  exec claude -p "$@"
+  exec /home/claude/.local/bin/claude -p "$@"
 fi

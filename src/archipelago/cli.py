@@ -5,11 +5,13 @@ import sys
 from pathlib import Path
 
 import yaml
+from dotenv import load_dotenv
 
 from archipelago.runner import run_archipelago
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Run the Archipelago pipeline")
     parser.add_argument("-f", "--file", required=True, help="Path to YAML input file")
     args = parser.parse_args(argv)

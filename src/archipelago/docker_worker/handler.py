@@ -1,6 +1,7 @@
 """Docker worker handler: orchestrates container lifecycle behind the standard handler interface."""
 
 import logging
+import sys
 import tempfile
 import threading
 import time
@@ -15,6 +16,7 @@ from archipelago.docker_worker.models import (
     CommitEvidence,
     PatchInfo,
     UpdateAvailable,
+    WorkerConstraints,
     WorkerInput,
     WorkerResult,
 )
@@ -25,6 +27,25 @@ from archipelago.docker_worker.session import SessionManager
 logger = logging.getLogger(__name__)
 
 
+def _build_prompt(worker_input: WorkerInput) -> str:
+    """Format the worker input into a prompt string for Claude Code."""
+    spec = worker_input.feature_spec
+    parts = ["Implement the following feature:"]
+    if title := spec.get("title"):
+        parts.append(f"Title: {title}")
+    if description := spec.get("description"):
+        parts.append(f"Description: {description}")
+    if requirements := spec.get("requirements"):
+        parts.append("Requirements:")
+        for req in requirements:
+            parts.append(f"  - {req}")
+    if worker_input.test_commands:
+        parts.append(f"Test commands: {', '.join(worker_input.test_commands)}")
+    if worker_input.gates:
+        parts.append(f"Gates: {', '.join(worker_input.gates)}")
+    return "\n".join(parts)
+
+
 def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     """Orchestrate a full Docker worker lifecycle.
 
@@ -32,8 +53,17 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     launches a CC session, streams output, handles interrupts,
     collects progress, and returns worker_result.
     """
-    worker_input_data = state.get("worker_input", {})
-    worker_input = WorkerInput(**worker_input_data)
+    worker_input_data = state.get("worker_input")
+    if worker_input_data:
+        worker_input = WorkerInput(**worker_input_data)
+    else:
+        worker_input = WorkerInput(
+            repo_ref=state.get("repo_ref", "main"),
+            feature_spec=state.get("feature_spec", {}),
+            constraints=WorkerConstraints(**state.get("worker_constraints", {})),
+            test_commands=state.get("test_commands", ["pdm run pytest"]),
+            gates=state.get("gates", []),
+        )
 
     # Initialize subsystems
     try:
@@ -62,10 +92,13 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     output_lines: list[str] = []
     interrupt_request = None
     mutable: dict[str, Any] = {"update_available": None}
+    first_output = threading.Event()
 
     def _output_callback(line: str, _container_id: str, _timestamp: float) -> None:
         nonlocal interrupt_request
         output_lines.append(line)
+        print(f"[cc] {line}", flush=True)
+        first_output.set()
         detected = detector.scan_line(line)
         if isinstance(detected, UpdateAvailable):
             mutable["update_available"] = {"installed": detected.installed, "latest": detected.latest}
@@ -88,16 +121,54 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
             container_handle, "/home/claude/entrypoint.sh"
         )
 
-        # Auto-confirm workspace trust prompt (always the first prompt after launch)
-        def _confirm_trust() -> None:
-            time.sleep(2)
+        # Wait for CC to produce output, then confirm trust and send prompt
+        def _confirm_trust_and_prompt() -> None:
+            # Wait for first output (entrypoint version check or CC trust prompt)
+            first_output.wait(timeout=30)
+            # Give CC a moment to render the trust prompt after first output
+            time.sleep(1)
             try:
-                session_mgr.send_input(session, "\n")
+                session_mgr.send_input(session, "\r")
+            except Exception:
+                pass
+            # Wait for next output line (trust accepted, CC ready)
+            current_count = len(output_lines)
+            for _ in range(50):  # up to 5 seconds
+                if len(output_lines) > current_count:
+                    break
+                time.sleep(0.1)
+            prompt = _build_prompt(worker_input)
+            try:
+                session_mgr.send_input(session, prompt + "\r")
             except Exception:
                 pass
 
-        trust_thread = threading.Thread(target=_confirm_trust, daemon=True)
+        trust_thread = threading.Thread(target=_confirm_trust_and_prompt, daemon=True)
         trust_thread.start()
+
+        # Forward terminal stdin to CC session
+        def _forward_stdin() -> None:
+            logger.info("[stdin] forwarding thread started, session=%s", session.status)
+            while session.status == "running":
+                try:
+                    line = sys.stdin.readline()
+                    if line:
+                        # Replace \n with \r so Ink's parse-keypress sees 'return'
+                        # (the PTY's ICRNL is disabled, so \r passes through unchanged)
+                        line = line.replace("\n", "\r")
+                        logger.info("[stdin] sending: %r", line.strip())
+                        print(f"[stdin] sending: {line.strip()}", flush=True)
+                        session_mgr.send_input(session, line)
+                    else:
+                        logger.info("[stdin] EOF")
+                        break
+                except Exception as e:
+                    logger.info("[stdin] error: %s", e)
+                    break
+            logger.info("[stdin] forwarding thread exiting, session=%s", session.status)
+
+        stdin_thread = threading.Thread(target=_forward_stdin, daemon=True)
+        stdin_thread.start()
 
         # Wait for session to exit or interrupt
         deadline = time.time() + worker_input.constraints.timeout_seconds

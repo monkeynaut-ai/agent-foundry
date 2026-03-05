@@ -1,6 +1,7 @@
 """Container lifecycle manager wrapping Docker SDK."""
 
 import io
+import logging
 import os
 import tarfile
 import time
@@ -10,6 +11,8 @@ from typing import Any
 
 from archipelago.docker_worker.errors import ContainerCreationError, ContainerLifecycleError
 from archipelago.docker_worker.models import WorkerConstraints
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_ENV_ALLOWLIST = {
     "PATH",
@@ -65,11 +68,12 @@ class ContainerManager:
         try:
             container = self._client.containers.create(
                 image,
-                command="sleep infinity",
+                entrypoint="sleep",
+                command="infinity",
                 detach=True,
                 user="1000:1000",
                 cap_drop=["ALL"],
-                read_only=True,
+                read_only=False,
                 tmpfs={"/tmp": "size=256m"},
                 volumes=volumes,
                 mem_limit=f"{constraints.mem_limit_mb}m",
@@ -92,8 +96,8 @@ class ContainerManager:
         """Start a container, validate required commands, and clone the repo."""
         try:
             handle._container.start()
+            handle._container.reload()
             handle.status = "running"
-            self.validate_image(handle)
             handle._container.exec_run(
                 f"git clone --branch {repo_ref} /repo /workspace || true",
                 user="1000:1000",
