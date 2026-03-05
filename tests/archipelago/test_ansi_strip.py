@@ -21,3 +21,6 @@ class TestStripAnsi:
 
     def test_given_osc_title_sequence_when_stripped_then_removed(self):
         assert strip_ansi("\033]0;My Title\x07some text") == "some text"
+
+    def test_given_dec_private_mode_sequences_when_stripped_then_removed(self):
+        assert strip_ansi("\033[?2026l\033[?2026hsome text") == "some text"

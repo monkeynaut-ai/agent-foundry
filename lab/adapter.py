@@ -168,7 +168,7 @@ def run_ws_adapter(command: str = "cat", host: str = "localhost", port: int = 87
 
 def _strip_ansi(text: str) -> str:
     """Remove ANSI escape sequences from text."""
-    return re.sub(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\].*?\x07|\x1b\(B", "", text)
+    return re.sub(r"\x1b\[[\x20-\x3f]*[0-9;]*[\x40-\x7e]|\x1b\].*?\x07|\x1b\(B", "", text)
 
 
 def _connect_with_backoff(ws_url: str, timeout: float = 30.0):
@@ -230,7 +230,7 @@ def run_protocol_adapter(
             return False
 
     def _reader_thread():
-        """Read PTY output, buffer on \\n, strip ANSI, detect interrupts, emit messages."""
+        """Read PTY output, buffer on \\r or \\n, strip ANSI, detect interrupts, emit messages."""
         buf = b""
         while _child_alive():
             try:
@@ -238,8 +238,23 @@ def run_protocol_adapter(
                 if not chunk:
                     continue
                 buf += chunk
-                while b"\n" in buf:
-                    line_bytes, buf = buf.split(b"\n", 1)
+                # Split on \r or \n (Ink TUI uses \r for cursor positioning)
+                while b"\n" in buf or b"\r" in buf:
+                    # Find the earliest line boundary
+                    idx_n = buf.find(b"\n")
+                    idx_r = buf.find(b"\r")
+                    if idx_n == -1:
+                        idx = idx_r
+                    elif idx_r == -1:
+                        idx = idx_n
+                    else:
+                        idx = min(idx_n, idx_r)
+                    line_bytes = buf[:idx]
+                    # Skip consecutive \r\n or \n\r
+                    rest = buf[idx + 1:]
+                    if rest and rest[0:1] in (b"\n", b"\r") and rest[0:1] != buf[idx:idx + 1]:
+                        rest = rest[1:]
+                    buf = rest
                     line = line_bytes.decode("utf-8", errors="replace")
                     clean = _strip_ansi(line).strip()
                     if not clean:
