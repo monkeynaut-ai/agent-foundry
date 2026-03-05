@@ -1,5 +1,15 @@
 # Claude Code Docker Worker - Testing Notes
 
+## How to use this document
+
+- **Worker CLAUDE.md source material** — The protocol details (ICRNL, `\r` vs `\n`, trust prompt behavior) inform what goes in the in-container worker's CLAUDE.md.
+- **Onboarding context** — Point a new Claude Code session at this doc to give it the full history of what was tried, what failed, and why. Saves re-discovery.
+- **Architecture decision records** — The Decisions section functions as an ADR log. As the system grows, individual ADRs can be split into separate files.
+- **Regression prevention** — The "confirmed non-working approaches" tables document dead ends with issue links, preventing future contributors from re-attempting them.
+- **Integration test specs** — The validation sections describe exact input/output sequences that can be turned into automated integration tests.
+
+---
+
 ## 2026-03-04: Initial Docker Image Build & Interactive Test
 
 ### Image Build
@@ -350,6 +360,19 @@ Sequence: launch session → retry `\r` every 2s until trust accepted → send p
 ### Decided
 
 1. **Auth strategy**: Use `claude setup-token` + `CLAUDE_CODE_OAUTH_TOKEN` env var (Option A). Subscription pricing, 1-year token, simple. Fall back to `ANTHROPIC_API_KEY` if multi-container issues arise.
+
+2. **Adapter-to-Archipelago transport**: WebSocket now, gRPC streaming later.
+
+   The in-container PTY adapter needs a transport to communicate with Archipelago. Archipelago will have an internal event/notification system where any graph node can react to adapter output. The adapter's job is simple: bridge PTY to a single transport endpoint. Fan-out to nodes happens inside Archipelago's orchestration layer.
+
+   **Chosen**: WebSocket — message-framed out of the box (no custom delimiter/length-prefix protocol), bidirectional (output events + input commands on one connection), lightweight, easy to debug.
+
+   **Future**: gRPC streaming — when we need strong typing and structured messages (protobuf).
+
+   **Rejected permanently**:
+   - TCP socket — raw bytes with no framing, would require a custom protocol layer
+   - HTTP + SSE — unidirectional output stream, input needs a separate channel
+   - Redis/NATS/ZMQ — message brokers add infrastructure and put pub/sub responsibility inside the container adapter, violating separation of concerns. The adapter should not know about Archipelago's internal event distribution.
 
 ### Open
 
