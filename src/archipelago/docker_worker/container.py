@@ -11,7 +11,14 @@ from typing import Any
 from archipelago.docker_worker.errors import ContainerCreationError, ContainerLifecycleError
 from archipelago.docker_worker.models import WorkerConstraints
 
-DEFAULT_ENV_ALLOWLIST = {"PATH", "HOME", "LANG", "TERM", "ANTHROPIC_API_KEY"}
+DEFAULT_ENV_ALLOWLIST = {
+    "PATH",
+    "HOME",
+    "LANG",
+    "TERM",
+    "ANTHROPIC_API_KEY",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+}
 
 
 @dataclass
@@ -53,11 +60,7 @@ class ContainerManager:
         if workspace_volume:
             volumes[workspace_volume] = {"bind": "/workspace", "mode": "rw"}
 
-        environment = (
-            {k: v for k, v in (self._client.environment or {}).items() if k in self._env_allowlist}
-            if hasattr(self._client, "environment")
-            else {}
-        )
+        environment = {k: v for k, v in os.environ.items() if k in self._env_allowlist}
 
         try:
             container = self._client.containers.create(

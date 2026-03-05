@@ -78,10 +78,13 @@ class TestCreateContainer:
         assert call_kwargs.kwargs["mem_limit"] == "512m"
 
     def test_given_env_vars_when_create_called_then_only_allowlisted_vars_passed(
-        self,
+        self, monkeypatch,
     ):
+        monkeypatch.setenv("PATH", "/usr/bin")
+        monkeypatch.setenv("HOME", "/home")
+        monkeypatch.setenv("SECRET", "hidden")
+
         client = MagicMock()
-        client.environment = {"PATH": "/usr/bin", "SECRET": "hidden", "HOME": "/home"}
         mock_container = MagicMock()
         mock_container.id = "c1"
         client.containers.create.return_value = mock_container

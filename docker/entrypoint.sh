@@ -1,6 +1,19 @@
 #!/bin/sh
 set -e
 
+# Validate authentication — require exactly one auth method
+if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -n "$ANTHROPIC_API_KEY" ]; then
+  echo "ERROR: Both CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY are set." >&2
+  echo "Set exactly one to avoid authentication conflicts." >&2
+  exit 1
+fi
+
+if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; then
+  echo "ERROR: No authentication configured." >&2
+  echo "Set CLAUDE_CODE_OAUTH_TOKEN (subscription) or ANTHROPIC_API_KEY (API billing)." >&2
+  exit 1
+fi
+
 # Check for Claude Code updates and notify via PTY protocol.
 # This is non-blocking — the container proceeds with the installed version
 # regardless. Agent Foundry handles image rebuild if needed.
@@ -11,5 +24,9 @@ if [ "$INSTALLED" != "unknown" ] && [ "$LATEST" != "unknown" ] && [ "$INSTALLED"
   echo "ARCHIPELAGO_UPDATE_AVAILABLE {\"installed\": \"$INSTALLED\", \"latest\": \"$LATEST\"}"
 fi
 
-# Execute claude in headless mode with any passed arguments
-exec claude -p "$@"
+# If a TTY is attached, run interactively; otherwise run headless
+if [ -t 0 ]; then
+  exec claude "$@"
+else
+  exec claude -p "$@"
+fi

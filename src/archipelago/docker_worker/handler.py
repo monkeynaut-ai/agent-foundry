@@ -2,6 +2,7 @@
 
 import logging
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any, Literal
@@ -86,6 +87,17 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         session = session_mgr.launch_session(
             container_handle, "/home/claude/entrypoint.sh"
         )
+
+        # Auto-confirm workspace trust prompt (always the first prompt after launch)
+        def _confirm_trust() -> None:
+            time.sleep(2)
+            try:
+                session_mgr.send_input(session, "\n")
+            except Exception:
+                pass
+
+        trust_thread = threading.Thread(target=_confirm_trust, daemon=True)
+        trust_thread.start()
 
         # Wait for session to exit or interrupt
         deadline = time.time() + worker_input.constraints.timeout_seconds

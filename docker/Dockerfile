@@ -21,6 +21,7 @@ RUN claude --version
 
 # Copy configuration and entrypoint
 COPY --chown=claude:claude settings.json /home/claude/.claude/settings.json
+COPY --chown=claude:claude claude.json /home/claude/.claude.json
 COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
 RUN chmod +x /home/claude/entrypoint.sh
 
