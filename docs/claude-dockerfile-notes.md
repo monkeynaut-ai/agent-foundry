@@ -319,6 +319,22 @@ claude -p "your prompt" \
 - `--output-format stream-json`: Streaming structured output for parsing
 - `--max-turns`: Limit agentic iterations
 
+## E2E Wiring Decisions
+
+### State Bridge (handler fallback)
+
+The approval gate outputs individual keys (`feature_spec`, `test_plan`, etc.) but the docker worker handler originally required a pre-assembled `worker_input` dict. Rather than add a dedicated bridge node, the handler now falls back to constructing `WorkerInput` from individual state keys when `worker_input` is absent. This preserves backward compat — explicit `worker_input` still works.
+
+### Prompt Delivery
+
+The handler's trust-confirmation thread now also sends the feature spec as a prompt to Claude Code's stdin after dismissing the trust prompt. A `_build_prompt()` helper formats the `WorkerInput.feature_spec` dict into a human-readable prompt string.
+
+Sequence: launch session → retry `\r` every 2s until trust accepted → send prompt + `\r`.
+
+### .env Loading
+
+`dotenv.load_dotenv()` is called at the top of `cli.py:main()` so `CLAUDE_CODE_OAUTH_TOKEN` (and other env vars) are available to the container manager when it forwards env vars to the Docker container.
+
 ### Feature Investigation Results
 
 | Feature | Finding |
@@ -420,17 +436,73 @@ This confirms:
 - Archipelago can safely spin up parallel Docker workers using one subscription token
 - No need for per-container token generation
 
+### PTY Input Pipeline: How Programmatic Keystrokes Reach Claude Code
+
+Claude Code's TUI is built on **Ink** (React for terminals). The input path:
+
+1. Archipelago writes bytes to the PTY socket via `sendall()`
+2. Bytes pass through the PTY **line discipline** (kernel-level termios processing)
+3. Ink's `parse-keypress.ts` maps raw bytes to key events: `\r` (0x0D) → `{ name: 'return' }`
+4. `useInput` hook fires callback with `key.return = true`
+5. The input component's `onSubmit` triggers only when `key.return === true`
+
+**Critical detail**: Ink checks for `\r` (0x0D), NOT `\n` (0x0A). The PTY's `ICRNL` termios flag converts `\r` → `\n` in the line discipline before Ink sees it. So by default, Ink never receives `\r`, never sets `key.return = true`, and submit never fires.
+
+**Fix implemented**: `stty -icrnl` in `entrypoint.sh` disables the ICRNL flag so `\r` passes through unchanged. The handler sends `\r` instead of `\n` for all PTY submissions.
+
+**Sources**:
+- [Ink parse-keypress.ts](https://github.com/vadimdemedes/ink/blob/master/src/parse-keypress.ts) — `\r` → return key mapping
+- [Ink useInput hook](https://github.com/vadimdemedes/ink/blob/master/src/hooks/use-input.ts) — key.return handling
+- [ink-text-input source](https://github.com/vadimdemedes/ink-text-input/blob/master/source/index.tsx) — onSubmit on key.return
+- [Issue #15553: Programmatic Input Submission](https://github.com/anthropics/claude-code/issues/15553) — workarounds, root cause analysis
+
 ### Issue: Workspace Trust Prompt
 
-Claude Code always shows a workspace trust confirmation prompt on startup ("Do you trust this folder?"), requiring Enter to proceed. This is a security feature with **no official bypass** — not via `--dangerously-skip-permissions`, not via settings, not via `.claude.json`.
+Claude Code always shows a workspace trust confirmation prompt on startup ("Do you trust this folder?"), requiring Enter to proceed. This is a security feature with **no official bypass**.
 
-**Tested**: `--dangerously-skip-permissions` does NOT skip the trust prompt.
+**Confirmed non-working approaches** (via multiple GitHub issues):
 
-**Solution**: The trust prompt is always first and always dismissable with Enter.
+| Approach | Status | Source |
+|----------|--------|--------|
+| `--dangerously-skip-permissions` flag | Does NOT skip trust prompt | [Issue #28506](https://github.com/anthropics/claude-code/issues/28506) |
+| `trustedDirectories` in settings.json | Never implemented | [Issue #12737](https://github.com/anthropics/claude-code/issues/12737) |
+| Pre-configuring `.claude.json` with projects | Doesn't work | [Issue #9113](https://github.com/anthropics/claude-code/issues/9113) |
+| Trust settings persistence across sessions | Not persisted | [Issue #21283](https://github.com/anthropics/claude-code/issues/21283) |
+| Trusted workspace patterns (glob) | Open feature request | [Issue #23109](https://github.com/anthropics/claude-code/issues/23109) |
+| Permanent directory trust | Open feature request | [Issue #29285](https://github.com/anthropics/claude-code/issues/29285) |
 
-- **Production (handler)**: A daemon thread sends `\n` to the PTY stdin 2 seconds after session launch. Simple, reliable, no text scanning needed.
-- **Dev/interactive**: User presses Enter. One keystroke.
+**Current solution**: The handler's daemon thread sends `\r` to the PTY to dismiss the trust prompt. Handled in `docker_worker_handler()`, not in the entrypoint or Dockerfile.
 
-This is handled in `docker_worker_handler()` — not in the entrypoint or Dockerfile.
+**Known issue**: The trust confirmation `\r` has a timing race — the entrypoint's version check fires the handler's `first_output` event, but Claude Code (Node.js) takes several more seconds to start and render the trust prompt. The `\r` sent 1 second after `first_output` arrives before the trust prompt renders. **Deferred**: needs a retry loop that sends `\r` every ~2 seconds until output indicates trust was accepted.
+
+**Prompt submission works correctly** — the feature spec prompt + `\r` submits as expected after trust is manually confirmed.
 
 **Note on `--dangerously-skip-permissions`**: If this flag is set, Claude Code displays a **second** confirmation asking "are you sure you want to bypass all permissions?" where Enter means **no** (deny). To confirm, you must arrow-down then Enter. This two-step confirmation with a non-obvious default makes it unreliable for automation. Avoid using this flag in the Archipelago pipeline.
+
+### Three Approaches Researched for Programmatic Input
+
+| Approach | Description | Status |
+|----------|-------------|--------|
+| **A: Disable ICRNL** | `stty -icrnl` + send `\r` instead of `\n` | **Implemented**. Prompt submission works. Trust confirmation needs retry loop. |
+| **B: Escape + Enter** | Send text, wait 300ms, send `\x1b` (dismiss autocomplete), wait 100ms, send `\r` | Backup if autocomplete intercepts Enter. From [Issue #15553](https://github.com/anthropics/claude-code/issues/15553). |
+| **C: stream-json protocol** | `claude -p --input-format stream-json --output-format stream-json` — NDJSON on stdin/stdout | **Cleanest long-term**. Bypasses Ink TUI entirely. Fully OAuth-compatible. Same protocol as Agent SDK. See [CLI reference](https://code.claude.com/docs/en/cli-reference). |
+
+---
+
+## Changes Implemented: ICRNL Fix for PTY Input Submission
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `docker/entrypoint.sh` | Added `stty -icrnl` before launching Claude Code — disables carriage return → newline conversion in PTY line discipline |
+| `src/archipelago/docker_worker/handler.py` | Changed `\n` → `\r` in trust confirmation, prompt submission (`_confirm_trust_and_prompt`), and stdin forwarding (`_forward_stdin`) |
+| `tests/archipelago/test_docker_worker_handler.py` | 4 new tests in `TestICRNLFix` class; updated assertion in existing trust test to expect `\r` |
+
+### Test Results
+
+437 passed, 0 failures (full suite).
+
+### Validation: Interactive PTY Session
+
+Tested with rebuilt Docker image. User can interact with Claude Code running in the container — typing and submitting prompts works. The handler's prompt submission (`prompt + "\r"`) correctly triggers Ink's submit. Trust confirmation `\r` has a timing issue (deferred — see "Known issue" above).
