@@ -29,6 +29,11 @@ fi
 # parse-keypress never sees 'return', so submit never fires.
 stty -icrnl 2>/dev/null || true
 
+# If adapter WS URL is set, run via protocol adapter
+if [ -n "$ARCHIPELAGO_WS_URL" ]; then
+  exec python /home/claude/adapter.py --protocol "$ARCHIPELAGO_WS_URL" claude "$@"
+fi
+
 # If a TTY is attached, run interactively; otherwise run headless
 if [ -t 0 ]; then
   exec /home/claude/.local/bin/claude "$@"

@@ -37,13 +37,20 @@ class TestCreateContainer:
         assert handle.container_id == "container-abc123"
         assert handle.status == "created"
 
-    def test_given_valid_config_when_create_called_then_entrypoint_overridden_to_sleep(
+    def test_given_valid_config_when_create_called_then_no_entrypoint_override(
         self, manager, mock_client
     ):
         manager.create_container()
         call_kwargs = mock_client.containers.create.call_args
-        assert call_kwargs.kwargs["entrypoint"] == "sleep"
-        assert call_kwargs.kwargs["command"] == "infinity"
+        assert "entrypoint" not in call_kwargs.kwargs
+        assert "command" not in call_kwargs.kwargs
+
+    def test_given_valid_config_when_create_called_then_extra_hosts_set(
+        self, manager, mock_client
+    ):
+        manager.create_container()
+        call_kwargs = mock_client.containers.create.call_args
+        assert call_kwargs.kwargs["extra_hosts"] == {"host.docker.internal": "host-gateway"}
 
     def test_given_valid_config_when_create_called_then_container_uses_non_root_user(
         self, manager, mock_client
@@ -105,6 +112,31 @@ class TestCreateContainer:
         assert "PATH" in env
         assert "HOME" in env
         assert "SECRET" not in env
+
+    def test_given_extra_env_when_create_called_then_extra_env_merged(
+        self, manager, mock_client
+    ):
+        manager.create_container(extra_env={"ARCHIPELAGO_WS_URL": "ws://host:1234/abc"})
+        call_kwargs = mock_client.containers.create.call_args
+        env = call_kwargs.kwargs["environment"]
+        assert env["ARCHIPELAGO_WS_URL"] == "ws://host:1234/abc"
+
+    def test_given_ws_url_env_var_when_create_called_then_ws_url_forwarded_to_container(
+        self, monkeypatch,
+    ):
+        monkeypatch.setenv("ARCHIPELAGO_WS_URL", "ws://host:5678/session")
+
+        client = MagicMock()
+        mock_container = MagicMock()
+        mock_container.id = "c1"
+        client.containers.create.return_value = mock_container
+
+        mgr = ContainerManager(client)
+        mgr.create_container()
+
+        call_kwargs = client.containers.create.call_args
+        env = call_kwargs.kwargs["environment"]
+        assert env["ARCHIPELAGO_WS_URL"] == "ws://host:5678/session"
 
 
 # ── Commit 2: start, stop, destroy ──

@@ -387,6 +387,13 @@ class TestICRNLFix:
         content = entrypoint.read_text()
         assert "stty -icrnl" in content
 
+    def test_given_entrypoint_when_read_then_contains_archipelago_ws_url_check(self):
+        """Entrypoint launches adapter when ARCHIPELAGO_WS_URL is set."""
+        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        content = entrypoint.read_text()
+        assert "ARCHIPELAGO_WS_URL" in content
+        assert "adapter.py" in content
+
     @patch("archipelago.docker_worker.handler.TRUST_RETRY_INTERVAL", 0.3)
     @patch("archipelago.docker_worker.handler.TRUST_FLUSH_DELAY", 0.1)
     @patch("archipelago.docker_worker.handler.TRUST_POLL_INTERVAL", 0.05)
@@ -693,6 +700,84 @@ class TestHandlerProtocol:
                 pass
         assert len(input_calls) == 1
         assert "Implement the following feature:" in input_calls[0]["text"]
+
+
+class TestProtocolEndToEnd:
+    """End-to-end test: real _HandlerWSServer, mock WS client simulating adapter, mocked Docker."""
+
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_mocked_adapter_when_full_lifecycle_runs_then_handler_returns_valid_result(
+        self, mock_docker
+    ):
+        import socket as _socket
+        import time as _time
+
+        from websockets.sync.client import connect as ws_client_connect
+
+        _mock_docker_env(mock_docker)
+
+        # Find a port we control so we can connect our mock adapter
+        with _socket.socket() as s:
+            s.bind(("", 0))
+            known_port = s.getsockname()[1]
+
+        # Patch _get_free_port to return our known port
+        with patch("archipelago.docker_worker.handler._get_free_port", return_value=known_port):
+            result_holder = []
+
+            def _run_handler():
+                state = {"worker_input": _valid_worker_input()}
+                result_holder.append(docker_worker_handler(state))
+
+            handler_thread = threading.Thread(target=_run_handler, daemon=True)
+            handler_thread.start()
+
+            # Wait for WS server to be ready, then connect
+            deadline = _time.monotonic() + 5
+            ws = None
+            while _time.monotonic() < deadline:
+                try:
+                    ws = ws_client_connect(f"ws://localhost:{known_port}/test")
+                    break
+                except (ConnectionRefusedError, OSError):
+                    _time.sleep(0.05)
+            assert ws is not None, "Could not connect to handler WS server"
+
+            try:
+                # Send protocol messages simulating adapter
+                ws.send(StatusMessage(
+                    type="status", session_id="test", status="started", timestamp=_time.time(),
+                ).model_dump_json())
+
+                ws.send(OutputMessage(
+                    type="output", session_id="test", text="Running tests...",
+                    stream="stdout", timestamp=_time.time(),
+                ).model_dump_json())
+
+                ws.send(OutputMessage(
+                    type="output", session_id="test", text="All tests passed",
+                    stream="stdout", timestamp=_time.time(),
+                ).model_dump_json())
+
+                ws.send(StatusMessage(
+                    type="status", session_id="test", status="exited",
+                    exit_code=0, timestamp=_time.time(),
+                ).model_dump_json())
+            finally:
+                _time.sleep(0.5)
+                try:
+                    ws.close()
+                except Exception:
+                    pass
+
+            handler_thread.join(timeout=10)
+            assert not handler_thread.is_alive()
+            assert len(result_holder) == 1
+
+            result = result_holder[0]
+            worker_result = WorkerResult(**result["worker_result"])
+            assert worker_result.status == "completed"
+            assert "2 output lines" in worker_result.result_summary
 
 
 class TestPipelineIntegration:

@@ -21,6 +21,7 @@ DEFAULT_ENV_ALLOWLIST = {
     "TERM",
     "ANTHROPIC_API_KEY",
     "CLAUDE_CODE_OAUTH_TOKEN",
+    "ARCHIPELAGO_WS_URL",
 }
 
 
@@ -71,8 +72,6 @@ class ContainerManager:
         try:
             container = self._client.containers.create(
                 image,
-                entrypoint="sleep",
-                command="infinity",
                 detach=True,
                 user="1000:1000",
                 cap_drop=["ALL"],
@@ -81,6 +80,7 @@ class ContainerManager:
                 volumes=volumes,
                 mem_limit=f"{constraints.mem_limit_mb}m",
                 environment=environment,
+                extra_hosts={"host.docker.internal": "host-gateway"},
                 cpu_quota=constraints.cpu_quota,
                 pids_limit=constraints.pids_limit,
             )

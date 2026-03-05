@@ -24,6 +24,7 @@ COPY --chown=claude:claude settings.json /home/claude/.claude/settings.json
 COPY --chown=claude:claude claude.json /home/claude/.claude.json
 COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
 RUN chmod +x /home/claude/entrypoint.sh
+COPY --chown=claude:claude adapter.py /home/claude/adapter.py
 
 WORKDIR /workspace
 
