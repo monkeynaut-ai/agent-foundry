@@ -167,8 +167,9 @@ def run_ws_adapter(command: str = "cat", host: str = "localhost", port: int = 87
 
 
 def _strip_ansi(text: str) -> str:
-    """Remove ANSI escape sequences from text."""
-    return re.sub(r"\x1b\[[\x20-\x3f]*[0-9;]*[\x40-\x7e]|\x1b\].*?\x07|\x1b\(B", "", text)
+    """Remove ANSI escape sequences, preserving spacing from cursor movement."""
+    spaced = re.sub(r"\x1b\[[\x20-\x3f]*[0-9;]*[\x40-\x7e]|\x1b\].*?\x07|\x1b\(B", " ", text)
+    return re.sub(r"  +", " ", spaced).strip()
 
 
 def _connect_with_backoff(ws_url: str, timeout: float = 30.0):
