@@ -2,7 +2,6 @@
 
 import json
 import logging
-import re
 from collections.abc import Callable
 from typing import Any
 
@@ -11,12 +10,11 @@ from archipelago.docker_worker.models import (
     PermissionRequest,
     UpdateAvailable,
 )
+from archipelago.docker_worker.protocol import INTERRUPT_PATTERN as _INTERRUPT_PATTERN
+from archipelago.docker_worker.protocol import UPDATE_PATTERN as _UPDATE_PATTERN
 from archipelago.docker_worker.session import SessionHandle, SessionManager
 
 logger = logging.getLogger(__name__)
-
-_INTERRUPT_PATTERN = re.compile(r"^ARCHIPELAGO_NEED_(CLARIFICATION|PERMISSION)\s+(\{.*\})$")
-_UPDATE_PATTERN = re.compile(r"^ARCHIPELAGO_UPDATE_AVAILABLE\s+(\{.*\})$")
 
 
 class InterruptDetector:
