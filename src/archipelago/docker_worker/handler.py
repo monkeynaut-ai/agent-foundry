@@ -134,7 +134,8 @@ def _send_input(ws_server: _HandlerWSServer, session_id: str, text: str) -> None
 
 def _send_control(
     ws_server: _HandlerWSServer, session_id: str,
-    command: str, args: dict[str, Any] | None = None,
+    command: Literal["resize", "terminate", "kill"],
+    args: dict[str, Any] | None = None,
 ) -> None:
     """Send a ControlMessage through the WebSocket server."""
     msg = ControlMessage(
