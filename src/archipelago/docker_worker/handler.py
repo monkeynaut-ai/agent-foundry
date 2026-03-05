@@ -1,36 +1,110 @@
 """Docker worker handler: orchestrates container lifecycle behind the standard handler interface."""
 
 import logging
-import sys
+import queue
+import socket
 import tempfile
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Literal
 
 import docker
+from websockets.sync.server import ServerConnection, serve
 
 from archipelago.docker_worker.container import ContainerManager
-from archipelago.docker_worker.interrupts import InterruptDetector, InterruptHandler
 from archipelago.docker_worker.models import (
+    ClarificationRequest,
     CommitEvidence,
     PatchInfo,
-    UpdateAvailable,
+    PermissionRequest,
     WorkerConstraints,
     WorkerInput,
     WorkerResult,
 )
 from archipelago.docker_worker.progress import parse_progress
+from archipelago.docker_worker.protocol import (
+    ControlMessage,
+    InputMessage,
+    InterruptMessage,
+    OutputMessage,
+    ProtocolError,
+    StatusMessage,
+    parse_protocol_message,
+)
 from archipelago.docker_worker.recovery import persist_workspace_state
-from archipelago.docker_worker.session import SessionManager
 
 logger = logging.getLogger(__name__)
 
 # Trust confirmation timing constants (module-level for testability)
-TRUST_RETRY_INTERVAL = 2.0   # seconds between \r attempts
+TRUST_RETRY_INTERVAL = 2.0   # seconds between \n attempts
 TRUST_TIMEOUT = 30.0          # total seconds for trust confirmation
 TRUST_FLUSH_DELAY = 0.5       # seconds to let entrypoint output flush
 TRUST_POLL_INTERVAL = 0.1     # seconds between output count checks
+
+
+def _get_free_port() -> int:
+    """Find an available port."""
+    with socket.socket() as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
+def _generate_session_id() -> str:
+    """Generate a unique session ID."""
+    return str(uuid.uuid4())
+
+
+class _HandlerWSServer:
+    """Ephemeral WebSocket server for a single adapter connection."""
+
+    def __init__(self) -> None:
+        self.message_queue: queue.Queue[str | None] = queue.Queue()
+        self.connected = threading.Event()
+        self._ws: ServerConnection | None = None
+        self._server = None
+        self._server_thread: threading.Thread | None = None
+        self._lock = threading.Lock()
+
+    def start(self, port: int) -> None:
+        def _handler(ws: ServerConnection) -> None:
+            with self._lock:
+                self._ws = ws
+            self.connected.set()
+            try:
+                while True:
+                    try:
+                        raw = ws.recv(timeout=0.5)
+                        self.message_queue.put(raw if isinstance(raw, str) else raw.decode())
+                    except TimeoutError:
+                        continue
+            except Exception:
+                pass
+            finally:
+                self.message_queue.put(None)  # sentinel
+
+        self._server = serve(_handler, "localhost", port)
+        self._server_thread = threading.Thread(
+            target=self._server.serve_forever, daemon=True
+        )
+        self._server_thread.start()
+
+    def send(self, message: str) -> None:
+        with self._lock:
+            ws = self._ws
+        if ws:
+            try:
+                ws.send(message)
+            except Exception:
+                pass
+
+    def shutdown(self) -> None:
+        if self._server:
+            try:
+                self._server.shutdown()
+            except Exception:
+                pass
 
 
 def _build_prompt(worker_input: WorkerInput) -> str:
@@ -52,12 +126,30 @@ def _build_prompt(worker_input: WorkerInput) -> str:
     return "\n".join(parts)
 
 
+def _send_input(ws_server: _HandlerWSServer, session_id: str, text: str) -> None:
+    """Send an InputMessage through the WebSocket server."""
+    msg = InputMessage(type="input", session_id=session_id, text=text)
+    ws_server.send(msg.model_dump_json())
+
+
+def _send_control(
+    ws_server: _HandlerWSServer, session_id: str,
+    command: str, args: dict[str, Any] | None = None,
+) -> None:
+    """Send a ControlMessage through the WebSocket server."""
+    msg = ControlMessage(
+        type="control", session_id=session_id, command=command,
+        args=args or {},
+    )
+    ws_server.send(msg.model_dump_json())
+
+
 def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     """Orchestrate a full Docker worker lifecycle.
 
     Extracts worker_input from state, creates/starts a container,
-    launches a CC session, streams output, handles interrupts,
-    collects progress, and returns worker_result.
+    starts a WS server for the adapter to connect to, processes
+    structured protocol messages, and returns worker_result.
     """
     worker_input_data = state.get("worker_input")
     if worker_input_data:
@@ -71,7 +163,9 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
             gates=state.get("gates", []),
         )
 
-    # Initialize subsystems
+    auto_approve_low_risk = worker_input.constraints.network_policy != "none"
+
+    # Initialize Docker
     try:
         client = docker.from_env()
     except Exception as e:
@@ -86,61 +180,42 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         return {**state, "worker_result": result.model_dump()}
 
     container_mgr = ContainerManager(client)
-    session_mgr = SessionManager(container_mgr)
-    detector = InterruptDetector()
-    interrupt_handler = InterruptHandler(
-        session_mgr,
-        detector,
-        auto_approve_low_risk=worker_input.constraints.network_policy != "none",
-    )
 
-    # Collect output lines and detect interrupts/notifications
-    output_lines: list[str] = []
-    interrupt_request = None
-    mutable: dict[str, Any] = {"update_available": None}
-    first_output = threading.Event()
-
-    def _output_callback(line: str, _container_id: str, _timestamp: float) -> None:
-        nonlocal interrupt_request
-        output_lines.append(line)
-        print(f"[cc] {line}", flush=True)
-        first_output.set()
-        detected = detector.scan_line(line)
-        if isinstance(detected, UpdateAvailable):
-            mutable["update_available"] = {"installed": detected.installed, "latest": detected.latest}
-        elif detected is not None:
-            interrupt_request = detected
-
-    session_mgr.register_output_callback(_output_callback)
+    # Start WS server on ephemeral port
+    ws_server = _HandlerWSServer()
+    port = _get_free_port()
+    session_id = _generate_session_id()
+    ws_server.start(port)
 
     container_handle = None
     try:
-        # Create and start container
+        # Create and start container with WS URL
+        ws_url = f"ws://host.docker.internal:{port}/{session_id}"
         container_handle = container_mgr.create_container(
             workspace_volume=f"archipelago-{int(time.time())}",
             constraints=worker_input.constraints,
+            extra_env={"ARCHIPELAGO_WS_URL": ws_url},
         )
         container_mgr.start(container_handle, repo_ref=worker_input.repo_ref)
 
-        # Launch CC session
-        session = session_mgr.launch_session(
-            container_handle, "/home/claude/entrypoint.sh"
-        )
+        # Wait for adapter to connect
+        if not ws_server.connected.wait(timeout=60):
+            raise TimeoutError("Adapter did not connect within 60 seconds")
 
-        # Wait for CC to produce output, then confirm trust and send prompt
+        # Collect output and state
+        output_lines: list[str] = []
+        mutable: dict[str, Any] = {"update_available": None}
+        first_output = threading.Event()
+        session_exit_code: int | None = None
+
+        # Trust confirmation thread
         def _confirm_trust_and_prompt() -> None:
-            # Wait for first output (entrypoint version check or CC trust prompt)
             first_output.wait(timeout=30)
-
-            # Brief pause to let entrypoint output flush before capturing baseline
             time.sleep(TRUST_FLUSH_DELAY)
 
-            # Retry-loop trust confirmation: send \r every TRUST_RETRY_INTERVAL
-            # seconds until output count increases (indicating CC accepted trust
-            # and rendered its main UI). Extra \r presses are harmless.
             baseline_count = len(output_lines)
             deadline = time.time() + TRUST_TIMEOUT
-            last_send_time = 0.0  # force immediate first send
+            last_send_time = 0.0
 
             while time.time() < deadline:
                 if len(output_lines) > baseline_count:
@@ -148,7 +223,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
                 now = time.time()
                 if now - last_send_time >= TRUST_RETRY_INTERVAL:
                     try:
-                        session_mgr.send_input(session, "\r")
+                        _send_input(ws_server, session_id, "\n")
                     except Exception:
                         pass
                     last_send_time = now
@@ -156,56 +231,90 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
 
             prompt = _build_prompt(worker_input)
             try:
-                session_mgr.send_input(session, prompt + "\r")
+                _send_input(ws_server, session_id, prompt + "\n")
             except Exception:
                 pass
 
         trust_thread = threading.Thread(target=_confirm_trust_and_prompt, daemon=True)
         trust_thread.start()
 
-        # Forward terminal stdin to CC session
-        def _forward_stdin() -> None:
-            logger.info("[stdin] forwarding thread started, session=%s", session.status)
-            while session.status == "running":
-                try:
-                    line = sys.stdin.readline()
-                    if line:
-                        # Replace \n with \r so Ink's parse-keypress sees 'return'
-                        # (the PTY's ICRNL is disabled, so \r passes through unchanged)
-                        line = line.replace("\n", "\r")
-                        logger.info("[stdin] sending: %r", line.strip())
-                        print(f"[stdin] sending: {line.strip()}", flush=True)
-                        session_mgr.send_input(session, line)
-                    else:
-                        logger.info("[stdin] EOF")
-                        break
-                except Exception as e:
-                    logger.info("[stdin] error: %s", e)
-                    break
-            logger.info("[stdin] forwarding thread exiting, session=%s", session.status)
-
-        stdin_thread = threading.Thread(target=_forward_stdin, daemon=True)
-        stdin_thread.start()
-
-        # Wait for session to exit or interrupt
+        # Message processing loop
         deadline = time.time() + worker_input.constraints.timeout_seconds
-        while session.status == "running" and time.time() < deadline:
-            if interrupt_request is not None:
-                updated = interrupt_handler.handle_interrupt(
-                    interrupt_request,
-                    session,
-                    state,
+
+        while time.time() < deadline:
+            try:
+                raw = ws_server.message_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            # Connection dropped sentinel
+            if raw is None:
+                result = WorkerResult(
+                    result_summary="Adapter connection dropped",
+                    workspace_ref=container_handle.workspace_path if container_handle else "",
+                    patches=[],
+                    evidence=[],
+                    status="failed",
                 )
-                if "breakpoint_payload" in updated:
-                    return {**state, **updated, "worker_result": None}
-                interrupt_request = None
-            time.sleep(0.1)
+                return {**state, "worker_result": result.model_dump()}
+
+            try:
+                msg = parse_protocol_message(raw)
+            except ProtocolError:
+                logger.warning("Ignoring malformed protocol message")
+                continue
+
+            if isinstance(msg, OutputMessage):
+                output_lines.append(msg.text)
+                print(f"[cc] {msg.text}", flush=True)
+                first_output.set()
+
+            elif isinstance(msg, InterruptMessage):
+                first_output.set()
+                if msg.interrupt_type == "update_available":
+                    mutable["update_available"] = msg.payload
+                elif msg.interrupt_type == "clarification":
+                    payload = msg.payload
+                    blocking = payload.get("blocking", True)
+                    if blocking:
+                        return {
+                            **state,
+                            "breakpoint_payload": {
+                                "type": "clarification",
+                                "question": payload.get("question", ""),
+                                "options": payload.get("options", []),
+                                "default": payload.get("default"),
+                            },
+                            "worker_result": None,
+                        }
+                elif msg.interrupt_type == "permission":
+                    payload = msg.payload
+                    risk_level = payload.get("risk_level", "medium")
+                    if risk_level == "low" and auto_approve_low_risk:
+                        _send_input(ws_server, session_id, "yes\n")
+                    else:
+                        return {
+                            **state,
+                            "breakpoint_payload": {
+                                "type": "permission",
+                                "action": payload.get("action", ""),
+                                "risk_level": risk_level,
+                                "why_needed": payload.get("why_needed", ""),
+                            },
+                            "worker_result": None,
+                        }
+
+            elif isinstance(msg, StatusMessage):
+                if msg.status == "exited":
+                    session_exit_code = msg.exit_code
+                    break
 
         # Determine status
         status: Literal["completed", "failed", "timed_out"]
-        if time.time() >= deadline:
+        if time.time() >= deadline and session_exit_code is None:
+            _send_control(ws_server, session_id, "terminate")
             status = "timed_out"
-        elif session.exit_code == 0:
+        elif session_exit_code == 0:
             status = "completed"
         else:
             status = "failed"
@@ -275,6 +384,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         )
         return {**state, "worker_result": result.model_dump()}
     finally:
+        ws_server.shutdown()
         if container_handle:
             import contextlib
 

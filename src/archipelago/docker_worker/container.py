@@ -54,6 +54,7 @@ class ContainerManager:
         image: str | None = None,
         workspace_volume: str = "",
         constraints: WorkerConstraints | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> ContainerHandle:
         """Create a container with safety baseline enforced."""
         image = image or self._default_image
@@ -64,6 +65,8 @@ class ContainerManager:
             volumes[workspace_volume] = {"bind": "/workspace", "mode": "rw"}
 
         environment = {k: v for k, v in os.environ.items() if k in self._env_allowlist}
+        if extra_env:
+            environment.update(extra_env)
 
         try:
             container = self._client.containers.create(
