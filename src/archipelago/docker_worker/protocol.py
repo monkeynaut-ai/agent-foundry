@@ -38,7 +38,7 @@ class InterruptMessage(BaseModel):
 class StatusMessage(BaseModel):
     type: Literal["status"]
     session_id: str
-    status: Literal["started", "running", "exited", "error"]
+    status: Literal["started", "running", "turn_complete", "completed", "exited", "error"]
     exit_code: int | None = None
     detail: str = ""
     timestamp: float
@@ -56,7 +56,7 @@ class InputMessage(BaseModel):
 class ControlMessage(BaseModel):
     type: Literal["control"]
     session_id: str
-    command: Literal["resize", "terminate", "kill"]
+    command: Literal["resize", "terminate", "kill", "complete"]
     args: dict[str, Any] = Field(default_factory=dict)
 
 

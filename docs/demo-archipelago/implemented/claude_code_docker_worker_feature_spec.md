@@ -2,7 +2,21 @@
 
 ## Objective
 
-Replace the placeholder `dev_implement_feature_tdd` handler with a real implementation that delegates coding work to Claude Code (CC) running inside an ephemeral Docker container. The orchestrator manages the full lifecycle -- container provisioning, repo checkout, PTY-based session management, structured progress reporting, interactive breakpoints (clarification/permission), and crash recovery -- while CC operates as a self-contained TDD worker iterating across the spec's PRs and commits.
+Replace the placeholder `dev_implement_feature_tdd` handler with a real implementation that delegates coding work to Claude Code (CC) running inside an ephemeral Docker container. The orchestrator manages the full lifecycle -- container provisioning, repo checkout, session management, structured progress reporting, interactive breakpoints (clarification/permission), and crash recovery -- while CC operates as a self-contained TDD worker iterating across the spec's PRs and commits.
+
+> **Note — Adapter Protocol Evolution**: The original design used PTY-based session management (`SessionManager` via Docker exec). This has been superseded by a structured WebSocket protocol with two adapter modes:
+>
+> - **Headless adapter** (preferred): Uses `claude -p --output-format stream-json` — no PTY, no ANSI, no TUI noise. Multi-turn via `--resume`.
+> - **PTY adapter** (legacy): Spawns Claude Code in a PTY, scrapes TUI output.
+>
+> See `docs/demo-archipelago/adapter_protocol_spec.md` for the full protocol specification, including task completion signaling, gate node integration, and architecture decisions.
+>
+> **Key architectural decisions since initial spec**:
+> - The adapter communicates via WebSocket JSON protocol, not Docker exec stdin/stdout
+> - Task completion uses a two-layer signal: Claude outputs `ARCHIPELAGO_TASK_COMPLETE` marker (fast path), gate node validates (safety net)
+> - Containers stay alive after `completed` status — gate can resume same Claude session on rejection
+> - Status lifecycle: `started` → `running` → `turn_complete` → `completed` → `exited`
+> - The worker container's CLAUDE.md must include task completion protocol instructions
 
 ### Success Criteria
 
@@ -82,6 +96,8 @@ Replace the placeholder `dev_implement_feature_tdd` handler with a real implemen
 
 ### Phase 3: PTY Session & Streaming
 
+> **Evolution note**: PTY session management (`SessionManager`) has been superseded by the adapter protocol for the handler's communication path. The handler now uses a WebSocket server (`_HandlerWSServer`) and processes structured protocol messages. `SessionManager` is retained for recovery flows and backward compatibility. New deployments should use the headless adapter — see `adapter_protocol_spec.md`.
+
 14. **Given** a running container with CC installed, **when** `launch_session(container_handle, command)` is called, **then** a persistent PTY session is established via `docker exec` with TTY allocation, and a `SessionHandle` is returned.
 
 15. **Given** an active `SessionHandle`, **when** stdout/stderr is produced by CC, **then** the output is streamed line-by-line to a registered callback (the orchestrator's log collector), with each line tagged with a monotonic timestamp and the container ID.
@@ -119,6 +135,8 @@ Replace the placeholder `dev_implement_feature_tdd` handler with a real implemen
 29. **Given** a workspace volume from a crashed session, **when** recovery is attempted, **then** the workspace's git state (commit SHA + working tree diff) and the CC transcript (or run summary) are persisted before the fresh container starts.
 
 ### Phase 6: Capability Spec, Handler Wiring & End-to-End Integration
+
+> **Evolution note**: The `docker_worker_handler` has been rewritten to use the WebSocket protocol (see `adapter_protocol_spec.md` PR 3). It no longer uses `SessionManager`, `InterruptDetector`, or `InterruptHandler` directly. Instead, it starts a `_HandlerWSServer`, processes `OutputMessage`, `InterruptMessage`, and `StatusMessage` from the adapter, and sends `InputMessage`/`ControlMessage` back. Interrupt handling is done inline by inspecting `InterruptMessage` payloads. The handler's external interface (`def handler(state) -> state`) is unchanged.
 
 30. **Given** a YAML capability spec file for `coding.implement_feature_from_spec`, **when** loaded via `load_capability_spec()`, **then** it returns a valid `CapabilitySpec` with `inputs_schema` matching `WorkerInput` and `outputs_schema` matching `WorkerResult`.
 
@@ -558,3 +576,42 @@ The `InterruptDetector` uses a regex pattern `^ARCHIPELAGO_NEED_(CLARIFICATION|P
 - **Container resource leaks**: The `docker_worker_handler` uses a try/finally block to ensure `destroy()` is called. The `ContainerManager` also tracks all created containers and provides a `cleanup_all()` method for emergency cleanup.
 - **Schema drift between models and YAML specs**: Each commit that adds or modifies a model includes a test verifying the model's `model_json_schema()` matches the YAML spec's schema. This catches drift immediately.
 - **Existing test regressions**: Adding the new capability spec to `capabilities/` increases the registry size. Any test asserting a specific registry size must be updated. The `dev_implement_feature_tdd` spec remains but is tagged `deprecated` so existing tag searches for `"archipelago"` will still include it (5 results instead of 4). Tests asserting `len == 4` for the `"archipelago"` tag must be updated to account for this.
+
+---
+
+## Post-Implementation Notes
+
+### Adapter Protocol (implemented)
+
+The adapter-orchestrator communication protocol was implemented across 4 PRs (see `adapter_protocol_spec.md`). Key files:
+
+- `src/archipelago/docker_worker/protocol.py` — Pydantic message models, discriminated union parser
+- `src/archipelago/docker_worker/ansi.py` — ANSI escape code stripping (PTY mode only)
+- `src/archipelago/docker_worker/handler.py` — rewritten to use `_HandlerWSServer` + protocol messages
+- `src/archipelago/docker_worker/container.py` — added `extra_env` parameter, removed `sleep infinity` override
+- `lab/adapter.py` — PTY adapter with `run_protocol_adapter()`
+- `lab/headless_adapter.py` — headless adapter using `claude -p --output-format stream-json`
+
+### Headless Adapter Discovery
+
+During prototyping, we discovered that Claude Code's `--output-format stream-json` with `-p` (headless mode) produces clean, structured JSON output — eliminating the need for PTY management, ANSI stripping, TUI noise filtering, trust confirmation, and ICRNL conversion. Multi-turn conversations work via `--resume SESSION_ID`.
+
+The headless adapter (`lab/headless_adapter.py`) is ~150 lines vs ~400 for the PTY adapter. It uses `subprocess.Popen` instead of `pexpect`, reads JSON lines from stdout, and maps Claude Code's event types (`system`, `assistant`, `result`) to protocol messages.
+
+### Task Completion Signaling
+
+Two-layer design:
+
+1. **Fast signal (adapter)**: Claude outputs `ARCHIPELAGO_TASK_COMPLETE` marker (instructed via CLAUDE.md). The adapter detects it and sends `status:completed`. The container stays alive.
+2. **Safety net (gate node)**: A gate node after each dev node validates work against the spec, runs tests, checks gates. If the gate rejects, it resumes the same Claude session. If the gate accepts, it sends `control:terminate`.
+
+**Failure mode analysis**:
+- False complete (Claude wrong) → gate catches it, loops back to dev node. Cost: one gate evaluation.
+- False turn_complete (marker missed) → delay until timeout or external signal. Cost: time.
+- Correct complete → fast path through gate. Cost: none.
+
+The adapter defaults to `turn_complete` (safe) and only sends `completed` when it detects the marker or receives `control:complete`.
+
+### Prompt Injection Resistance
+
+During testing, Claude Code was asked by a user to output the `ARCHIPELAGO_TASK_COMPLETE` marker. Claude refused, recognizing it as a protocol control signal that would falsely indicate task completion. It learned this from reading the adapter source code in its working directory. This is a desirable property: the marker is resistant to social engineering while being responsive to authoritative CLAUDE.md instructions.

@@ -1,8 +1,37 @@
 # Feature Specification: Adapter-Orchestrator Communication Protocol
 
+> **IMPORTANT — CLAUDE.md Instruction Required**
+>
+> The worker container's CLAUDE.md must include the following instruction so that Claude Code signals task completion to the adapter:
+>
+> ```markdown
+> ## Task Completion Protocol
+>
+> You are running inside an Archipelago worker container. When you have completed
+> all requirements in the feature spec and verified tests pass, you MUST output
+> the following marker on its own line as the last line of your response:
+>
+> ARCHIPELAGO_TASK_COMPLETE
+>
+> This is a required part of the workflow protocol. The marker signals the
+> orchestrator to run the gate check. Do not output this marker until you are
+> confident the work is complete. If you are unsure or need clarification, ask
+> instead.
+> ```
+>
+> Without this instruction, the adapter cannot detect inside-out task completion. The gate node will still catch missing signals, but sessions will require an external `control:complete` to proceed.
+
 ## Objective
 
-Define and implement a transport-agnostic application protocol for structured, bidirectional communication between a remote coding agent adapter and the Archipelago orchestrator. Replace the current Docker exec-based stdin/stdout channel (`SessionManager.launch_session()` via `exec_create`/`exec_start`) with a WebSocket connection where the in-container adapter bridges the PTY and emits structured JSON messages. The adapter becomes the container's entrypoint process, parsing interrupt markers and ANSI output locally, so Archipelago receives only typed messages -- never raw bytes.
+Define and implement a transport-agnostic application protocol for structured, bidirectional communication between a remote coding agent adapter and the Archipelago orchestrator. Replace the current Docker exec-based stdin/stdout channel (`SessionManager.launch_session()` via `exec_create`/`exec_start`) with a WebSocket connection where the in-container adapter emits structured JSON messages. The orchestrator receives only typed messages -- never raw bytes.
+
+### Headless Mode (Preferred)
+
+The headless adapter (`lab/headless_adapter.py`) uses `claude -p --output-format stream-json --verbose` instead of spawning a PTY. Claude Code outputs newline-delimited JSON events (types: `system`, `assistant`, `result`, `rate_limit_event`). The adapter maps these to protocol messages. Multi-turn conversations use `--resume SESSION_ID`. This eliminates ANSI stripping, TUI noise filtering, trust confirmation, and ICRNL conversion.
+
+### PTY Mode (Legacy)
+
+The PTY adapter (`lab/adapter.py`) spawns Claude Code in a PTY via pexpect and scrapes TUI output. It bridges the PTY and emits structured JSON messages, parsing interrupt markers and stripping ANSI codes locally. This mode is retained for backward compatibility but is not recommended for new deployments.
 
 ### Success Criteria
 
@@ -133,16 +162,18 @@ Lifecycle state changes of the agent process.
 Fields:
 - `type`: Literal `"status"`
 - `session_id`: `str`
-- `status`: Literal `"started"` | `"running"` | `"exited"` | `"error"`
-- `exit_code`: `int | None` -- present when `status` is `"exited"`
-- `detail`: `str` -- human-readable description
+- `status`: Literal `"started"` | `"running"` | `"turn_complete"` | `"completed"` | `"exited"` | `"error"`
+- `exit_code`: `int | None` -- present when `status` is `"turn_complete"`, `"completed"`, or `"exited"`
+- `detail`: `str` -- human-readable description (e.g., `stop_reason` from Claude Code on `turn_complete`)
 - `timestamp`: `float`
 
 The adapter emits:
-- `started` when the child process is spawned
-- `running` when the first output is received (confirms the process is alive and producing)
-- `exited` when the child process terminates (includes `exit_code`)
-- `error` when the adapter encounters an internal error (e.g., failed to spawn)
+- `started` when the adapter connects to the orchestrator
+- `running` when a turn begins (prompt sent to Claude Code)
+- `turn_complete` when Claude Code finishes a turn (includes `exit_code` and `stop_reason` in `detail`). The adapter stays alive for more turns.
+- `completed` when the adapter detects the `ARCHIPELAGO_TASK_COMPLETE` marker in Claude's output (inside-out signal), or when the orchestrator sends `control:complete` (outside-in signal). **The container stays alive after `completed`** — the gate node may resume the session (gate rejected) or terminate it (gate accepted).
+- `exited` when the adapter shuts down (after `control:terminate` or `control:kill`)
+- `error` when the adapter encounters an internal error (e.g., timeout, failed to connect)
 
 ### Message Types: Orchestrator to Adapter
 
@@ -179,19 +210,23 @@ Control commands for the adapter/agent process.
 Fields:
 - `type`: Literal `"control"`
 - `session_id`: `str`
-- `command`: Literal `"resize"` | `"terminate"` | `"kill"`
+- `command`: Literal `"resize"` | `"terminate"` | `"kill"` | `"complete"`
 - `args`: `dict` -- command-specific arguments
   - `resize`: `{"rows": int, "cols": int}`
-  - `terminate`: `{}` -- send SIGTERM to child, adapter exits gracefully
-  - `kill`: `{}` -- send SIGKILL to child, adapter exits immediately
+  - `terminate`: `{}` -- adapter shuts down gracefully, sends `status:exited`
+  - `kill`: `{}` -- adapter shuts down immediately, sends `status:exited`
+  - `complete`: `{}` -- outside-in completion signal. The adapter sends `status:completed` but **stays alive**. Used when the orchestrator node, human, or external component determines the task is done. The gate node then sends `terminate` (if accepted) or `input` (if rejected, to resume the session).
 
 ### Exchange Patterns
 
-- **Output streaming**: The adapter emits `output` messages continuously as the agent produces text. Fire-and-forget; no acknowledgment from the orchestrator.
-- **Interrupt detection**: When the adapter detects an interrupt marker in the output stream, it emits an `interrupt` message instead of (not in addition to) an `output` message for that line. The marker line is not sent as `output`.
-- **Input delivery**: The orchestrator sends `input` messages at any time. Fire-and-forget; the adapter writes to the PTY immediately.
-- **Lifecycle**: The adapter emits `status` messages at lifecycle transitions. The orchestrator uses the `exited` status to know the session is done.
-- **Connection lifecycle**: The WebSocket connection is established by the adapter connecting to the orchestrator's server. The first message from the adapter is a `status` message with `"started"`. The connection stays open until either side closes it. Closing the WebSocket from the orchestrator side causes the adapter to terminate the child process and exit.
+- **Output streaming**: The adapter emits `output` messages as the agent produces text. In headless mode, text blocks from `assistant` events are sent as output; tool usage is summarized. In PTY mode, output is ANSI-stripped and sent line-by-line. Fire-and-forget; no acknowledgment from the orchestrator.
+- **Interrupt detection**: When the adapter detects an `ARCHIPELAGO_NEED_*` marker in the output, it emits an `interrupt` message instead of (not in addition to) an `output` message for that line.
+- **Task completion detection (inside-out)**: When the adapter detects `ARCHIPELAGO_TASK_COMPLETE` in Claude's output, it strips the marker, sends any remaining text as `output`, then sends `status:completed`. The adapter stays alive — the gate node decides whether to resume or terminate.
+- **Task completion signal (outside-in)**: The orchestrator sends `control:complete` when a human, gate node, or external component determines the task is done. The adapter sends `status:completed` and stays alive.
+- **Multi-turn input**: The orchestrator sends `input` messages at any time. In headless mode, the adapter spawns a new `claude -p --resume SESSION_ID` subprocess with the input text. In PTY mode, the text is written to stdin with `\n` → `\r` conversion.
+- **Turn lifecycle**: After each Claude Code invocation completes, the adapter sends `status:turn_complete` (not `exited`). The adapter stays alive for more turns. The orchestrator decides whether to send more input, signal completion, or terminate.
+- **Session lifecycle**: `started` → `running` → `turn_complete` → [more turns] → `completed` → [gate evaluates] → `exited`. The container stays alive between `completed` and `exited` so the gate node can resume the same Claude session if it rejects the work.
+- **Connection lifecycle**: The WebSocket connection is established by the adapter connecting to the orchestrator's server. The first message from the adapter is `status:started`. The connection stays open until the adapter receives `control:terminate` or `control:kill`, or the orchestrator closes the WebSocket.
 
 ### Error Handling
 
@@ -609,13 +644,11 @@ network = client.networks.get("bridge")
 gateway = network.attrs["IPAM"]["Config"][0]["Gateway"]
 ```
 
-### Trust Confirmation Over Protocol
+### Trust Confirmation Over Protocol (PTY mode only)
 
-The current trust confirmation retry loop sends `\r` directly to the PTY every 2 seconds until output increases. Over the protocol:
-- The handler sends `InputMessage(text="\n")`.
-- The adapter converts `\n` to `\r` and writes to the PTY.
-- The handler watches for new `OutputMessage`s arriving (same "output count increased" heuristic).
-- Timing constants (`TRUST_RETRY_INTERVAL`, `TRUST_TIMEOUT`, etc.) remain unchanged.
+In PTY mode, the trust confirmation retry loop sends `InputMessage(text="\n")` — the adapter converts `\n` to `\r` and writes to the PTY. The handler watches for new `OutputMessage`s arriving (same "output count increased" heuristic). Timing constants remain unchanged.
+
+In headless mode, trust confirmation is not needed — `claude -p` does not display a trust prompt.
 
 ### What Happens to `SessionManager`
 
@@ -637,3 +670,47 @@ After this spec:
 - **Adapter retry failure**: If the adapter cannot connect within 30 seconds, the container exits. The handler detects the container exit and returns a failed result with a descriptive error.
 - **Message ordering**: WebSocket guarantees message ordering within a single connection. No additional ordering mechanism is needed.
 - **Thread safety in handler**: The message queue (`queue.Queue`) is thread-safe. The handler's main loop reads from the queue. The WebSocket server thread puts messages into the queue. This is the same producer/consumer pattern as the current `_output_callback` + `interrupt_request` pattern, but with better structure.
+
+---
+
+## Architecture Decisions
+
+### ADR-1: Headless mode over PTY mode
+
+**Decision**: Use `claude -p --output-format stream-json --verbose` (headless mode) as the primary adapter strategy. Retain the PTY adapter for backward compatibility.
+
+**Context**: The original adapter spawned Claude Code in a PTY via pexpect, then scraped the Ink-based TUI output — stripping ANSI escape codes, filtering TUI noise (spinners, box drawing, status bars), and converting `\n` to `\r` for input. This was fragile: Claude Code's TUI changes between versions, new spinner patterns bypass character-based filters, and progressive rendering produces debris.
+
+**Consequence**: The headless adapter is ~150 lines of straightforward subprocess + JSON parsing. The PTY adapter is ~400 lines of threading, pexpect, ANSI regex, and heuristic noise filtering. The headless adapter produces clean, typed output with zero false positives. Multi-turn conversations use `--resume SESSION_ID`.
+
+### ADR-2: Turn-complete vs completed vs exited status
+
+**Decision**: Three distinct status values for session lifecycle: `turn_complete` (Claude finished a turn, adapter stays alive), `completed` (task is done, awaiting gate evaluation), `exited` (adapter shutting down).
+
+**Context**: The adapter needs to distinguish "Claude responded to one prompt" from "the task is done" from "the container is shutting down." Without `turn_complete`, the node couldn't tell if Claude was waiting for follow-up or had finished the task.
+
+**Consequence**: The node processes turns in a loop until it sees `completed` or decides to send `control:complete`. The container stays alive between `completed` and `exited` so the gate node can resume the same Claude session if it rejects the work — no cold start, no context loss.
+
+### ADR-3: Task completion is always an outside-in signal (with inside-out optimization)
+
+**Decision**: The adapter defaults to `turn_complete` and never guesses `completed`. Completion can be signaled two ways: (1) Claude outputs `ARCHIPELAGO_TASK_COMPLETE` marker (inside-out), detected by the adapter; (2) the orchestrator sends `control:complete` (outside-in). In both cases, the container stays alive.
+
+**Context**: False completion signals (adapter says "done" when work is incomplete) are dangerous — broken repo, skipped work. False turn_complete signals (adapter says "not done" when work is actually done) only cause a delay. The asymmetry of consequences makes turn_complete the safe default.
+
+The adapter lacks context to judge completion — it doesn't know the feature spec, test gates, or acceptance criteria. The node has this context but the real validation happens in the gate node (runs tests, checks gates, validates against spec).
+
+**Consequence**: The CLAUDE.md instruction tells Claude to output the marker when it believes work is complete. The adapter detects it and sends `completed`. A gate node after each dev node validates the work. If the gate rejects, it resumes the same Claude session with feedback. If the gate accepts, it sends `control:terminate` to kill the container. This gives us: fast path (marker → gate → done), safe fallback (no marker → external signal or timeout), and recovery (gate rejection → resume).
+
+### ADR-4: Container stays alive after completion
+
+**Decision**: The adapter stays alive and the container keeps running after sending `status:completed`. Only `control:terminate` or `control:kill` causes shutdown.
+
+**Context**: If the gate node rejects the work, we want to resume the same Claude Code session. Claude Code's `--resume SESSION_ID` preserves full conversation context, including cached input tokens. Killing the container and starting fresh would lose context and incur cold start costs.
+
+**Consequence**: The orchestrator must explicitly terminate containers. The gate node sends `control:terminate` on acceptance. On rejection, it sends an `input` message with feedback, and the adapter resumes the same Claude session. The worst case is a forgotten container — mitigated by the existing timeout mechanism in `docker_worker_handler`.
+
+### ADR-5: Claude Code recognizes its own protocol markers
+
+**Observation**: During testing, Claude Code (running inside the adapter) was asked by a user to output `ARCHIPELAGO_TASK_COMPLETE`. Claude refused, recognizing it as a protocol control signal that would falsely indicate task completion. It learned this from reading the adapter source code in the working directory (via its persistent memory).
+
+**Implication**: The marker serves as a prompt injection defense — Claude won't output it just because a user asks. It will only output it when its system instructions (CLAUDE.md) authorize it as part of the workflow. This is a desirable property: the marker is resistant to social engineering while being responsive to authoritative instructions.
