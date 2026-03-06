@@ -558,3 +558,70 @@ Claude Code always shows a workspace trust confirmation prompt on startup ("Do y
 ### Validation: Interactive PTY Session
 
 Tested with rebuilt Docker image. User can interact with Claude Code running in the container — typing and submitting prompts works. The handler's prompt submission (`prompt + "\r"`) correctly triggers Ink's submit. Trust confirmation `\r` has a timing issue (deferred — see "Known issue" above).
+
+---
+
+## Deployment Modes: Container vs Host Worktree
+
+The dev/test node can run Claude Code in two ways: inside a Docker container (current implementation) or directly on the host using git worktrees. These are not interchangeable — they serve different deployment environments and trust profiles.
+
+### Container Mode
+
+The orchestrator spins up an ephemeral Docker container, the adapter runs inside it, and communicates with the orchestrator via the WebSocket protocol.
+
+**Advantages:**
+- **Isolation** — Claude Code can't touch the host, other tasks, or host secrets. Dropped capabilities, read-only rootfs, resource limits (CPU, memory, PIDs).
+- **Safe parallelism** — Multiple containers run simultaneously with zero interference: separate filesystems, separate resource quotas, separate network.
+- **Reproducibility** — Pinned environment. Same OS, same tools, every time.
+- **Clean teardown** — Destroy container = no leaked state. Failed tasks leave no trace.
+- **Network control** — Can restrict or deny network access per task.
+
+**Disadvantages:**
+- **Complexity** — Dockerfile, container lifecycle, volume management, host.docker.internal networking, auth token injection, adapter protocol.
+- **Startup latency** — Image pull + container create + start + adapter connect.
+- **Tooling gap** — Claude Code inside the container may lack host tools, MCP servers, LSP plugins, local configs.
+- **Docker dependency** — Requires Docker installed and running.
+
+### Host Worktree Mode
+
+The orchestrator creates a git worktree on the host and runs `claude -p --output-format stream-json` as a child process. No Docker, no adapter — the node calls Claude Code directly.
+
+**Advantages:**
+- **Simplicity** — No Docker, no container lifecycle, no volumes. Just `git worktree add` + `subprocess.Popen`.
+- **Speed** — No container startup. Worktree creation is near-instant.
+- **Native environment** — Full host tooling: LSP, MCP servers, plugins, local configs, existing auth. Claude Code just works.
+- **Headless mode is the entire implementation** — The `claude -p --output-format stream-json` approach is pure subprocess management. The orchestrator node reads JSON lines directly. No adapter needed — the node *is* the adapter.
+
+**Disadvantages:**
+- **No isolation** — Claude Code runs with host permissions. Can read/write anything the user can, including env vars, secrets, SSH keys, other repos.
+- **No resource limits** — Multiple parallel runs compete for host CPU/memory with no caps.
+- **No network isolation** — Can't restrict a task from making network calls.
+- **Environment contamination** — Installed packages, global state changes persist across tasks.
+- **Riskier parallelism** — Worktrees isolate the repo but not processes, ports, or host state.
+
+### Deployment Environment Comparison
+
+| Environment | Container | Host worktree |
+|---|---|---|
+| **Local dev** (single developer) | Overkill for most tasks | Natural fit — simple, fast, native tooling |
+| **Remote server** (single tenant) | Right choice — isolation protects the server | Risky — one bad command can break the server |
+| **Cloud** (multi-tenant) | Only viable option | Not viable — no isolation between tenants |
+
+**Why the calculus flips for remote/cloud:**
+
+On a developer's laptop, the host is trusted and the container adds overhead. On a remote server, the equation inverts:
+
+- **"Native environment" disappears** — The remote server has no pre-existing dev setup, no user's LSP, no local MCP servers, no existing Claude Code auth. You have to configure everything anyway — at which point you're building a container by hand.
+- **"Simplicity" inverts** — On a laptop, skipping Docker is simpler. On a cloud VM, you need to provision the VM, install tools, manage git credentials, configure Claude Code auth, handle cleanup between tasks. Containers solve all of this declaratively.
+- **"Existing auth" disappears** — Claude Code auth needs to be injected into the remote environment regardless. No advantage to either approach.
+- **Isolation becomes mandatory** — A remote server is shared infrastructure. Even single-tenant, you don't want one task's failure corrupting the host that runs the orchestrator.
+- **Scaling is container-native** — Cloud platforms (ECS, GKE, Cloud Run) orchestrate containers natively. Scaling worktrees on VMs means managing a fleet of stateful machines.
+
+### Architectural Implication
+
+Both modes use the same headless interface (`claude -p --output-format stream-json --verbose`). The difference is where the orchestration boundary sits:
+
+- **Container mode**: The adapter runs inside the container, translates Claude Code JSON events to protocol messages, and communicates with the orchestrator via WebSocket. The protocol provides the abstraction layer.
+- **Host worktree mode**: The orchestrator node calls `claude -p` directly as a subprocess and reads JSON lines from stdout. No adapter, no WebSocket — the node handles Claude Code's output format natively.
+
+The protocol spec and message models (`protocol.py`) don't need to change. The node implementation is what varies per deployment mode. This supports a configuration-driven approach: the same Archipelago graph can use container workers in production and worktree workers in local dev, selected by a deployment config.
