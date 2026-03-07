@@ -1,7 +1,6 @@
 """Docker worker capability spec — loading, schema validation, and registry tests."""
 
 import jsonschema
-import pytest
 
 from agent_foundry.registry.spec import CapabilitySpec, load_capability_spec
 from archipelago.docker_worker.models import WorkerConstraints, WorkerInput, WorkerResult

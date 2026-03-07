@@ -77,6 +77,7 @@ class TestJsonRoundTrip:
         reconstructed = GraphWiringPlan(**dumped)
         assert reconstructed == plan
 
+
 class TestOptionalFields:
     """Optional fields have correct defaults."""
 

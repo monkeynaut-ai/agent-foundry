@@ -1,5 +1,6 @@
 """Docker worker handler — unit tests with mocked Docker and WebSocket protocol."""
 
+import contextlib
 import json
 import threading
 from pathlib import Path
@@ -17,7 +18,6 @@ from archipelago.docker_worker.handler import (
 )
 from archipelago.docker_worker.models import WorkerConstraints, WorkerResult
 from archipelago.docker_worker.protocol import (
-    InputMessage,
     InterruptMessage,
     OutputMessage,
     StatusMessage,
@@ -77,25 +77,36 @@ def _preload_ws_server(messages: list[str]):
 
 def _output_msg(text: str, session_id: str = "test") -> str:
     return OutputMessage(
-        type="output", session_id=session_id, text=text,
-        stream="stdout", timestamp=1.0,
+        type="output",
+        session_id=session_id,
+        text=text,
+        stream="stdout",
+        timestamp=1.0,
     ).model_dump_json()
 
 
 def _status_msg(status: str, exit_code: int | None = None, session_id: str = "test") -> str:
     return StatusMessage(
-        type="status", session_id=session_id, status=status,
-        exit_code=exit_code, timestamp=1.0,
+        type="status",
+        session_id=session_id,
+        status=status,
+        exit_code=exit_code,
+        timestamp=1.0,
     ).model_dump_json()
 
 
 def _interrupt_msg(
-    interrupt_type: str, payload: dict, session_id: str = "test",
+    interrupt_type: str,
+    payload: dict,
+    session_id: str = "test",
 ) -> str:
     return InterruptMessage(
-        type="interrupt", session_id=session_id,
-        interrupt_type=interrupt_type, payload=payload,
-        raw_line="raw", timestamp=1.0,
+        type="interrupt",
+        session_id=session_id,
+        interrupt_type=interrupt_type,
+        payload=payload,
+        raw_line="raw",
+        timestamp=1.0,
     ).model_dump_json()
 
 
@@ -132,10 +143,12 @@ class TestDockerWorkerHandler:
         self, mock_docker, mock_ws_cls
     ):
         _mock_docker_env(mock_docker)
-        mock_ws_cls.return_value = _preload_ws_server([
-            _output_msg("done"),
-            _status_msg("exited", 0),
-        ])
+        mock_ws_cls.return_value = _preload_ws_server(
+            [
+                _output_msg("done"),
+                _status_msg("exited", 0),
+            ]
+        )
 
         state = {"worker_input": _valid_worker_input()}
         result = docker_worker_handler(state)
@@ -169,10 +182,12 @@ class TestDockerWorkerHandler:
         self, mock_docker, mock_ws_cls
     ):
         _mock_docker_env(mock_docker)
-        mock_ws_cls.return_value = _preload_ws_server([
-            _output_msg("done"),
-            _status_msg("exited", 0),
-        ])
+        mock_ws_cls.return_value = _preload_ws_server(
+            [
+                _output_msg("done"),
+                _status_msg("exited", 0),
+            ]
+        )
 
         state = {"worker_input": _valid_worker_input()}
         result = docker_worker_handler(state)
@@ -183,9 +198,7 @@ class TestDockerWorkerHandler:
 
     @patch("archipelago.docker_worker.handler._HandlerWSServer")
     @patch("archipelago.docker_worker.handler.docker")
-    def test_given_cc_timeout_when_called_then_status_is_timed_out(
-        self, mock_docker, mock_ws_cls
-    ):
+    def test_given_cc_timeout_when_called_then_status_is_timed_out(self, mock_docker, mock_ws_cls):
         _mock_docker_env(mock_docker)
         # Only output, no exited status — will timeout
         mock_ws_cls.return_value = _preload_ws_server([_output_msg("working...")])
@@ -202,12 +215,19 @@ class TestDockerWorkerHandler:
         self, mock_docker, mock_ws_cls
     ):
         _mock_docker_env(mock_docker)
-        mock_ws_cls.return_value = _preload_ws_server([
-            _interrupt_msg("clarification", {
-                "question": "Which DB?", "options": ["pg"],
-                "default": "pg", "blocking": True,
-            }),
-        ])
+        mock_ws_cls.return_value = _preload_ws_server(
+            [
+                _interrupt_msg(
+                    "clarification",
+                    {
+                        "question": "Which DB?",
+                        "options": ["pg"],
+                        "default": "pg",
+                        "blocking": True,
+                    },
+                ),
+            ]
+        )
 
         state = {"worker_input": _valid_worker_input()}
         result = docker_worker_handler(state)
@@ -221,16 +241,17 @@ class TestDockerWorkerHandler:
         self, mock_docker, mock_ws_cls
     ):
         _, mock_container = _mock_docker_env(mock_docker)
-        mock_ws_cls.return_value = _preload_ws_server([
-            _output_msg("done"),
-            _status_msg("exited", 0),
-        ])
+        mock_ws_cls.return_value = _preload_ws_server(
+            [
+                _output_msg("done"),
+                _status_msg("exited", 0),
+            ]
+        )
 
         state = {"worker_input": _valid_worker_input()}
         docker_worker_handler(state)
         get_archive_calls = [
-            c for c in mock_container.get_archive.call_args_list
-            if "progress.jsonl" in str(c)
+            c for c in mock_container.get_archive.call_args_list if "progress.jsonl" in str(c)
         ]
         assert len(get_archive_calls) > 0
 
@@ -305,6 +326,7 @@ class TestICRNLFix:
         # Pre-load output then exited status after a delay
         def _delayed_messages():
             import time
+
             time.sleep(0.5)
             ws_server.message_queue.put(_output_msg("trust prompt line"))
             time.sleep(1.0)
@@ -343,9 +365,7 @@ class TestICRNLFix:
     @patch("archipelago.docker_worker.handler.TRUST_TIMEOUT", 2.0)
     @patch("archipelago.docker_worker.handler._HandlerWSServer")
     @patch("archipelago.docker_worker.handler.docker")
-    def test_given_feature_prompt_when_sent_then_ends_with_newline(
-        self, mock_docker, mock_ws_cls
-    ):
+    def test_given_feature_prompt_when_sent_then_ends_with_newline(self, mock_docker, mock_ws_cls):
         """Feature prompt ends with \\n in InputMessage."""
         _mock_docker_env(mock_docker)
 
@@ -354,6 +374,7 @@ class TestICRNLFix:
 
         def _delayed_messages():
             import time
+
             time.sleep(0.5)
             ws_server.message_queue.put(_output_msg("trust prompt"))
             time.sleep(1.0)
@@ -381,12 +402,6 @@ class TestICRNLFix:
         assert len(prompt_calls) == 1, f"Expected 1 prompt call, got: {input_calls}"
         assert prompt_calls[0]["text"].endswith("\n")
 
-    def test_given_entrypoint_when_read_then_contains_stty_icrnl(self):
-        """Entrypoint must disable ICRNL so \\r passes through PTY unchanged."""
-        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
-        content = entrypoint.read_text()
-        assert "stty -icrnl" in content
-
     def test_given_entrypoint_when_read_then_contains_archipelago_ws_url_check(self):
         """Entrypoint launches adapter when ARCHIPELAGO_WS_URL is set."""
         entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
@@ -411,6 +426,7 @@ class TestICRNLFix:
 
         def _delayed_messages():
             import time
+
             time.sleep(0.3)
             ws_server.message_queue.put(_output_msg("version check"))
             time.sleep(1.5)
@@ -453,6 +469,7 @@ class TestICRNLFix:
 
         def _delayed_messages():
             import time
+
             time.sleep(0.3)
             ws_server.message_queue.put(_output_msg("version check"))
             time.sleep(3)
@@ -487,11 +504,13 @@ class TestHandlerProtocol:
         self, mock_docker, mock_ws_cls
     ):
         _mock_docker_env(mock_docker)
-        mock_ws_cls.return_value = _preload_ws_server([
-            _output_msg("line 1"),
-            _output_msg("line 2"),
-            _status_msg("exited", 0),
-        ])
+        mock_ws_cls.return_value = _preload_ws_server(
+            [
+                _output_msg("line 1"),
+                _output_msg("line 2"),
+                _status_msg("exited", 0),
+            ]
+        )
 
         state = {"worker_input": _valid_worker_input()}
         result = docker_worker_handler(state)
@@ -503,12 +522,19 @@ class TestHandlerProtocol:
         self, mock_docker, mock_ws_cls
     ):
         _mock_docker_env(mock_docker)
-        mock_ws_cls.return_value = _preload_ws_server([
-            _interrupt_msg("clarification", {
-                "question": "Which DB?", "options": ["pg"],
-                "default": "pg", "blocking": True,
-            }),
-        ])
+        mock_ws_cls.return_value = _preload_ws_server(
+            [
+                _interrupt_msg(
+                    "clarification",
+                    {
+                        "question": "Which DB?",
+                        "options": ["pg"],
+                        "default": "pg",
+                        "blocking": True,
+                    },
+                ),
+            ]
+        )
 
         state = {"worker_input": _valid_worker_input()}
         result = docker_worker_handler(state)
@@ -521,13 +547,19 @@ class TestHandlerProtocol:
         self, mock_docker, mock_ws_cls
     ):
         _mock_docker_env(mock_docker)
-        ws_server = _preload_ws_server([
-            _interrupt_msg("permission", {
-                "action": "delete file", "risk_level": "low",
-                "why_needed": "cleanup",
-            }),
-            _status_msg("exited", 0),
-        ])
+        ws_server = _preload_ws_server(
+            [
+                _interrupt_msg(
+                    "permission",
+                    {
+                        "action": "delete file",
+                        "risk_level": "low",
+                        "why_needed": "cleanup",
+                    },
+                ),
+                _status_msg("exited", 0),
+            ]
+        )
         mock_ws_cls.return_value = ws_server
 
         # Enable auto-approve by setting network_policy != "none"
@@ -555,12 +587,18 @@ class TestHandlerProtocol:
         self, mock_docker, mock_ws_cls
     ):
         _mock_docker_env(mock_docker)
-        mock_ws_cls.return_value = _preload_ws_server([
-            _interrupt_msg("update_available", {
-                "installed": "1.0.0", "latest": "1.1.0",
-            }),
-            _status_msg("exited", 0),
-        ])
+        mock_ws_cls.return_value = _preload_ws_server(
+            [
+                _interrupt_msg(
+                    "update_available",
+                    {
+                        "installed": "1.0.0",
+                        "latest": "1.1.0",
+                    },
+                ),
+                _status_msg("exited", 0),
+            ]
+        )
 
         state = {"worker_input": _valid_worker_input()}
         result = docker_worker_handler(state)
@@ -573,10 +611,12 @@ class TestHandlerProtocol:
         self, mock_docker, mock_ws_cls
     ):
         _mock_docker_env(mock_docker)
-        mock_ws_cls.return_value = _preload_ws_server([
-            _output_msg("done"),
-            _status_msg("exited", 0),
-        ])
+        mock_ws_cls.return_value = _preload_ws_server(
+            [
+                _output_msg("done"),
+                _status_msg("exited", 0),
+            ]
+        )
 
         state = {"worker_input": _valid_worker_input()}
         result = docker_worker_handler(state)
@@ -637,6 +677,7 @@ class TestHandlerProtocol:
 
         def _delayed_messages():
             import time
+
             time.sleep(0.3)
             ws_server.message_queue.put(_output_msg("first output"))
             time.sleep(1.0)
@@ -676,6 +717,7 @@ class TestHandlerProtocol:
 
         def _delayed_messages():
             import time
+
             time.sleep(0.3)
             ws_server.message_queue.put(_output_msg("first output"))
             time.sleep(1.0)
@@ -745,30 +787,48 @@ class TestProtocolEndToEnd:
 
             try:
                 # Send protocol messages simulating adapter
-                ws.send(StatusMessage(
-                    type="status", session_id="test", status="started", timestamp=_time.time(),
-                ).model_dump_json())
+                ws.send(
+                    StatusMessage(
+                        type="status",
+                        session_id="test",
+                        status="started",
+                        timestamp=_time.time(),
+                    ).model_dump_json()
+                )
 
-                ws.send(OutputMessage(
-                    type="output", session_id="test", text="Running tests...",
-                    stream="stdout", timestamp=_time.time(),
-                ).model_dump_json())
+                ws.send(
+                    OutputMessage(
+                        type="output",
+                        session_id="test",
+                        text="Running tests...",
+                        stream="stdout",
+                        timestamp=_time.time(),
+                    ).model_dump_json()
+                )
 
-                ws.send(OutputMessage(
-                    type="output", session_id="test", text="All tests passed",
-                    stream="stdout", timestamp=_time.time(),
-                ).model_dump_json())
+                ws.send(
+                    OutputMessage(
+                        type="output",
+                        session_id="test",
+                        text="All tests passed",
+                        stream="stdout",
+                        timestamp=_time.time(),
+                    ).model_dump_json()
+                )
 
-                ws.send(StatusMessage(
-                    type="status", session_id="test", status="exited",
-                    exit_code=0, timestamp=_time.time(),
-                ).model_dump_json())
+                ws.send(
+                    StatusMessage(
+                        type="status",
+                        session_id="test",
+                        status="exited",
+                        exit_code=0,
+                        timestamp=_time.time(),
+                    ).model_dump_json()
+                )
             finally:
                 _time.sleep(0.5)
-                try:
+                with contextlib.suppress(Exception):
                     ws.close()
-                except Exception:
-                    pass
 
             handler_thread.join(timeout=10)
             assert not handler_thread.is_alive()

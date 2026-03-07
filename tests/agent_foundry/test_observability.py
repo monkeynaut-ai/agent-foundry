@@ -18,7 +18,6 @@ from agent_foundry.observability.gates import (
 )
 from agent_foundry.observability.tracer import ExecutionTracer
 
-
 # --- S6.1: Tracing Spans ---
 
 

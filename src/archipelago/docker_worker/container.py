@@ -163,7 +163,9 @@ class ContainerManager:
         except Exception:
             return None
 
-    def copy_from_container(self, handle: ContainerHandle, container_path: str, host_path: Path) -> bool:
+    def copy_from_container(
+        self, handle: ContainerHandle, container_path: str, host_path: Path
+    ) -> bool:
         """Copy a file from inside a container to the host filesystem."""
         content = self.read_file_from_container(handle, container_path)
         if content is None:
@@ -172,7 +174,9 @@ class ContainerManager:
         host_path.write_text(content)
         return True
 
-    def write_file_to_container(self, handle: ContainerHandle, container_path: str, content: str) -> None:
+    def write_file_to_container(
+        self, handle: ContainerHandle, container_path: str, content: str
+    ) -> None:
         """Write a file into a container via put_archive."""
         dir_path = os.path.dirname(container_path)
         filename = os.path.basename(container_path)

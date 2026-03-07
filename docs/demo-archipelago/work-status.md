@@ -39,8 +39,17 @@ _(none — session start)_
 8. **Raise default `mem_limit_mb` to 2048**
    Current default is 512MB. Claude Code (Node.js) + Python adapter + git + test runners easily exceed this on real workloads, causing silent OOM kills.
 
-9. **Clean up `stty -icrnl` from entrypoint**
-   PTY-only dead code. In headless mode there's no PTY. Remove from `entrypoint.sh`.
+### P1 — Architecture
+
+9. **Design the test-designer node**
+   Archipelago workers will write tests autonomously. Test quality is the single biggest determinant of software quality in TDD. A dedicated test-designer node in the Archipelago graph — invoked by the dev node before writing any tests — can conduct the probing dialogue needed to arrive at the right test design (correct abstraction level, meaningful failure coverage, valid mocks). The node runs its own Claude instance; only the decision document flows back to the dev node, keeping the worker's context clean. Design the node's handler, its input/output contract, and how the dev node signals it needs test design review.
+
+   **Conversation model:** The integration must support a back-and-forth dialogue — the dev node proposes a test design, the test-designer replies with questions or concerns, the dev node revises and resubmits, and so on until the test-designer is satisfied. During this exchange, both the dev container and the test-designer container must retain their Claude sessions (keep context alive via `--resume`) so neither loses the thread of the conversation. When the test-designer is satisfied, it signals approval and its container is terminated.
+
+   **Runaway guard:** Define a maximum number of back-and-forth rounds. If the threshold is reached without the test-designer approving the design, escalate to a human-in-the-loop breakpoint — surface the full exchange and ask for a decision before proceeding.
+
+10. **Investigate: probing/clarifying question node for the dev node**
+    The dev node needs a way to ask probing and clarifying questions and receive answers during autonomous operation. Investigate a general-purpose "consult" node that the dev node can call when it needs input — for test design, architecture decisions, ambiguous requirements, etc. This may overlap with or subsume the test-designer node. Determine whether these are the same node (a general consultant) or distinct (test-designer as a specialist).
 
 ### P2 — Improvements
 

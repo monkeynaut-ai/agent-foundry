@@ -31,7 +31,6 @@ from agent_foundry.observability.gates import (
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 
-
 # --- DS1: Runnable Demo Entrypoint ---
 
 

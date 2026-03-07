@@ -183,45 +183,67 @@ class TestControlMessage:
 
 class TestParseProtocolMessage:
     def test_given_output_json_when_parsed_then_returns_output_message(self):
-        data = json.dumps({
-            "type": "output", "session_id": "s1", "text": "hi",
-            "stream": "stdout", "timestamp": 1.0,
-        })
+        data = json.dumps(
+            {
+                "type": "output",
+                "session_id": "s1",
+                "text": "hi",
+                "stream": "stdout",
+                "timestamp": 1.0,
+            }
+        )
         msg = parse_protocol_message(data)
         assert isinstance(msg, OutputMessage)
         assert msg.text == "hi"
 
     def test_given_interrupt_json_when_parsed_then_returns_interrupt_message(self):
-        data = json.dumps({
-            "type": "interrupt", "session_id": "s1",
-            "interrupt_type": "clarification",
-            "payload": {"question": "Which DB?"},
-            "raw_line": "raw", "timestamp": 1.0,
-        })
+        data = json.dumps(
+            {
+                "type": "interrupt",
+                "session_id": "s1",
+                "interrupt_type": "clarification",
+                "payload": {"question": "Which DB?"},
+                "raw_line": "raw",
+                "timestamp": 1.0,
+            }
+        )
         msg = parse_protocol_message(data)
         assert isinstance(msg, InterruptMessage)
 
     def test_given_status_json_when_parsed_then_returns_status_message(self):
-        data = json.dumps({
-            "type": "status", "session_id": "s1",
-            "status": "exited", "exit_code": 0, "timestamp": 1.0,
-        })
+        data = json.dumps(
+            {
+                "type": "status",
+                "session_id": "s1",
+                "status": "exited",
+                "exit_code": 0,
+                "timestamp": 1.0,
+            }
+        )
         msg = parse_protocol_message(data)
         assert isinstance(msg, StatusMessage)
         assert msg.exit_code == 0
 
     def test_given_input_json_when_parsed_then_returns_input_message(self):
-        data = json.dumps({
-            "type": "input", "session_id": "s1", "text": "pg\n",
-        })
+        data = json.dumps(
+            {
+                "type": "input",
+                "session_id": "s1",
+                "text": "pg\n",
+            }
+        )
         msg = parse_protocol_message(data)
         assert isinstance(msg, InputMessage)
 
     def test_given_control_json_when_parsed_then_returns_control_message(self):
-        data = json.dumps({
-            "type": "control", "session_id": "s1",
-            "command": "resize", "args": {"rows": 50, "cols": 120},
-        })
+        data = json.dumps(
+            {
+                "type": "control",
+                "session_id": "s1",
+                "command": "resize",
+                "args": {"rows": 50, "cols": 120},
+            }
+        )
         msg = parse_protocol_message(data)
         assert isinstance(msg, ControlMessage)
 

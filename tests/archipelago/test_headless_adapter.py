@@ -11,7 +11,6 @@ import threading
 import time
 from unittest.mock import MagicMock, patch
 
-import pytest
 from websockets.sync.server import serve
 
 from archipelago.docker_worker.headless_adapter import (
@@ -19,7 +18,6 @@ from archipelago.docker_worker.headless_adapter import (
     run_headless_adapter,
     run_headless_turn,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -96,7 +94,9 @@ def _assistant_text(text: str) -> str:
 
 
 def _assistant_tool(name: str, input_: dict) -> str:
-    return _event("assistant", message={"content": [{"type": "tool_use", "name": name, "input": input_}]})
+    return _event(
+        "assistant", message={"content": [{"type": "tool_use", "name": name, "input": input_}]}
+    )
 
 
 def _result(is_error: bool = False, stop_reason: str = "end_turn") -> str:
@@ -132,7 +132,7 @@ class TestMapEventToProtocol:
 
     def test_given_assistant_tool_use_when_mapped_then_tool_summary_emitted(self):
         event = json.loads(_assistant_tool("Bash", {"command": "ls -la"}))
-        msgs, complete = _map_event_to_protocol(event, self.SESSION)
+        msgs, _complete = _map_event_to_protocol(event, self.SESSION)
         assert len(msgs) == 1
         assert msgs[0]["type"] == "output"
         assert "Bash" in msgs[0]["text"]
@@ -140,7 +140,7 @@ class TestMapEventToProtocol:
 
     def test_given_task_complete_marker_when_mapped_then_task_complete_true(self):
         event = json.loads(_assistant_text("ARCHIPELAGO_TASK_COMPLETE"))
-        msgs, complete = _map_event_to_protocol(event, self.SESSION)
+        _msgs, complete = _map_event_to_protocol(event, self.SESSION)
         assert complete is True
 
     def test_given_task_complete_marker_when_mapped_then_marker_stripped_from_output(self):
@@ -158,7 +158,7 @@ class TestMapEventToProtocol:
 
     def test_given_clarification_marker_when_mapped_then_interrupt_message_emitted(self):
         payload = {"question": "Which DB?", "options": ["pg", "sqlite"], "blocking": True}
-        marker = f'ARCHIPELAGO_NEED_CLARIFICATION {json.dumps(payload)}'
+        marker = f"ARCHIPELAGO_NEED_CLARIFICATION {json.dumps(payload)}"
         event = json.loads(_assistant_text(marker))
         msgs, complete = _map_event_to_protocol(event, self.SESSION)
         assert len(msgs) == 1
@@ -169,9 +169,9 @@ class TestMapEventToProtocol:
 
     def test_given_permission_marker_when_mapped_then_interrupt_message_emitted(self):
         payload = {"action": "rm -rf /tmp/x", "risk_level": "low", "why_needed": "cleanup"}
-        marker = f'ARCHIPELAGO_NEED_PERMISSION {json.dumps(payload)}'
+        marker = f"ARCHIPELAGO_NEED_PERMISSION {json.dumps(payload)}"
         event = json.loads(_assistant_text(marker))
-        msgs, complete = _map_event_to_protocol(event, self.SESSION)
+        msgs, _complete = _map_event_to_protocol(event, self.SESSION)
         assert len(msgs) == 1
         assert msgs[0]["type"] == "interrupt"
         assert msgs[0]["interrupt_type"] == "permission"
@@ -179,14 +179,14 @@ class TestMapEventToProtocol:
 
     def test_given_malformed_interrupt_marker_when_mapped_then_plain_output_emitted(self):
         event = json.loads(_assistant_text("ARCHIPELAGO_NEED_CLARIFICATION {bad json}"))
-        msgs, complete = _map_event_to_protocol(event, self.SESSION)
+        msgs, _complete = _map_event_to_protocol(event, self.SESSION)
         assert len(msgs) == 1
         assert msgs[0]["type"] == "output"
         assert "ARCHIPELAGO_NEED_CLARIFICATION" in msgs[0]["text"]
 
     def test_given_result_success_when_mapped_then_turn_complete_exit_code_zero(self):
         event = json.loads(_result(is_error=False, stop_reason="end_turn"))
-        msgs, complete = _map_event_to_protocol(event, self.SESSION)
+        msgs, _complete = _map_event_to_protocol(event, self.SESSION)
         assert len(msgs) == 1
         assert msgs[0]["type"] == "status"
         assert msgs[0]["status"] == "turn_complete"
@@ -194,12 +194,12 @@ class TestMapEventToProtocol:
 
     def test_given_result_error_when_mapped_then_turn_complete_exit_code_one(self):
         event = json.loads(_result(is_error=True))
-        msgs, complete = _map_event_to_protocol(event, self.SESSION)
+        msgs, _complete = _map_event_to_protocol(event, self.SESSION)
         assert msgs[0]["exit_code"] == 1
 
     def test_given_error_event_when_mapped_then_stderr_output_emitted(self):
         event = {"type": "error", "error": {"message": "rate limit hit"}}
-        msgs, complete = _map_event_to_protocol(event, self.SESSION)
+        msgs, _complete = _map_event_to_protocol(event, self.SESSION)
         assert len(msgs) == 1
         assert msgs[0]["stream"] == "stderr"
         assert "rate limit hit" in msgs[0]["text"]
@@ -219,7 +219,9 @@ class TestRunHeadlessTurnSessionId:
         mock_proc = _make_mock_proc(lines)
         ws = _MockWS()
 
-        with patch("archipelago.docker_worker.headless_adapter.subprocess.Popen", return_value=mock_proc):
+        with patch(
+            "archipelago.docker_worker.headless_adapter.subprocess.Popen", return_value=mock_proc
+        ):
             session_id, exit_code, task_complete = run_headless_turn(
                 "do something", ws, "proto-session"
             )
@@ -233,8 +235,10 @@ class TestRunHeadlessTurnSessionId:
         mock_proc = _make_mock_proc(lines)
         ws = _MockWS()
 
-        with patch("archipelago.docker_worker.headless_adapter.subprocess.Popen", return_value=mock_proc):
-            session_id, exit_code, task_complete = run_headless_turn(
+        with patch(
+            "archipelago.docker_worker.headless_adapter.subprocess.Popen", return_value=mock_proc
+        ):
+            session_id, _exit_code, _task_complete = run_headless_turn(
                 "do something", ws, "proto-session", claude_session_id="existing-id"
             )
 
@@ -256,7 +260,10 @@ class TestHeadlessAdapterIncomingMessages:
             turn_prompts.append(prompt)
             return "sid", 0, False
 
-        with patch("archipelago.docker_worker.headless_adapter.run_headless_turn", side_effect=capturing_turn):
+        with patch(
+            "archipelago.docker_worker.headless_adapter.run_headless_turn",
+            side_effect=capturing_turn,
+        ):
             t = threading.Thread(
                 target=run_headless_adapter,
                 kwargs={"initial_prompt": None, "ws_url": f"ws://localhost:{port}"},
@@ -285,7 +292,10 @@ class TestHeadlessAdapterIncomingMessages:
             turn_calls.append(prompt)
             return "sid", 0, False
 
-        with patch("archipelago.docker_worker.headless_adapter.run_headless_turn", side_effect=capturing_turn):
+        with patch(
+            "archipelago.docker_worker.headless_adapter.run_headless_turn",
+            side_effect=capturing_turn,
+        ):
             t = threading.Thread(
                 target=run_headless_adapter,
                 kwargs={"initial_prompt": None, "ws_url": f"ws://localhost:{port}"},
@@ -308,7 +318,9 @@ class TestHeadlessAdapterIncomingMessages:
         port = _free_port()
         server = _WSTestServer(port)
 
-        with patch("archipelago.docker_worker.headless_adapter.run_headless_turn", side_effect=_fake_turn):
+        with patch(
+            "archipelago.docker_worker.headless_adapter.run_headless_turn", side_effect=_fake_turn
+        ):
             t = threading.Thread(
                 target=run_headless_adapter,
                 kwargs={"initial_prompt": None, "ws_url": f"ws://localhost:{port}"},
@@ -330,7 +342,9 @@ class TestHeadlessAdapterIncomingMessages:
         port = _free_port()
         server = _WSTestServer(port)
 
-        with patch("archipelago.docker_worker.headless_adapter.run_headless_turn", side_effect=_fake_turn):
+        with patch(
+            "archipelago.docker_worker.headless_adapter.run_headless_turn", side_effect=_fake_turn
+        ):
             t = threading.Thread(
                 target=run_headless_adapter,
                 kwargs={"initial_prompt": None, "ws_url": f"ws://localhost:{port}"},
@@ -358,7 +372,9 @@ class TestInitialPrompt:
         port = _free_port()
         server = _WSTestServer(port)
 
-        with patch("archipelago.docker_worker.headless_adapter.run_headless_turn", side_effect=_fake_turn) as mock_turn:
+        with patch(
+            "archipelago.docker_worker.headless_adapter.run_headless_turn", side_effect=_fake_turn
+        ) as mock_turn:
             t = threading.Thread(
                 target=run_headless_adapter,
                 kwargs={"initial_prompt": None, "ws_url": f"ws://localhost:{port}"},
@@ -385,7 +401,10 @@ class TestInitialPrompt:
             turn_prompts.append(prompt)
             return "sid", 0, False
 
-        with patch("archipelago.docker_worker.headless_adapter.run_headless_turn", side_effect=capturing_turn):
+        with patch(
+            "archipelago.docker_worker.headless_adapter.run_headless_turn",
+            side_effect=capturing_turn,
+        ):
             t = threading.Thread(
                 target=run_headless_adapter,
                 kwargs={"initial_prompt": "do the thing", "ws_url": f"ws://localhost:{port}"},

@@ -9,7 +9,6 @@ from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.compiler.errors import PlanCompilationError
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 
-
 HANDLERS = {
     "rag_retriever": lambda s: {**s, "retrieved": True},
     "schema_validator": lambda s: {**s, "validated": True},
@@ -76,6 +75,7 @@ class TestGateEnforcementEdgeCases:
         )
         graph = compile_plan(plan, registry, handler_registry=HANDLERS, enforce_gates=True)
         assert graph is not None
+
     def test_plan_with_gate_passes(self, registry):
         plan = GraphWiringPlan(
             goal="test",

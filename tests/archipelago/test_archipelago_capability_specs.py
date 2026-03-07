@@ -1,7 +1,6 @@
 """Archipelago capability specs — loading, schema validation, and registry integration."""
 
 import jsonschema
-import pytest
 
 from agent_foundry.registry.spec import CapabilitySpec, load_capability_spec
 from archipelago.models import (

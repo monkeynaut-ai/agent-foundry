@@ -6,7 +6,9 @@ from agent_foundry.compiler.compiler import _make_router
 
 
 class TestMakeRouter:
-    def test_given_route_map_with_two_conditions_when_state_matches_first_then_returns_first_target(self):
+    def test_given_route_map_with_two_conditions_when_state_matches_first_then_returns_first_target(
+        self,
+    ):
         router = _make_router({"cond_a": "target_a", "cond_b": "target_b"}, "default", "src")
         result = router({"cond_a": True})
         assert result == "target_a"

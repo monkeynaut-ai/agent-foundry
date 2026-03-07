@@ -88,6 +88,7 @@ class TestOutputStream:
         done = threading.Event()
 
         manager = SessionManager()
+
         def _cb(line, cid, ts):
             received_cids.append(cid)
             done.set()
@@ -108,6 +109,7 @@ class TestOutputStream:
         done = threading.Event()
 
         manager = SessionManager()
+
         def _cb(line, cid, ts):
             received_ts.append(ts)
             done.set()
@@ -182,6 +184,7 @@ class TestPauseResume:
         resume_done = threading.Event()
 
         manager = SessionManager()
+
         def _cb(line, cid, ts):
             lines.append(line)
             resume_done.set()

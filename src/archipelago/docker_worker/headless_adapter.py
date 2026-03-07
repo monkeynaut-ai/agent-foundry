@@ -14,6 +14,7 @@ Usage:
     python headless_adapter.py --protocol ws://localhost:8765 "implement feature X"
 """
 
+import contextlib
 import json
 import logging
 import re
@@ -47,9 +48,7 @@ def _connect_with_backoff(ws_url: str, timeout: float = 30.0):
             return ws_connect(ws_url)
         except (ConnectionRefusedError, OSError) as e:
             if time.monotonic() >= deadline:
-                raise ConnectionError(
-                    f"Could not connect to {ws_url} within {timeout}s"
-                ) from e
+                raise ConnectionError(f"Could not connect to {ws_url} within {timeout}s") from e
             delay = intervals[min(attempt, len(intervals) - 1)]
             remaining = deadline - time.monotonic()
             time.sleep(min(delay, max(0, remaining)))
@@ -65,7 +64,8 @@ def _build_claude_cmd(prompt: str, session_id: str | None = None) -> list[str]:
 
 
 def _map_event_to_protocol(
-    event: dict[str, Any], session_id: str,
+    event: dict[str, Any],
+    session_id: str,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Map a Claude Code stream-json event to zero or more protocol messages.
 
@@ -105,26 +105,32 @@ def _map_event_to_protocol(
                         except json.JSONDecodeError:
                             output_lines.append(line)
                             continue
-                        interrupt_type = "clarification" if kind == "CLARIFICATION" else "permission"
-                        messages.append({
-                            "type": "interrupt",
-                            "session_id": session_id,
-                            "interrupt_type": interrupt_type,
-                            "payload": payload,
-                            "raw_line": stripped,
-                            "timestamp": ts,
-                        })
+                        interrupt_type = (
+                            "clarification" if kind == "CLARIFICATION" else "permission"
+                        )
+                        messages.append(
+                            {
+                                "type": "interrupt",
+                                "session_id": session_id,
+                                "interrupt_type": interrupt_type,
+                                "payload": payload,
+                                "raw_line": stripped,
+                                "timestamp": ts,
+                            }
+                        )
                         continue
                     output_lines.append(line)
                 remaining = "\n".join(output_lines).strip()
                 if remaining:
-                    messages.append({
-                        "type": "output",
-                        "session_id": session_id,
-                        "text": remaining,
-                        "stream": "stdout",
-                        "timestamp": ts,
-                    })
+                    messages.append(
+                        {
+                            "type": "output",
+                            "session_id": session_id,
+                            "text": remaining,
+                            "stream": "stdout",
+                            "timestamp": ts,
+                        }
+                    )
             elif block.get("type") == "tool_use":
                 # Report tool usage as output
                 tool_name = block.get("name", "unknown")
@@ -138,13 +144,15 @@ def _map_event_to_protocol(
                         summary = f"[tool_use: {tool_name}] {tool_input['file_path']}"
                     elif "query" in tool_input:
                         summary = f"[tool_use: {tool_name}] {tool_input['query']}"
-                messages.append({
-                    "type": "output",
-                    "session_id": session_id,
-                    "text": summary,
-                    "stream": "stdout",
-                    "timestamp": ts,
-                })
+                messages.append(
+                    {
+                        "type": "output",
+                        "session_id": session_id,
+                        "text": summary,
+                        "stream": "stdout",
+                        "timestamp": ts,
+                    }
+                )
 
     elif event_type == "tool_result":
         # Tool results — optionally emit as output for visibility
@@ -154,27 +162,31 @@ def _map_event_to_protocol(
         # Turn finished — send turn_complete (not exited, adapter stays alive for more turns)
         is_error = event.get("is_error", False)
         exit_code = 1 if is_error else 0
-        messages.append({
-            "type": "status",
-            "session_id": session_id,
-            "status": "turn_complete",
-            "exit_code": exit_code,
-            "detail": event.get("stop_reason", ""),
-            "timestamp": ts,
-        })
+        messages.append(
+            {
+                "type": "status",
+                "session_id": session_id,
+                "status": "turn_complete",
+                "exit_code": exit_code,
+                "detail": event.get("stop_reason", ""),
+                "timestamp": ts,
+            }
+        )
 
     elif event_type == "rate_limit_event":
         # Could be useful for monitoring but not critical for protocol
         pass
 
     elif event_type == "error":
-        messages.append({
-            "type": "output",
-            "session_id": session_id,
-            "text": f"[error] {event.get('error', {}).get('message', 'unknown error')}",
-            "stream": "stderr",
-            "timestamp": ts,
-        })
+        messages.append(
+            {
+                "type": "output",
+                "session_id": session_id,
+                "text": f"[error] {event.get('error', {}).get('message', 'unknown error')}",
+                "stream": "stderr",
+                "timestamp": ts,
+            }
+        )
 
     return messages, task_complete
 
@@ -210,13 +222,12 @@ def run_headless_turn(
     deadline = time.monotonic() + timeout
 
     def _send_msg(msg: dict) -> None:
-        try:
+        with contextlib.suppress(ConnectionClosed, OSError):
             ws.send(json.dumps(msg))
-        except (ConnectionClosed, OSError):
-            pass
 
     # Read stderr in a background thread
     stderr_lines: list[str] = []
+
     def _read_stderr():
         assert proc.stderr is not None
         for line in proc.stderr:
@@ -230,13 +241,15 @@ def run_headless_turn(
     for line in proc.stdout:
         if time.monotonic() > deadline:
             proc.terminate()
-            _send_msg({
-                "type": "status",
-                "session_id": protocol_session_id,
-                "status": "error",
-                "detail": "timeout",
-                "timestamp": time.time(),
-            })
+            _send_msg(
+                {
+                    "type": "status",
+                    "session_id": protocol_session_id,
+                    "status": "error",
+                    "detail": "timeout",
+                    "timestamp": time.time(),
+                }
+            )
             break
 
         line = line.strip()
@@ -295,18 +308,18 @@ def run_headless_adapter(
     ts = time.time
 
     def _send_msg(msg: dict) -> None:
-        try:
+        with contextlib.suppress(ConnectionClosed, OSError):
             ws.send(json.dumps(msg))
-        except (ConnectionClosed, OSError):
-            pass
 
     # Send started status
-    _send_msg({
-        "type": "status",
-        "session_id": protocol_session_id,
-        "status": "started",
-        "timestamp": ts(),
-    })
+    _send_msg(
+        {
+            "type": "status",
+            "session_id": protocol_session_id,
+            "status": "started",
+            "timestamp": ts(),
+        }
+    )
 
     claude_session_id: str | None = None
     exit_code = 0
@@ -314,26 +327,33 @@ def run_headless_adapter(
 
     # Run initial turn if prompt provided; otherwise wait for first input message
     if initial_prompt is not None:
-        _send_msg({
-            "type": "status",
-            "session_id": protocol_session_id,
-            "status": "running",
-            "timestamp": ts(),
-        })
+        _send_msg(
+            {
+                "type": "status",
+                "session_id": protocol_session_id,
+                "status": "running",
+                "timestamp": ts(),
+            }
+        )
 
         claude_session_id, exit_code, task_complete = run_headless_turn(
-            initial_prompt, ws, protocol_session_id, timeout=turn_timeout,
+            initial_prompt,
+            ws,
+            protocol_session_id,
+            timeout=turn_timeout,
         )
 
         if task_complete:
             completed = True
-            _send_msg({
-                "type": "status",
-                "session_id": protocol_session_id,
-                "status": "completed",
-                "exit_code": exit_code,
-                "timestamp": ts(),
-            })
+            _send_msg(
+                {
+                    "type": "status",
+                    "session_id": protocol_session_id,
+                    "status": "completed",
+                    "exit_code": exit_code,
+                    "timestamp": ts(),
+                }
+            )
 
     # Listen for follow-up input/control messages
     # After "completed", adapter stays alive — gate may resume or terminate
@@ -357,28 +377,34 @@ def run_headless_adapter(
                 if not text:
                     continue
 
-                _send_msg({
-                    "type": "status",
-                    "session_id": protocol_session_id,
-                    "status": "running",
-                    "timestamp": ts(),
-                })
+                _send_msg(
+                    {
+                        "type": "status",
+                        "session_id": protocol_session_id,
+                        "status": "running",
+                        "timestamp": ts(),
+                    }
+                )
 
                 claude_session_id, exit_code, task_complete = run_headless_turn(
-                    text, ws, protocol_session_id,
+                    text,
+                    ws,
+                    protocol_session_id,
                     claude_session_id=claude_session_id,
                     timeout=turn_timeout,
                 )
 
                 if task_complete:
                     completed = True
-                    _send_msg({
-                        "type": "status",
-                        "session_id": protocol_session_id,
-                        "status": "completed",
-                        "exit_code": exit_code,
-                        "timestamp": ts(),
-                    })
+                    _send_msg(
+                        {
+                            "type": "status",
+                            "session_id": protocol_session_id,
+                            "status": "completed",
+                            "exit_code": exit_code,
+                            "timestamp": ts(),
+                        }
+                    )
 
             elif msg_type == "control":
                 cmd = msg.get("command")
@@ -394,18 +420,18 @@ def run_headless_adapter(
 
     # Send final status
     final_status = "completed" if completed else "exited"
-    _send_msg({
-        "type": "status",
-        "session_id": protocol_session_id,
-        "status": final_status,
-        "exit_code": exit_code,
-        "timestamp": ts(),
-    })
+    _send_msg(
+        {
+            "type": "status",
+            "session_id": protocol_session_id,
+            "status": final_status,
+            "exit_code": exit_code,
+            "timestamp": ts(),
+        }
+    )
 
-    try:
+    with contextlib.suppress(Exception):
         ws.close()
-    except Exception:
-        pass
 
     return exit_code
 
@@ -415,8 +441,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Headless Claude Code adapter")
     parser.add_argument(
-        "prompt", nargs="?", default=None,
-        help="initial prompt to send to Claude Code (if omitted, waits for first input message over WS)",
+        "prompt",
+        nargs="?",
+        default=None,
+        help="initial prompt (if omitted, waits for first input message over WS)",
     )
     parser.add_argument(
         "--protocol",
@@ -436,7 +464,8 @@ if __name__ == "__main__":
         help="timeout per turn in seconds (default: 600)",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="enable debug logging",
     )
@@ -447,9 +476,11 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    sys.exit(run_headless_adapter(
-        initial_prompt=args.prompt,
-        ws_url=args.protocol,
-        protocol_session_id=args.session_id,
-        turn_timeout=args.timeout,
-    ))
+    sys.exit(
+        run_headless_adapter(
+            initial_prompt=args.prompt,
+            ws_url=args.protocol,
+            protocol_session_id=args.session_id,
+            turn_timeout=args.timeout,
+        )
+    )

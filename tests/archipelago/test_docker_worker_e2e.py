@@ -186,7 +186,10 @@ class TestEndToEnd:
                 "worker_result": None,
             }
 
-        handlers = {**STUB_HANDLERS, "coding_implement_feature_from_spec": _stub_docker_worker_interrupt}
+        handlers = {
+            **STUB_HANDLERS,
+            "coding_implement_feature_from_spec": _stub_docker_worker_interrupt,
+        }
         graph = compile_plan(plan, registry, handler_registry=handlers)
         final = graph.invoke({"product_brief_input": "test"})
         assert final.get("breakpoint_payload") is not None
@@ -217,7 +220,10 @@ class TestEndToEnd:
             return _stub_docker_worker(state)
 
         # Run pipeline — first invocation hits breakpoint
-        handlers = {**STUB_HANDLERS, "coding_implement_feature_from_spec": _stub_docker_worker_resume}
+        handlers = {
+            **STUB_HANDLERS,
+            "coding_implement_feature_from_spec": _stub_docker_worker_resume,
+        }
         graph = compile_plan(plan, registry, handler_registry=handlers)
         first_result = graph.invoke({"product_brief_input": "test"})
         assert first_result.get("breakpoint_payload") is not None

@@ -1,5 +1,6 @@
 """Docker worker handler: orchestrates container lifecycle behind the standard handler interface."""
 
+import contextlib
 import logging
 import queue
 import socket
@@ -15,10 +16,8 @@ from websockets.sync.server import ServerConnection, serve
 
 from archipelago.docker_worker.container import ContainerManager
 from archipelago.docker_worker.models import (
-    ClarificationRequest,
     CommitEvidence,
     PatchInfo,
-    PermissionRequest,
     WorkerConstraints,
     WorkerInput,
     WorkerResult,
@@ -38,10 +37,10 @@ from archipelago.docker_worker.recovery import persist_workspace_state
 logger = logging.getLogger(__name__)
 
 # Trust confirmation timing constants (module-level for testability)
-TRUST_RETRY_INTERVAL = 2.0   # seconds between \n attempts
-TRUST_TIMEOUT = 30.0          # total seconds for trust confirmation
-TRUST_FLUSH_DELAY = 0.5       # seconds to let entrypoint output flush
-TRUST_POLL_INTERVAL = 0.1     # seconds between output count checks
+TRUST_RETRY_INTERVAL = 2.0  # seconds between \n attempts
+TRUST_TIMEOUT = 30.0  # total seconds for trust confirmation
+TRUST_FLUSH_DELAY = 0.5  # seconds to let entrypoint output flush
+TRUST_POLL_INTERVAL = 0.1  # seconds between output count checks
 
 
 def _get_free_port() -> int:
@@ -85,26 +84,20 @@ class _HandlerWSServer:
                 self.message_queue.put(None)  # sentinel
 
         self._server = serve(_handler, "localhost", port)
-        self._server_thread = threading.Thread(
-            target=self._server.serve_forever, daemon=True
-        )
+        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._server_thread.start()
 
     def send(self, message: str) -> None:
         with self._lock:
             ws = self._ws
         if ws:
-            try:
+            with contextlib.suppress(Exception):
                 ws.send(message)
-            except Exception:
-                pass
 
     def shutdown(self) -> None:
         if self._server:
-            try:
+            with contextlib.suppress(Exception):
                 self._server.shutdown()
-            except Exception:
-                pass
 
 
 def _build_prompt(worker_input: WorkerInput) -> str:
@@ -133,13 +126,16 @@ def _send_input(ws_server: _HandlerWSServer, session_id: str, text: str) -> None
 
 
 def _send_control(
-    ws_server: _HandlerWSServer, session_id: str,
+    ws_server: _HandlerWSServer,
+    session_id: str,
     command: Literal["resize", "terminate", "kill"],
     args: dict[str, Any] | None = None,
 ) -> None:
     """Send a ControlMessage through the WebSocket server."""
     msg = ControlMessage(
-        type="control", session_id=session_id, command=command,
+        type="control",
+        session_id=session_id,
+        command=command,
         args=args or {},
     )
     ws_server.send(msg.model_dump_json())
@@ -333,22 +329,26 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         evidence = []
         for event in events:
             if event.type == "pr_completed":
-                patches.append(PatchInfo(
-                    pr_id=event.pr_id,
-                    branch_name=event.commit_id,
-                    files_changed=event.files_changed,
-                    diff_summary=event.notes,
-                ))
+                patches.append(
+                    PatchInfo(
+                        pr_id=event.pr_id,
+                        branch_name=event.commit_id,
+                        files_changed=event.files_changed,
+                        diff_summary=event.notes,
+                    )
+                )
             if event.type == "commit_green":
-                evidence.append(CommitEvidence(
-                    commit_id=event.commit_id,
-                    pr_id=event.pr_id,
-                    test_commands_run=[r.command for r in event.tests_run],
-                    test_output=event.notes,
-                    tests_passed=sum(1 for r in event.tests_run if r.exit_code == 0),
-                    tests_failed=sum(1 for r in event.tests_run if r.exit_code != 0),
-                    all_green=all(r.exit_code == 0 for r in event.tests_run),
-                ))
+                evidence.append(
+                    CommitEvidence(
+                        commit_id=event.commit_id,
+                        pr_id=event.pr_id,
+                        test_commands_run=[r.command for r in event.tests_run],
+                        test_output=event.notes,
+                        tests_passed=sum(1 for r in event.tests_run if r.exit_code == 0),
+                        tests_failed=sum(1 for r in event.tests_run if r.exit_code != 0),
+                        all_green=all(r.exit_code == 0 for r in event.tests_run),
+                    )
+                )
 
         result = WorkerResult(
             result_summary=f"Worker {status} with {len(output_lines)} output lines",

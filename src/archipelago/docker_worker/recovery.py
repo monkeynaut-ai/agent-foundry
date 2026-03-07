@@ -99,14 +99,10 @@ def _persist_via_container(
     ws = container_handle.workspace_path
 
     # Git state via exec_run
-    exit_code, output = container_handle._container.exec_run(
-        f"git -C {ws} rev-parse HEAD"
-    )
+    exit_code, output = container_handle._container.exec_run(f"git -C {ws} rev-parse HEAD")
     commit_sha = output.decode().strip() if exit_code == 0 else "unknown"
 
-    exit_code, output = container_handle._container.exec_run(
-        f"git -C {ws} diff"
-    )
+    exit_code, output = container_handle._container.exec_run(f"git -C {ws} diff")
     diff = output.decode() if exit_code == 0 else ""
 
     # Progress events via container API

@@ -1,8 +1,6 @@
 """Tests for _execute_with_quality_controls and _execute_with_timeout internals."""
 
 import time
-from typing import Any
-from unittest.mock import patch
 
 import pytest
 

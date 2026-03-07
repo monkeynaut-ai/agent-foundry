@@ -13,7 +13,6 @@ from agent_foundry.planner.validators import validate_plan
 
 from .conftest import make_plan as _make_plan
 
-
 # --- S3.4: Tool Calling Contract ---
 
 

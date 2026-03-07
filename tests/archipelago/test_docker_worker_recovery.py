@@ -66,7 +66,6 @@ class TestPersistWorkspaceState:
         assert len(snapshot.progress_events) == 1
         assert snapshot.progress_events[0].pr_id == "pr1"
 
-
     def test_given_container_when_persist_called_then_git_state_read_via_exec(self, tmp_path):
         output = tmp_path / "output"
 
@@ -99,7 +98,9 @@ class TestPersistWorkspaceState:
             (0, b"abc123\n"),
             (0, b""),
         ]
-        progress_line = '{"type":"commit_green","pr_id":"pr1","commit_id":"c1","status":"ok","timestamp":1.0}'
+        progress_line = (
+            '{"type":"commit_green","pr_id":"pr1","commit_id":"c1","status":"ok","timestamp":1.0}'
+        )
         container_mgr.read_file_from_container.return_value = progress_line
         container_mgr.copy_from_container.return_value = True
 

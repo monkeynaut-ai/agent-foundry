@@ -45,9 +45,7 @@ class TestCreateContainer:
         assert "entrypoint" not in call_kwargs.kwargs
         assert "command" not in call_kwargs.kwargs
 
-    def test_given_valid_config_when_create_called_then_extra_hosts_set(
-        self, manager, mock_client
-    ):
+    def test_given_valid_config_when_create_called_then_extra_hosts_set(self, manager, mock_client):
         manager.create_container()
         call_kwargs = mock_client.containers.create.call_args
         assert call_kwargs.kwargs["extra_hosts"] == {"host.docker.internal": "host-gateway"}
@@ -93,7 +91,8 @@ class TestCreateContainer:
         assert call_kwargs.kwargs["mem_limit"] == "512m"
 
     def test_given_env_vars_when_create_called_then_only_allowlisted_vars_passed(
-        self, monkeypatch,
+        self,
+        monkeypatch,
     ):
         monkeypatch.setenv("PATH", "/usr/bin")
         monkeypatch.setenv("HOME", "/home")
@@ -113,16 +112,15 @@ class TestCreateContainer:
         assert "HOME" in env
         assert "SECRET" not in env
 
-    def test_given_extra_env_when_create_called_then_extra_env_merged(
-        self, manager, mock_client
-    ):
+    def test_given_extra_env_when_create_called_then_extra_env_merged(self, manager, mock_client):
         manager.create_container(extra_env={"ARCHIPELAGO_WS_URL": "ws://host:1234/abc"})
         call_kwargs = mock_client.containers.create.call_args
         env = call_kwargs.kwargs["environment"]
         assert env["ARCHIPELAGO_WS_URL"] == "ws://host:1234/abc"
 
     def test_given_ws_url_env_var_when_create_called_then_ws_url_forwarded_to_container(
-        self, monkeypatch,
+        self,
+        monkeypatch,
     ):
         monkeypatch.setenv("ARCHIPELAGO_WS_URL", "ws://host:5678/session")
 
@@ -199,9 +197,7 @@ class TestDestroyContainer:
         handle._container.remove.assert_called_once()
         assert handle.status == "destroyed"
 
-    def test_given_stopped_container_when_destroy_called_then_volumes_never_removed(
-        self, manager
-    ):
+    def test_given_stopped_container_when_destroy_called_then_volumes_never_removed(self, manager):
         handle = manager.create_container()
         manager.stop(handle)
         manager.destroy(handle)
