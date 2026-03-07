@@ -10,6 +10,7 @@ RUN groupadd -g 1000 claude \
     && useradd -m -u 1000 -g claude -s /bin/sh claude
 
 USER claude
+ENV HOME=/home/claude
 WORKDIR /home/claude
 
 # Install Claude Code native binary

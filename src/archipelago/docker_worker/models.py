@@ -21,6 +21,7 @@ class WorkerInput(BaseModel):
     """Typed input for the coding.implement_feature_from_spec capability."""
 
     repo_ref: str
+    repo_url: str | None = None
     feature_spec: dict[str, Any]
     constraints: WorkerConstraints
     test_commands: list[str]

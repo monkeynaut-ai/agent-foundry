@@ -182,12 +182,15 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     try:
         # Create and start container with WS URL
         ws_url = f"ws://host.docker.internal:{port}/{session_id}"
+        repo_env: dict[str, str] = {"REPO_REF": worker_input.repo_ref}
+        if worker_input.repo_url:
+            repo_env["REPO_URL"] = worker_input.repo_url
         container_handle = container_mgr.create_container(
             workspace_volume=f"archipelago-{int(time.time())}",
             constraints=worker_input.constraints,
-            extra_env={"ARCHIPELAGO_WS_URL": ws_url},
+            extra_env={"ARCHIPELAGO_WS_URL": ws_url, **repo_env},
         )
-        container_mgr.start(container_handle, repo_ref=worker_input.repo_ref)
+        container_mgr.start(container_handle)
 
         # Wait for adapter to connect
         if not ws_server.connected.wait(timeout=60):

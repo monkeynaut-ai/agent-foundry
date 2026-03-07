@@ -311,6 +311,49 @@ class TestDockerWorkerHandler:
         assert "ARCHIPELAGO_WS_URL" in content
         assert "adapter.py" in content
 
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_worker_input_with_repo_url_when_called_then_repo_url_and_ref_passed_as_container_env(
+        self, mock_docker, mock_ws_cls
+    ):
+        mock_client, _ = _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+
+        worker_input = _valid_worker_input()
+        worker_input["repo_url"] = "https://github.com/org/repo"
+        worker_input["repo_ref"] = "feat/my-branch"
+        docker_worker_handler({"worker_input": worker_input})
+
+        call_kwargs = mock_client.containers.create.call_args
+        env = call_kwargs.kwargs["environment"]
+        assert env["REPO_URL"] == "https://github.com/org/repo"
+        assert env["REPO_REF"] == "feat/my-branch"
+
+
+class TestEntrypointProvisioning:
+    def test_given_entrypoint_when_read_then_writes_netrc_when_github_token_set(self):
+        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        content = entrypoint.read_text()
+        assert "GITHUB_TOKEN" in content
+        assert ".netrc" in content
+
+    def test_given_entrypoint_when_read_then_clones_from_repo_url_when_workspace_empty(self):
+        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        content = entrypoint.read_text()
+        assert "REPO_URL" in content
+        assert "git clone" in content
+        assert ".git" in content  # skips clone if workspace already has a repo
+
+    def test_given_entrypoint_when_read_then_uses_repo_ref_as_branch(self):
+        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        content = entrypoint.read_text()
+        assert "REPO_REF" in content
+
+    def test_given_entrypoint_when_read_then_netrc_written_before_clone(self):
+        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        content = entrypoint.read_text()
+        assert content.index(".netrc") < content.index("git clone")
+
 
 class TestHandlerProtocol:
     """Tests for WebSocket protocol message handling in the handler."""

@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ENV_ALLOWLIST = {
     "PATH",
-    "HOME",
     "LANG",
     "TERM",
     "ANTHROPIC_API_KEY",
     "CLAUDE_CODE_OAUTH_TOKEN",
     "ARCHIPELAGO_WS_URL",
+    "GITHUB_TOKEN",
 }
 
 
@@ -95,16 +95,12 @@ class ContainerManager:
         self._handles.append(handle)
         return handle
 
-    def start(self, handle: ContainerHandle, repo_ref: str = "main") -> None:
-        """Start a container, validate required commands, and clone the repo."""
+    def start(self, handle: ContainerHandle) -> None:
+        """Start a container. Repo provisioning is handled by the entrypoint via REPO_URL."""
         try:
             handle._container.start()
             handle._container.reload()
             handle.status = "running"
-            handle._container.exec_run(
-                f"git clone --branch {repo_ref} /repo /workspace || true",
-                user="1000:1000",
-            )
         except (ContainerCreationError, ContainerLifecycleError):
             raise
         except Exception as e:

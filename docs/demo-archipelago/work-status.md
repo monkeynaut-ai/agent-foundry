@@ -4,26 +4,20 @@
 
 1. **Create worker CLAUDE.md** — `docker/CLAUDE.md` baked into image at `/home/claude/.claude/CLAUDE.md`. Covers role, task completion marker, interrupt markers, working style. Skipped progress.jsonl instructions (see backlog item 15 to investigate).
 2. **Replace stale adapter in image** — Dockerfile now copies `src/archipelago/docker_worker/headless_adapter.py` (build context must be project root: `docker build -f docker/Dockerfile .`). Entrypoint updated: removed `stty -icrnl` (PTY-only dead code), adapter invoked without initial prompt. `_map_event_to_protocol` extended to detect `ARCHIPELAGO_NEED_CLARIFICATION` and `ARCHIPELAGO_NEED_PERMISSION` markers and emit `interrupt` messages. `initial_prompt` made optional in `run_headless_adapter`. 20 new tests in `tests/archipelago/test_headless_adapter.py`.
+3. **Remove PTY trust confirmation thread from handler** — Deleted `_confirm_trust_and_prompt()` and all `TRUST_*` constants. Handler now sends feature spec as the first and only input message immediately after adapter connects. Also added pre-commit hooks (ruff format + lint) and a PostToolUse Claude hook for in-session auto-formatting.
+4. **Fix repo provisioning** — Clone moved from `container.py` exec_run to `entrypoint.sh`, driven by `REPO_URL`/`REPO_REF`/`GITHUB_TOKEN` env vars. `.netrc` written at startup for credential persistence. `HOME` removed from env allowlist (host HOME broke `.netrc` lookup); `ENV HOME=/home/claude` added to Dockerfile. Shared workspace volume skips clone if `.git` already present.
 
 ## In Progress
 
-_(none — session start)_
+_(none)_
+
+
 
 ## Backlog
 
 ### P0 — Blocks all functionality
 
-1. **Fix repo provisioning**
-   `container.py:start()` clones from `/repo` inside the container — which doesn't exist. The `|| true` silently swallows the error, leaving `/workspace` empty. Claude Code works with no code.
-   - Decide: mount repo at `/repo` via volume, or clone from a remote URL passed as env var
-   - Remove the `|| true` so failures are visible
-
-4. **Remove PTY trust confirmation thread from handler**
-   `handler.py:_confirm_trust_and_prompt()` sends `"\n"` as an `InputMessage` over WS. With the headless adapter, this becomes a blank first prompt sent to Claude Code. Then the real feature spec is sent as a second `input` message. Must be replaced with clean prompt delivery.
-   - Remove the trust thread entirely (headless mode has no trust prompt)
-   - Send the feature spec prompt as the first (and only) input message after the adapter connects
-
-5. **Handle `status: completed` in the handler loop**
+1. **Handle `status: completed` in the handler loop**
    `handler.py` message loop only exits on `status: "exited"`. It ignores `status: "completed"` (task done, awaiting gate). The two-stage protocol (completed → gate check → terminate or resume) is collapsed. Handler must handle `completed` explicitly.
 
 ### P1 — Correctness and safety
@@ -50,6 +44,16 @@ _(none — session start)_
 
 10. **Investigate: probing/clarifying question node for the dev node**
     The dev node needs a way to ask probing and clarifying questions and receive answers during autonomous operation. Investigate a general-purpose "consult" node that the dev node can call when it needs input — for test design, architecture decisions, ambiguous requirements, etc. This may overlap with or subsume the test-designer node. Determine whether these are the same node (a general consultant) or distinct (test-designer as a specialist).
+
+### P1 — Architecture
+
+17. **Design concurrent repo access between nodes in the same graph instance**
+    Nodes in the same graph instance share a Docker named volume mounted at `/workspace`. If two nodes run concurrently (e.g., dev_test writing changes while a reviewer reads), there is no file locking — Docker volumes allow concurrent access but provide no coordination. Investigate whether LangGraph's execution model prevents true simultaneity on the same thread, or whether explicit coordination is needed (e.g., a write lock, a hand-off protocol, or a graph topology constraint that serializes access to the shared volume). Define the policy before any multi-node workflow is wired up.
+
+### P2 — Agent Foundry Core
+
+16. **Implement error and exception handling in Agent Foundry**
+    Review and harden error and exception handling across the Agent Foundry core (capability registry, compiler, wiring, retriever, execution). Identify unhandled or poorly handled failure paths, define consistent error types, and ensure failures surface with actionable messages rather than raw exceptions or silent swallows.
 
 ### P2 — Improvements
 

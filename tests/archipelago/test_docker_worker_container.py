@@ -118,6 +118,24 @@ class TestCreateContainer:
         env = call_kwargs.kwargs["environment"]
         assert env["ARCHIPELAGO_WS_URL"] == "ws://host:1234/abc"
 
+    def test_given_github_token_on_host_when_create_called_then_token_forwarded_to_container(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken123")
+
+        client = MagicMock()
+        mock_container = MagicMock()
+        mock_container.id = "c1"
+        client.containers.create.return_value = mock_container
+
+        mgr = ContainerManager(client)
+        mgr.create_container()
+
+        call_kwargs = client.containers.create.call_args
+        env = call_kwargs.kwargs["environment"]
+        assert env["GITHUB_TOKEN"] == "ghp_testtoken123"
+
     def test_given_ws_url_env_var_when_create_called_then_ws_url_forwarded_to_container(
         self,
         monkeypatch,
@@ -146,16 +164,10 @@ class TestStartContainer:
         manager.start(handle)
         assert handle.status == "running"
 
-    def test_given_created_container_when_start_called_then_repo_cloned_at_ref(
-        self, manager, mock_client
-    ):
+    def test_given_started_container_when_start_called_then_no_git_clone_exec_run(self, manager):
         handle = manager.create_container()
-        manager.start(handle, repo_ref="feat/test")
-        handle._container.exec_run.assert_called()
-        call_args = handle._container.exec_run.call_args_list
-        # The git clone call should reference the branch
-        git_clone_call = [c for c in call_args if "feat/test" in str(c)]
-        assert len(git_clone_call) > 0
+        manager.start(handle)
+        handle._container.exec_run.assert_not_called()
 
     def test_given_image_without_cc_when_validate_called_then_raises_with_actionable_message(
         self, manager

@@ -30,6 +30,7 @@ def _valid_worker_constraints() -> dict:
 def _valid_worker_input() -> dict:
     return {
         "repo_ref": "abc123",
+        "repo_url": "https://github.com/org/repo",
         "feature_spec": {"title": "Test Feature", "objective": "Test"},
         "constraints": _valid_worker_constraints(),
         "test_commands": ["pdm run pytest"],
@@ -106,6 +107,16 @@ class TestWorkerInput:
             WorkerInput(**data)
         field_names = [e["loc"][0] for e in exc_info.value.errors()]
         assert "repo_ref" in field_names
+
+    def test_given_valid_fields_with_repo_url_when_instantiated_then_repo_url_accessible(self):
+        inp = WorkerInput(**_valid_worker_input())
+        assert inp.repo_url == "https://github.com/org/repo"
+
+    def test_given_no_repo_url_when_instantiated_then_repo_url_defaults_to_none(self):
+        data = _valid_worker_input()
+        del data["repo_url"]
+        inp = WorkerInput(**data)
+        assert inp.repo_url is None
 
 
 class TestWorkerConstraints:
