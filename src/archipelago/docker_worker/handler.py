@@ -36,12 +36,6 @@ from archipelago.docker_worker.recovery import persist_workspace_state
 
 logger = logging.getLogger(__name__)
 
-# Trust confirmation timing constants (module-level for testability)
-TRUST_RETRY_INTERVAL = 2.0  # seconds between \n attempts
-TRUST_TIMEOUT = 30.0  # total seconds for trust confirmation
-TRUST_FLUSH_DELAY = 0.5  # seconds to let entrypoint output flush
-TRUST_POLL_INTERVAL = 0.1  # seconds between output count checks
-
 
 def _get_free_port() -> int:
     """Find an available port."""
@@ -202,38 +196,10 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         # Collect output and state
         output_lines: list[str] = []
         mutable: dict[str, Any] = {"update_available": None}
-        first_output = threading.Event()
         session_exit_code: int | None = None
 
-        # Trust confirmation thread
-        def _confirm_trust_and_prompt() -> None:
-            first_output.wait(timeout=30)
-            time.sleep(TRUST_FLUSH_DELAY)
-
-            baseline_count = len(output_lines)
-            deadline = time.time() + TRUST_TIMEOUT
-            last_send_time = 0.0
-
-            while time.time() < deadline:
-                if len(output_lines) > baseline_count:
-                    break
-                now = time.time()
-                if now - last_send_time >= TRUST_RETRY_INTERVAL:
-                    try:
-                        _send_input(ws_server, session_id, "\n")
-                    except Exception:
-                        pass
-                    last_send_time = now
-                time.sleep(TRUST_POLL_INTERVAL)
-
-            prompt = _build_prompt(worker_input)
-            try:
-                _send_input(ws_server, session_id, prompt + "\n")
-            except Exception:
-                pass
-
-        trust_thread = threading.Thread(target=_confirm_trust_and_prompt, daemon=True)
-        trust_thread.start()
+        # Send the feature spec prompt immediately — headless adapter waits for first input
+        _send_input(ws_server, session_id, _build_prompt(worker_input))
 
         # Message processing loop
         deadline = time.time() + worker_input.constraints.timeout_seconds
@@ -264,10 +230,8 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
             if isinstance(msg, OutputMessage):
                 output_lines.append(msg.text)
                 print(f"[cc] {msg.text}", flush=True)
-                first_output.set()
 
             elif isinstance(msg, InterruptMessage):
-                first_output.set()
                 if msg.interrupt_type == "update_available":
                     mutable["update_available"] = msg.payload
                 elif msg.interrupt_type == "clarification":

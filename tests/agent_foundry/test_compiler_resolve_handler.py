@@ -1,6 +1,5 @@
 """Tests for _resolve_handler fallback paths in the compiler."""
 
-
 import pytest
 
 from agent_foundry.compiler.compiler import _resolve_handler

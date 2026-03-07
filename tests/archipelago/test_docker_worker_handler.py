@@ -304,195 +304,12 @@ class TestDockerWorkerHandler:
         result = docker_worker_handler(state)
         assert "worker_result" in result
 
-
-class TestICRNLFix:
-    """Tests for ICRNL: handler sends \\n in InputMessage (adapter converts to \\r)."""
-
-    @patch("archipelago.docker_worker.handler.TRUST_RETRY_INTERVAL", 0.3)
-    @patch("archipelago.docker_worker.handler.TRUST_FLUSH_DELAY", 0.1)
-    @patch("archipelago.docker_worker.handler.TRUST_POLL_INTERVAL", 0.05)
-    @patch("archipelago.docker_worker.handler.TRUST_TIMEOUT", 2.0)
-    @patch("archipelago.docker_worker.handler._HandlerWSServer")
-    @patch("archipelago.docker_worker.handler.docker")
-    def test_given_trust_prompt_when_confirmed_then_sends_newline_not_carriage_return(
-        self, mock_docker, mock_ws_cls
-    ):
-        """Trust confirmation sends \\n in InputMessage; adapter handles \\r conversion."""
-        _mock_docker_env(mock_docker)
-
-        ws_server = _preload_ws_server([])
-        mock_ws_cls.return_value = ws_server
-
-        # Pre-load output then exited status after a delay
-        def _delayed_messages():
-            import time
-
-            time.sleep(0.5)
-            ws_server.message_queue.put(_output_msg("trust prompt line"))
-            time.sleep(1.0)
-            ws_server.message_queue.put(_output_msg("trust accepted"))
-            time.sleep(1.0)
-            ws_server.message_queue.put(_status_msg("exited", 0))
-
-        feeder = threading.Thread(target=_delayed_messages, daemon=True)
-        feeder.start()
-
-        state = {"worker_input": _valid_worker_input()}
-        docker_worker_handler(state)
-
-        # Check send calls for InputMessage with \n (not \r)
-        send_calls = ws_server.send.call_args_list
-        input_calls = []
-        for c in send_calls:
-            try:
-                msg = json.loads(c[0][0])
-                if msg.get("type") == "input":
-                    input_calls.append(msg)
-            except (json.JSONDecodeError, IndexError):
-                pass
-
-        # Trust calls should have \n
-        trust_calls = [m for m in input_calls if m["text"] == "\n"]
-        assert len(trust_calls) >= 1, f"Expected trust \\n calls, got: {input_calls}"
-
-        # No \r calls should exist
-        cr_calls = [m for m in input_calls if m["text"] == "\r"]
-        assert len(cr_calls) == 0, f"Found \\r calls (should be \\n): {cr_calls}"
-
-    @patch("archipelago.docker_worker.handler.TRUST_RETRY_INTERVAL", 0.3)
-    @patch("archipelago.docker_worker.handler.TRUST_FLUSH_DELAY", 0.1)
-    @patch("archipelago.docker_worker.handler.TRUST_POLL_INTERVAL", 0.05)
-    @patch("archipelago.docker_worker.handler.TRUST_TIMEOUT", 2.0)
-    @patch("archipelago.docker_worker.handler._HandlerWSServer")
-    @patch("archipelago.docker_worker.handler.docker")
-    def test_given_feature_prompt_when_sent_then_ends_with_newline(self, mock_docker, mock_ws_cls):
-        """Feature prompt ends with \\n in InputMessage."""
-        _mock_docker_env(mock_docker)
-
-        ws_server = _preload_ws_server([])
-        mock_ws_cls.return_value = ws_server
-
-        def _delayed_messages():
-            import time
-
-            time.sleep(0.5)
-            ws_server.message_queue.put(_output_msg("trust prompt"))
-            time.sleep(1.0)
-            ws_server.message_queue.put(_output_msg("ready"))
-            time.sleep(1.0)
-            ws_server.message_queue.put(_status_msg("exited", 0))
-
-        feeder = threading.Thread(target=_delayed_messages, daemon=True)
-        feeder.start()
-
-        state = {"worker_input": _valid_worker_input()}
-        docker_worker_handler(state)
-
-        send_calls = ws_server.send.call_args_list
-        input_calls = []
-        for c in send_calls:
-            try:
-                msg = json.loads(c[0][0])
-                if msg.get("type") == "input":
-                    input_calls.append(msg)
-            except (json.JSONDecodeError, IndexError):
-                pass
-
-        prompt_calls = [m for m in input_calls if "Test" in m.get("text", "")]
-        assert len(prompt_calls) == 1, f"Expected 1 prompt call, got: {input_calls}"
-        assert prompt_calls[0]["text"].endswith("\n")
-
     def test_given_entrypoint_when_read_then_contains_archipelago_ws_url_check(self):
         """Entrypoint launches adapter when ARCHIPELAGO_WS_URL is set."""
         entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
         content = entrypoint.read_text()
         assert "ARCHIPELAGO_WS_URL" in content
         assert "adapter.py" in content
-
-    @patch("archipelago.docker_worker.handler.TRUST_RETRY_INTERVAL", 0.3)
-    @patch("archipelago.docker_worker.handler.TRUST_FLUSH_DELAY", 0.1)
-    @patch("archipelago.docker_worker.handler.TRUST_POLL_INTERVAL", 0.05)
-    @patch("archipelago.docker_worker.handler.TRUST_TIMEOUT", 2.0)
-    @patch("archipelago.docker_worker.handler._HandlerWSServer")
-    @patch("archipelago.docker_worker.handler.docker")
-    def test_given_slow_cc_startup_when_trust_prompt_delayed_then_retry_loop_sends_multiple_inputs(
-        self, mock_docker, mock_ws_cls
-    ):
-        """When CC takes several seconds to render trust prompt, handler retries \\n."""
-        _mock_docker_env(mock_docker)
-
-        ws_server = _preload_ws_server([])
-        mock_ws_cls.return_value = ws_server
-
-        def _delayed_messages():
-            import time
-
-            time.sleep(0.3)
-            ws_server.message_queue.put(_output_msg("version check"))
-            time.sleep(1.5)
-            ws_server.message_queue.put(_output_msg("trust accepted"))
-            time.sleep(1.0)
-            ws_server.message_queue.put(_status_msg("exited", 0))
-
-        feeder = threading.Thread(target=_delayed_messages, daemon=True)
-        feeder.start()
-
-        state = {"worker_input": _valid_worker_input()}
-        docker_worker_handler(state)
-
-        send_calls = ws_server.send.call_args_list
-        input_calls = []
-        for c in send_calls:
-            try:
-                msg = json.loads(c[0][0])
-                if msg.get("type") == "input" and msg["text"] == "\n":
-                    input_calls.append(msg)
-            except (json.JSONDecodeError, IndexError):
-                pass
-
-        assert len(input_calls) >= 2, f"Expected multiple \\n retries, got {len(input_calls)}"
-
-    @patch("archipelago.docker_worker.handler.TRUST_TIMEOUT", 1.0)
-    @patch("archipelago.docker_worker.handler.TRUST_RETRY_INTERVAL", 0.3)
-    @patch("archipelago.docker_worker.handler.TRUST_FLUSH_DELAY", 0.1)
-    @patch("archipelago.docker_worker.handler.TRUST_POLL_INTERVAL", 0.05)
-    @patch("archipelago.docker_worker.handler._HandlerWSServer")
-    @patch("archipelago.docker_worker.handler.docker")
-    def test_given_trust_timeout_when_cc_never_starts_then_prompt_still_sent(
-        self, mock_docker, mock_ws_cls
-    ):
-        """When trust loop times out, the prompt is still sent (graceful degradation)."""
-        _mock_docker_env(mock_docker)
-
-        ws_server = _preload_ws_server([])
-        mock_ws_cls.return_value = ws_server
-
-        def _delayed_messages():
-            import time
-
-            time.sleep(0.3)
-            ws_server.message_queue.put(_output_msg("version check"))
-            time.sleep(3)
-            ws_server.message_queue.put(_status_msg("exited", 0))
-
-        feeder = threading.Thread(target=_delayed_messages, daemon=True)
-        feeder.start()
-
-        state = {"worker_input": _valid_worker_input()}
-        docker_worker_handler(state)
-
-        send_calls = ws_server.send.call_args_list
-        input_calls = []
-        for c in send_calls:
-            try:
-                msg = json.loads(c[0][0])
-                if msg.get("type") == "input":
-                    input_calls.append(msg)
-            except (json.JSONDecodeError, IndexError):
-                pass
-
-        prompt_calls = [m for m in input_calls if "Test" in m.get("text", "")]
-        assert len(prompt_calls) == 1, f"Expected prompt sent after timeout, got: {input_calls}"
 
 
 class TestHandlerProtocol:
@@ -662,86 +479,44 @@ class TestHandlerProtocol:
                 pass
         assert len(control_msgs) >= 1
 
-    @patch("archipelago.docker_worker.handler.TRUST_RETRY_INTERVAL", 0.3)
-    @patch("archipelago.docker_worker.handler.TRUST_FLUSH_DELAY", 0.1)
-    @patch("archipelago.docker_worker.handler.TRUST_POLL_INTERVAL", 0.05)
-    @patch("archipelago.docker_worker.handler.TRUST_TIMEOUT", 2.0)
     @patch("archipelago.docker_worker.handler._HandlerWSServer")
     @patch("archipelago.docker_worker.handler.docker")
-    def test_given_handler_needs_trust_confirmation_when_connected_then_sends_input_messages(
+    def test_given_adapter_connects_when_handler_runs_then_feature_spec_sent_as_input_message(
         self, mock_docker, mock_ws_cls
     ):
         _mock_docker_env(mock_docker)
-        ws_server = _preload_ws_server([])
+        ws_server = _preload_ws_server([_status_msg("exited", 0)])
         mock_ws_cls.return_value = ws_server
 
-        def _delayed_messages():
-            import time
+        docker_worker_handler({"worker_input": _valid_worker_input()})
 
-            time.sleep(0.3)
-            ws_server.message_queue.put(_output_msg("first output"))
-            time.sleep(1.0)
-            ws_server.message_queue.put(_output_msg("trust accepted"))
-            time.sleep(1.0)
-            ws_server.message_queue.put(_status_msg("exited", 0))
-
-        feeder = threading.Thread(target=_delayed_messages, daemon=True)
-        feeder.start()
-
-        state = {"worker_input": _valid_worker_input()}
-        docker_worker_handler(state)
-
-        send_calls = ws_server.send.call_args_list
-        input_calls = []
-        for c in send_calls:
-            try:
+        input_msgs = []
+        for c in ws_server.send.call_args_list:
+            with contextlib.suppress(Exception):
                 msg = json.loads(c[0][0])
                 if msg.get("type") == "input":
-                    input_calls.append(msg)
-            except (json.JSONDecodeError, IndexError):
-                pass
-        assert len(input_calls) >= 1
+                    input_msgs.append(msg)
 
-    @patch("archipelago.docker_worker.handler.TRUST_RETRY_INTERVAL", 0.3)
-    @patch("archipelago.docker_worker.handler.TRUST_FLUSH_DELAY", 0.1)
-    @patch("archipelago.docker_worker.handler.TRUST_POLL_INTERVAL", 0.05)
-    @patch("archipelago.docker_worker.handler.TRUST_TIMEOUT", 2.0)
+        assert len(input_msgs) == 1
+        assert "Implement the following feature:" in input_msgs[0]["text"]
+        assert "Test" in input_msgs[0]["text"]
+
     @patch("archipelago.docker_worker.handler._HandlerWSServer")
     @patch("archipelago.docker_worker.handler.docker")
-    def test_given_handler_needs_prompt_delivery_when_connected_then_sends_input_message(
+    def test_given_adapter_connects_when_handler_runs_then_no_blank_newline_input_sent(
         self, mock_docker, mock_ws_cls
     ):
         _mock_docker_env(mock_docker)
-        ws_server = _preload_ws_server([])
+        ws_server = _preload_ws_server([_status_msg("exited", 0)])
         mock_ws_cls.return_value = ws_server
 
-        def _delayed_messages():
-            import time
+        docker_worker_handler({"worker_input": _valid_worker_input()})
 
-            time.sleep(0.3)
-            ws_server.message_queue.put(_output_msg("first output"))
-            time.sleep(1.0)
-            ws_server.message_queue.put(_output_msg("ready"))
-            time.sleep(1.0)
-            ws_server.message_queue.put(_status_msg("exited", 0))
-
-        feeder = threading.Thread(target=_delayed_messages, daemon=True)
-        feeder.start()
-
-        state = {"worker_input": _valid_worker_input()}
-        docker_worker_handler(state)
-
-        send_calls = ws_server.send.call_args_list
-        input_calls = []
-        for c in send_calls:
-            try:
+        for c in ws_server.send.call_args_list:
+            with contextlib.suppress(Exception):
                 msg = json.loads(c[0][0])
-                if msg.get("type") == "input" and "Test" in msg.get("text", ""):
-                    input_calls.append(msg)
-            except (json.JSONDecodeError, IndexError):
-                pass
-        assert len(input_calls) == 1
-        assert "Implement the following feature:" in input_calls[0]["text"]
+                if msg.get("type") == "input":
+                    assert msg["text"].strip(), "Blank input message sent to adapter"
 
 
 class TestProtocolEndToEnd:
