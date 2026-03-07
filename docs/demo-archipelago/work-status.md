@@ -2,22 +2,18 @@
 
 ## Completed
 
-1. **Create worker CLAUDE.md** — `docker/CLAUDE.md` baked into image at `/home/claude/.claude/CLAUDE.md`. Covers role, task completion marker, interrupt markers, working style. Skipped progress.jsonl instructions (see backlog item 14 to investigate).
+1. **Create worker CLAUDE.md** — `docker/CLAUDE.md` baked into image at `/home/claude/.claude/CLAUDE.md`. Covers role, task completion marker, interrupt markers, working style. Skipped progress.jsonl instructions (see backlog item 15 to investigate).
+2. **Replace stale adapter in image** — Dockerfile now copies `src/archipelago/docker_worker/headless_adapter.py` (build context must be project root: `docker build -f docker/Dockerfile .`). Entrypoint updated: removed `stty -icrnl` (PTY-only dead code), adapter invoked without initial prompt. `_map_event_to_protocol` extended to detect `ARCHIPELAGO_NEED_CLARIFICATION` and `ARCHIPELAGO_NEED_PERMISSION` markers and emit `interrupt` messages. `initial_prompt` made optional in `run_headless_adapter`. 20 new tests in `tests/archipelago/test_headless_adapter.py`.
 
 ## In Progress
 
-_(none)_
+_(none — session start)_
 
 ## Backlog
 
 ### P0 — Blocks all functionality
 
-1. **Replace stale adapter in image**
-   `docker/Dockerfile` copies `adapter.py` (old PTY/pexpect adapter). `lab/headless_adapter.py` is the correct replacement. Entrypoint runs the wrong file.
-   - Update `Dockerfile` to copy `lab/headless_adapter.py` as `adapter.py` (or rename references)
-   - Update `entrypoint.sh` to invoke the headless adapter correctly
-
-3. **Fix repo provisioning**
+1. **Fix repo provisioning**
    `container.py:start()` clones from `/repo` inside the container — which doesn't exist. The `|| true` silently swallows the error, leaving `/workspace` empty. Claude Code works with no code.
    - Decide: mount repo at `/repo` via volume, or clone from a remote URL passed as env var
    - Remove the `|| true` so failures are visible
@@ -48,7 +44,10 @@ _(none)_
 
 ### P2 — Improvements
 
-14. **Investigate progress.jsonl approach**
+14. **Handle SIGTERM in the headless adapter**
+    The adapter runs as PID 1 in the container. Docker `stop` sends SIGTERM to PID 1. Python's default SIGTERM behavior is immediate termination — no final status message is sent to the orchestrator, the Claude subprocess may be orphaned, and the orchestrator can't distinguish clean termination from a crash. Need a SIGTERM handler that kills the Claude subprocess cleanly and sends a final `status: exited` before shutting down.
+
+15. **Investigate progress.jsonl approach**
     `progress.jsonl` is intended to give the orchestrator structured output (patches, evidence) and enable crash recovery. Currently Claude Code has no instructions to write it, the handler never delivers those instructions, and the parsing is untested end-to-end. Evaluate whether to keep, simplify, or replace this mechanism before investing in it further.
 
 10. **Wire `--model` from `WorkerConstraints`**

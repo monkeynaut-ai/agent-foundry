@@ -24,14 +24,9 @@ if [ "$INSTALLED" != "unknown" ] && [ "$LATEST" != "unknown" ] && [ "$INSTALLED"
   echo "ARCHIPELAGO_UPDATE_AVAILABLE {\"installed\": \"$INSTALLED\", \"latest\": \"$LATEST\"}"
 fi
 
-# Disable ICRNL so programmatic \r reaches Ink as \r (not converted to \n).
-# Without this, the PTY line discipline converts \r → \n, and Ink's
-# parse-keypress never sees 'return', so submit never fires.
-stty -icrnl 2>/dev/null || true
-
-# If adapter WS URL is set, run via protocol adapter
+# If adapter WS URL is set, run via headless protocol adapter
 if [ -n "$ARCHIPELAGO_WS_URL" ]; then
-  exec python /home/claude/adapter.py --protocol "$ARCHIPELAGO_WS_URL" claude "$@"
+  exec python /home/claude/adapter.py --protocol "$ARCHIPELAGO_WS_URL"
 fi
 
 # If a TTY is attached, run interactively; otherwise run headless

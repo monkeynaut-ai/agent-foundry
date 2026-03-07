@@ -20,12 +20,14 @@ ENV PATH="/home/claude/.local/bin:${PATH}"
 RUN claude --version
 
 # Copy configuration and entrypoint
-COPY --chown=claude:claude settings.json /home/claude/.claude/settings.json
-COPY --chown=claude:claude CLAUDE.md /home/claude/.claude/CLAUDE.md
-COPY --chown=claude:claude claude.json /home/claude/.claude.json
-COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
+# Build context must be the project root:
+#   docker build -t archipelago-cc-worker:latest -f docker/Dockerfile .
+COPY --chown=claude:claude docker/settings.json /home/claude/.claude/settings.json
+COPY --chown=claude:claude docker/CLAUDE.md /home/claude/.claude/CLAUDE.md
+COPY --chown=claude:claude docker/claude.json /home/claude/.claude.json
+COPY --chown=claude:claude docker/entrypoint.sh /home/claude/entrypoint.sh
 RUN chmod +x /home/claude/entrypoint.sh
-COPY --chown=claude:claude adapter.py /home/claude/adapter.py
+COPY --chown=claude:claude src/archipelago/docker_worker/headless_adapter.py /home/claude/adapter.py
 
 WORKDIR /workspace
 

@@ -26,6 +26,8 @@ from typing import Any
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect as ws_connect
 
+from archipelago.docker_worker.protocol import INTERRUPT_PATTERN as _INTERRUPT_PATTERN
+
 logger = logging.getLogger(__name__)
 
 # Marker that Claude outputs (via CLAUDE.md instructions) when it considers the task done.
@@ -85,19 +87,41 @@ def _map_event_to_protocol(
         msg = event.get("message", {})
         for block in msg.get("content", []):
             if block.get("type") == "text":
-                text = block["text"].strip()
-                if not text:
+                text = block["text"]
+                if not text.strip():
                     continue
-                # Check for task completion marker
-                if _TASK_COMPLETE_PATTERN.search(text):
-                    task_complete = True
-                    # Strip the marker from the output
-                    text = _TASK_COMPLETE_PATTERN.sub("", text).strip()
-                if text:
+                # Scan line by line for markers; collect remaining lines as output
+                output_lines: list[str] = []
+                for line in text.splitlines():
+                    stripped = line.strip()
+                    if stripped == TASK_COMPLETE_MARKER:
+                        task_complete = True
+                        continue
+                    interrupt_match = _INTERRUPT_PATTERN.match(stripped)
+                    if interrupt_match:
+                        kind = interrupt_match.group(1)
+                        try:
+                            payload = json.loads(interrupt_match.group(2))
+                        except json.JSONDecodeError:
+                            output_lines.append(line)
+                            continue
+                        interrupt_type = "clarification" if kind == "CLARIFICATION" else "permission"
+                        messages.append({
+                            "type": "interrupt",
+                            "session_id": session_id,
+                            "interrupt_type": interrupt_type,
+                            "payload": payload,
+                            "raw_line": stripped,
+                            "timestamp": ts,
+                        })
+                        continue
+                    output_lines.append(line)
+                remaining = "\n".join(output_lines).strip()
+                if remaining:
                     messages.append({
                         "type": "output",
                         "session_id": session_id,
-                        "text": text,
+                        "text": remaining,
                         "stream": "stdout",
                         "timestamp": ts,
                     })
@@ -250,7 +274,7 @@ def run_headless_turn(
 
 
 def run_headless_adapter(
-    initial_prompt: str,
+    initial_prompt: str | None,
     ws_url: str,
     protocol_session_id: str = "default",
     connect_timeout: float = 30.0,
@@ -258,8 +282,9 @@ def run_headless_adapter(
 ) -> int:
     """Run a headless adapter session.
 
-    Connects to ws_url, sends initial prompt to Claude Code in headless mode,
-    then listens for input messages from the WS to continue the conversation.
+    Connects to ws_url and listens for input/control messages from the orchestrator.
+    If initial_prompt is given, runs the first Claude turn immediately on connect.
+    If None, waits for the first input message before running any turn.
     """
     try:
         ws = _connect_with_backoff(ws_url, timeout=connect_timeout)
@@ -283,30 +308,35 @@ def run_headless_adapter(
         "timestamp": ts(),
     })
 
-    # Run initial turn
-    _send_msg({
-        "type": "status",
-        "session_id": protocol_session_id,
-        "status": "running",
-        "timestamp": ts(),
-    })
+    claude_session_id: str | None = None
+    exit_code = 0
+    completed = False
 
-    claude_session_id, exit_code, task_complete = run_headless_turn(
-        initial_prompt, ws, protocol_session_id, timeout=turn_timeout,
-    )
-
-    if task_complete:
+    # Run initial turn if prompt provided; otherwise wait for first input message
+    if initial_prompt is not None:
         _send_msg({
             "type": "status",
             "session_id": protocol_session_id,
-            "status": "completed",
-            "exit_code": exit_code,
+            "status": "running",
             "timestamp": ts(),
         })
 
+        claude_session_id, exit_code, task_complete = run_headless_turn(
+            initial_prompt, ws, protocol_session_id, timeout=turn_timeout,
+        )
+
+        if task_complete:
+            completed = True
+            _send_msg({
+                "type": "status",
+                "session_id": protocol_session_id,
+                "status": "completed",
+                "exit_code": exit_code,
+                "timestamp": ts(),
+            })
+
     # Listen for follow-up input/control messages
     # After "completed", adapter stays alive — gate may resume or terminate
-    completed = task_complete
     try:
         while True:
             try:
@@ -384,7 +414,10 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Headless Claude Code adapter")
-    parser.add_argument("prompt", help="initial prompt to send to Claude Code")
+    parser.add_argument(
+        "prompt", nargs="?", default=None,
+        help="initial prompt to send to Claude Code (if omitted, waits for first input message over WS)",
+    )
     parser.add_argument(
         "--protocol",
         metavar="WS_URL",
