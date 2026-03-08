@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
-from archipelago.runner import run_archipelago
+from archipelago.runner import run_archipelago, run_dev_test
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,8 +27,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: invalid YAML: {e}", file=sys.stderr)
         return 1
 
-    if not isinstance(data, dict) or "product_brief_input" not in data:
-        print("Error: YAML must contain 'product_brief_input' key", file=sys.stderr)
+    if not isinstance(data, dict):
+        print("Error: YAML must be a mapping", file=sys.stderr)
+        return 1
+
+    if "dev_test_input" in data:
+        result = run_dev_test(data["dev_test_input"])
+        print(yaml.dump(result, default_flow_style=False))
+        return 0
+
+    if "product_brief_input" not in data:
+        print(
+            "Error: YAML must contain 'product_brief_input' or 'dev_test_input' key",
+            file=sys.stderr,
+        )
         return 1
 
     result = run_archipelago(data["product_brief_input"])

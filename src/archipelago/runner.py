@@ -7,6 +7,8 @@ from typing import Any
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.registry import CapabilityRegistry
+from archipelago.docker_worker.handler import docker_worker_handler
+from archipelago.docker_worker.models import WorkerConstraints, WorkerInput
 from archipelago.handlers import ARCHIPELAGO_HANDLERS
 
 PLAN_PATH = Path(__file__).parent / "pipeline_plan.json"
@@ -43,3 +45,16 @@ def run_archipelago(
 
     initial_state = {"product_brief_input": product_brief_input}
     return graph.invoke(initial_state)
+
+
+def run_dev_test(dev_test_input: dict[str, Any]) -> dict[str, Any]:
+    """Bypass the full pipeline and run only the dev_test worker directly."""
+    worker_input = WorkerInput(
+        repo_url=dev_test_input.get("repo_url"),
+        repo_ref=dev_test_input.get("repo_ref", "main"),
+        feature_spec=dev_test_input.get("feature_spec", {}),
+        test_commands=dev_test_input.get("test_commands", ["pdm run pytest"]),
+        gates=dev_test_input.get("gates", []),
+        constraints=WorkerConstraints(**dev_test_input.get("constraints", {})),
+    )
+    return docker_worker_handler({"worker_input": worker_input.model_dump()})

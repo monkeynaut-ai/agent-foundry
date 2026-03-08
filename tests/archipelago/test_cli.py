@@ -44,4 +44,56 @@ class TestCLI:
 
         captured = capsys.readouterr()
         assert exit_code == 1
-        assert "product_brief_input" in captured.err
+        assert "dev_test_input" in captured.err
+
+    def test_given_yaml_with_dev_test_input_when_cli_invoked_then_run_dev_test_called(
+        self, tmp_path
+    ):
+        input_file = tmp_path / "input.yaml"
+        input_file.write_text(
+            yaml.dump(
+                {
+                    "dev_test_input": {
+                        "repo_ref": "main",
+                        "feature_spec": {"title": "Add login"},
+                        "test_commands": ["pdm run pytest"],
+                    }
+                }
+            )
+        )
+
+        fake_result = {"worker_result": {"status": "completed"}}
+
+        with patch("archipelago.cli.run_dev_test", return_value=fake_result) as mock_run:
+            from archipelago.cli import main
+
+            exit_code = main(["-f", str(input_file)])
+
+        mock_run.assert_called_once()
+        assert exit_code == 0
+
+    def test_given_yaml_with_dev_test_input_when_cli_invoked_then_run_archipelago_not_called(
+        self, tmp_path
+    ):
+        input_file = tmp_path / "input.yaml"
+        input_file.write_text(
+            yaml.dump(
+                {
+                    "dev_test_input": {
+                        "repo_ref": "main",
+                        "feature_spec": {"title": "Add login"},
+                        "test_commands": ["pdm run pytest"],
+                    }
+                }
+            )
+        )
+
+        with (
+            patch("archipelago.cli.run_dev_test", return_value={}),
+            patch("archipelago.cli.run_archipelago") as mock_arch,
+        ):
+            from archipelago.cli import main
+
+            main(["-f", str(input_file)])
+
+        mock_arch.assert_not_called()

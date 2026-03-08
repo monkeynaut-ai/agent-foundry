@@ -14,11 +14,6 @@ _(none)_
 
 ### P1 — Correctness and safety
 
-#### 6. Add `--dangerously-skip-permissions`
-
-In a properly isolated container, this flag eliminates all permission prompts. Currently Claude Code may prompt for tools not in the static `settings.json` allow list.
-- Wire into `_build_claude_cmd()` in headless adapter
-- Confirm `--dangerously-skip-permissions` behavior in `-p` mode (no two-step confirmation issue that exists in interactive mode)
 
 #### 7. Add `max_turns` to `WorkerConstraints` and wire to Claude CLI
 
@@ -103,6 +98,8 @@ Bake platform defaults into `/home/claude/.claude/CLAUDE.md` (worker role, proto
 2. **Replace stale adapter in image** — Dockerfile now copies `src/archipelago/docker_worker/headless_adapter.py` (build context must be project root: `docker build -f docker/Dockerfile .`). Entrypoint updated: removed `stty -icrnl` (PTY-only dead code), adapter invoked without initial prompt. `_map_event_to_protocol` extended to detect `ARCHIPELAGO_NEED_CLARIFICATION` and `ARCHIPELAGO_NEED_PERMISSION` markers and emit `interrupt` messages. `initial_prompt` made optional in `run_headless_adapter`. 20 new tests in `tests/archipelago/test_headless_adapter.py`.
 3. **Remove PTY trust confirmation thread from handler** — Deleted `_confirm_trust_and_prompt()` and all `TRUST_*` constants. Handler now sends feature spec as the first and only input message immediately after adapter connects. Also added pre-commit hooks (ruff format + lint) and a PostToolUse Claude hook for in-session auto-formatting.
 4. **Fix repo provisioning** — Clone moved from `container.py` exec_run to `entrypoint.sh`, driven by `REPO_URL`/`REPO_REF`/`GITHUB_TOKEN` env vars. `.netrc` written at startup for credential persistence. `HOME` removed from env allowlist (host HOME broke `.netrc` lookup); `ENV HOME=/home/claude` added to Dockerfile. Shared workspace volume skips clone if `.git` already present.
+6. **Worker configuration: permissions, timeouts, and resource limits** — Added `skip_permissions: bool` and `turn_timeout_seconds: int = 3600` to `WorkerConstraints`. Wired through handler `extra_env` → container → `entrypoint.sh` (`--timeout`, `--dangerously-skip-permissions`) → adapter → `_build_claude_cmd()`. Exposed `_parse_adapter_args()` for testing.
+20. **Direct dev_test input mode** — Added `run_dev_test()` to `runner.py` (calls `docker_worker_handler` directly, bypasses graph). CLI detects `dev_test_input` YAML key and routes to `run_dev_test`. Input schema: `repo_url`, `repo_ref`, `feature_spec`, `test_commands`, `constraints`.
 
 ---
-next item number: 20
+next item number: 21
