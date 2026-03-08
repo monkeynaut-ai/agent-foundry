@@ -15,6 +15,8 @@ class WorkerConstraints(BaseModel):
     mem_limit_mb: int = 512
     cpu_quota: int | None = None
     pids_limit: int | None = None
+    turn_timeout_seconds: int = 3600
+    skip_permissions: bool = False
 
 
 class WorkerInput(BaseModel):

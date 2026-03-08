@@ -127,6 +127,20 @@ class TestWorkerConstraints:
         assert constraints.allowed_commands == []
         assert constraints.network_policy == "none"
 
+    def test_given_no_args_when_instantiated_then_turn_timeout_seconds_defaults_to_3600(self):
+        assert WorkerConstraints().turn_timeout_seconds == 3600
+
+    def test_given_no_args_when_instantiated_then_skip_permissions_defaults_to_false(self):
+        assert WorkerConstraints().skip_permissions is False
+
+    def test_given_turn_timeout_and_skip_permissions_when_json_round_tripped_then_values_preserved(
+        self,
+    ):
+        c = WorkerConstraints(turn_timeout_seconds=7200, skip_permissions=True)
+        reconstructed = WorkerConstraints.model_validate_json(c.model_dump_json())
+        assert reconstructed.turn_timeout_seconds == 7200
+        assert reconstructed.skip_permissions is True
+
 
 class TestWorkerResult:
     def test_given_valid_fields_when_instantiated_then_validates(self):
