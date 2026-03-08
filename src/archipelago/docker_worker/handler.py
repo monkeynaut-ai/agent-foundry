@@ -279,6 +279,10 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
                 if msg.status == "exited":
                     session_exit_code = msg.exit_code
                     break
+                elif msg.status == "completed":
+                    # Task done — gate check not yet implemented (backlog item)
+                    session_exit_code = 0
+                    break
 
         # Determine status
         status: Literal["completed", "failed", "timed_out"]

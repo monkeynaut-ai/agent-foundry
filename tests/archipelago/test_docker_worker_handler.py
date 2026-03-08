@@ -543,6 +543,37 @@ class TestHandlerProtocol:
 
     @patch("archipelago.docker_worker.handler._HandlerWSServer")
     @patch("archipelago.docker_worker.handler.docker")
+    def test_given_adapter_sends_completed_status_when_handler_running_then_result_is_completed(
+        self, mock_docker, mock_ws_cls
+    ):
+        _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server(
+            [
+                _output_msg("All tests pass"),
+                _status_msg("completed", 0),
+            ]
+        )
+
+        state = {"worker_input": _valid_worker_input()}
+        result = docker_worker_handler(state)
+        assert result["worker_result"]["status"] == "completed"
+
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_adapter_sends_completed_status_when_handler_running_then_loop_exits_before_timeout(
+        self, mock_docker, mock_ws_cls
+    ):
+        _mock_docker_env(mock_docker)
+        worker_input = _valid_worker_input()
+        worker_input["constraints"]["timeout_seconds"] = 3600
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("completed", 0)])
+
+        state = {"worker_input": worker_input}
+        result = docker_worker_handler(state)
+        assert result["worker_result"]["status"] == "completed"
+
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
     def test_given_ws_connection_drops_when_handler_running_then_result_is_failed(
         self, mock_docker, mock_ws_cls
     ):

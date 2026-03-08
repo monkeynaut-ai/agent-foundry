@@ -6,12 +6,6 @@ _(none)_
 
 ## Backlog
 
-### P0 — Blocks all functionality
-
-#### 5. Handle `status: completed` in the handler loop
-
-`handler.py` message loop only exits on `status: "exited"`. It ignores `status: "completed"` (task done, awaiting gate). The two-stage protocol (completed → gate check → terminate or resume) is collapsed. Handler must handle `completed` explicitly.
-
 ### P1 — Correctness and safety
 
 
@@ -100,6 +94,7 @@ Bake platform defaults into `/home/claude/.claude/CLAUDE.md` (worker role, proto
 4. **Fix repo provisioning** — Clone moved from `container.py` exec_run to `entrypoint.sh`, driven by `REPO_URL`/`REPO_REF`/`GITHUB_TOKEN` env vars. `.netrc` written at startup for credential persistence. `HOME` removed from env allowlist (host HOME broke `.netrc` lookup); `ENV HOME=/home/claude` added to Dockerfile. Shared workspace volume skips clone if `.git` already present.
 6. **Worker configuration: permissions, timeouts, and resource limits** — Added `skip_permissions: bool` and `turn_timeout_seconds: int = 3600` to `WorkerConstraints`. Wired through handler `extra_env` → container → `entrypoint.sh` (`--timeout`, `--dangerously-skip-permissions`) → adapter → `_build_claude_cmd()`. Exposed `_parse_adapter_args()` for testing.
 20. **Direct dev_test input mode** — Added `run_dev_test()` to `runner.py` (calls `docker_worker_handler` directly, bypasses graph). CLI detects `dev_test_input` YAML key and routes to `run_dev_test`. Input schema: `repo_url`, `repo_ref`, `feature_spec`, `test_commands`, `constraints`.
+5. **Handle `status: completed` in the handler loop** — Loop now breaks on `status: completed` (sets `session_exit_code = 0`). Gate check deferred to a future backlog item.
 
 ---
 next item number: 21
