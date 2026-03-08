@@ -25,14 +25,6 @@ A reusable agentic workflow platform built on LangGraph (orchestration) using La
 - `pdm add <package>`: Add a dependency
 - `pdm run pytest`: Run tests
 
-## Session Start Protocol
-
-At the start of every session, ask:
-
-> "Are we working on items in `work-status.md`, or something else?"
-
-Then read `work-status.md` and present the current item in progress and the top backlog items so we can confirm what to tackle.
-
 ## work-status.md
 
 `work-status.md` at the project root is the source of truth for ongoing work on the demo-archipelago subsystem.
