@@ -9,6 +9,10 @@ _(none)_
 ### P1 — Correctness and safety
 
 
+#### 21. Implement gate check after `status: completed`
+
+When the handler receives `status: completed`, it currently breaks the loop and returns `completed` unconditionally. The intended two-stage protocol: gate node validates the work; if rejected, resume the same Claude session (`--resume SESSION_ID`) with feedback; if accepted, send `control: terminate`. Requires the handler to run gate logic before returning, and to send either a new `InputMessage` (resume) or a `control: terminate`. Depends on [WorkerManager](#9-design-and-implement-the-workermanager-service) for session-ID persistence across node transitions.
+
 #### 7. Add `max_turns` to `WorkerConstraints` and wire to Claude CLI
 
 No `--max-turns` is passed. A runaway session is only stopped by `timeout_seconds` (blunt). Add `max_turns: int | None` to `WorkerConstraints`, pass as `--max-turns` in `_build_claude_cmd()`.
@@ -97,4 +101,4 @@ Bake platform defaults into `/home/claude/.claude/CLAUDE.md` (worker role, proto
 5. **Handle `status: completed` in the handler loop** — Loop now breaks on `status: completed` (sets `session_exit_code = 0`). Gate check deferred to a future backlog item.
 
 ---
-next item number: 21
+next item number: 22
