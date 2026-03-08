@@ -313,6 +313,51 @@ class TestDockerWorkerHandler:
 
     @patch("archipelago.docker_worker.handler._HandlerWSServer")
     @patch("archipelago.docker_worker.handler.docker")
+    def test_given_turn_timeout_seconds_in_constraints_when_called_then_archipelago_turn_timeout_env_passed(
+        self, mock_docker, mock_ws_cls
+    ):
+        mock_client, _ = _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+
+        worker_input = _valid_worker_input()
+        worker_input["constraints"]["turn_timeout_seconds"] = 7200
+        docker_worker_handler({"worker_input": worker_input})
+
+        env = mock_client.containers.create.call_args.kwargs["environment"]
+        assert env["ARCHIPELAGO_TURN_TIMEOUT"] == "7200"
+
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_skip_permissions_true_when_called_then_archipelago_skip_permissions_is_1(
+        self, mock_docker, mock_ws_cls
+    ):
+        mock_client, _ = _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+
+        worker_input = _valid_worker_input()
+        worker_input["constraints"]["skip_permissions"] = True
+        docker_worker_handler({"worker_input": worker_input})
+
+        env = mock_client.containers.create.call_args.kwargs["environment"]
+        assert env["ARCHIPELAGO_SKIP_PERMISSIONS"] == "1"
+
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_skip_permissions_false_when_called_then_archipelago_skip_permissions_is_0(
+        self, mock_docker, mock_ws_cls
+    ):
+        mock_client, _ = _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+
+        worker_input = _valid_worker_input()
+        worker_input["constraints"]["skip_permissions"] = False
+        docker_worker_handler({"worker_input": worker_input})
+
+        env = mock_client.containers.create.call_args.kwargs["environment"]
+        assert env["ARCHIPELAGO_SKIP_PERMISSIONS"] == "0"
+
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
     def test_given_worker_input_with_repo_url_when_called_then_repo_url_and_ref_passed_as_container_env(
         self, mock_docker, mock_ws_cls
     ):
@@ -353,6 +398,20 @@ class TestEntrypointProvisioning:
         entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
         content = entrypoint.read_text()
         assert content.index(".netrc") < content.index("git clone")
+
+    def test_given_entrypoint_when_read_then_passes_turn_timeout_to_adapter(self):
+        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        content = entrypoint.read_text()
+        assert "ARCHIPELAGO_TURN_TIMEOUT" in content
+        assert "--timeout" in content
+
+    def test_given_entrypoint_when_read_then_conditionally_passes_dangerously_skip_permissions(
+        self,
+    ):
+        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        content = entrypoint.read_text()
+        assert "ARCHIPELAGO_SKIP_PERMISSIONS" in content
+        assert "--dangerously-skip-permissions" in content
 
 
 class TestHandlerProtocol:

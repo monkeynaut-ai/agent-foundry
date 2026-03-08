@@ -14,7 +14,9 @@ from unittest.mock import MagicMock, patch
 from websockets.sync.server import serve
 
 from archipelago.docker_worker.headless_adapter import (
+    _build_claude_cmd,
     _map_event_to_protocol,
+    _parse_adapter_args,
     run_headless_adapter,
     run_headless_turn,
 )
@@ -103,7 +105,9 @@ def _result(is_error: bool = False, stop_reason: str = "end_turn") -> str:
     return _event("result", is_error=is_error, stop_reason=stop_reason)
 
 
-def _fake_turn(prompt, ws, session_id, claude_session_id=None, timeout=600.0):
+def _fake_turn(
+    prompt, ws, session_id, claude_session_id=None, timeout=600.0, skip_permissions=False
+):
     return "fake-session-id", 0, False
 
 
@@ -256,7 +260,9 @@ class TestHeadlessAdapterIncomingMessages:
         server = _WSTestServer(port)
         turn_prompts: list[str] = []
 
-        def capturing_turn(prompt, ws, session_id, claude_session_id=None, timeout=600.0):
+        def capturing_turn(
+            prompt, ws, session_id, claude_session_id=None, timeout=600.0, skip_permissions=False
+        ):
             turn_prompts.append(prompt)
             return "sid", 0, False
 
@@ -288,7 +294,9 @@ class TestHeadlessAdapterIncomingMessages:
         server = _WSTestServer(port)
         turn_calls: list = []
 
-        def capturing_turn(prompt, ws, session_id, claude_session_id=None, timeout=600.0):
+        def capturing_turn(
+            prompt, ws, session_id, claude_session_id=None, timeout=600.0, skip_permissions=False
+        ):
             turn_calls.append(prompt)
             return "sid", 0, False
 
@@ -397,7 +405,9 @@ class TestInitialPrompt:
         server = _WSTestServer(port)
         turn_prompts: list[str] = []
 
-        def capturing_turn(prompt, ws, session_id, claude_session_id=None, timeout=600.0):
+        def capturing_turn(
+            prompt, ws, session_id, claude_session_id=None, timeout=600.0, skip_permissions=False
+        ):
             turn_prompts.append(prompt)
             return "sid", 0, False
 
@@ -421,3 +431,41 @@ class TestInitialPrompt:
         server.send({"type": "control", "command": "terminate"})
         t.join(timeout=5)
         server.shutdown()
+
+
+# ── _build_claude_cmd — skip_permissions flag ─────────────────────────────────
+
+
+class TestBuildClaudeCmd:
+    def test_given_skip_permissions_true_when_called_then_flag_included(self):
+        cmd = _build_claude_cmd("do the thing", skip_permissions=True)
+        assert "--dangerously-skip-permissions" in cmd
+
+    def test_given_skip_permissions_false_when_called_then_flag_absent(self):
+        cmd = _build_claude_cmd("do the thing", skip_permissions=False)
+        assert "--dangerously-skip-permissions" not in cmd
+
+    def test_given_no_skip_permissions_when_called_then_flag_absent_by_default(self):
+        cmd = _build_claude_cmd("do the thing")
+        assert "--dangerously-skip-permissions" not in cmd
+
+
+# ── __main__ argument parsing ─────────────────────────────────────────────────
+
+
+class TestMainArgParsing:
+    def test_given_dangerously_skip_permissions_flag_when_parsed_then_skip_permissions_true(self):
+        args = _parse_adapter_args(
+            ["--protocol", "ws://localhost:1", "--dangerously-skip-permissions"]
+        )
+        assert args.dangerously_skip_permissions is True
+
+    def test_given_no_dangerously_skip_permissions_flag_when_parsed_then_skip_permissions_false(
+        self,
+    ):
+        args = _parse_adapter_args(["--protocol", "ws://localhost:1"])
+        assert args.dangerously_skip_permissions is False
+
+    def test_given_timeout_arg_when_parsed_then_timeout_float(self):
+        args = _parse_adapter_args(["--protocol", "ws://localhost:1", "--timeout", "7200"])
+        assert args.timeout == 7200.0

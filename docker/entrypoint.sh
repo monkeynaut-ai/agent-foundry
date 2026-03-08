@@ -41,7 +41,13 @@ fi
 
 # If adapter WS URL is set, run via headless protocol adapter
 if [ -n "$ARCHIPELAGO_WS_URL" ]; then
-  exec python /home/claude/adapter.py --protocol "$ARCHIPELAGO_WS_URL"
+  TURN_TIMEOUT="${ARCHIPELAGO_TURN_TIMEOUT:-3600}"
+  SKIP_PERMS_FLAG=""
+  if [ "${ARCHIPELAGO_SKIP_PERMISSIONS:-0}" = "1" ]; then
+    SKIP_PERMS_FLAG="--dangerously-skip-permissions"
+  fi
+  exec python /home/claude/adapter.py --protocol "$ARCHIPELAGO_WS_URL" \
+    --timeout "$TURN_TIMEOUT" $SKIP_PERMS_FLAG
 fi
 
 # If a TTY is attached, run interactively; otherwise run headless

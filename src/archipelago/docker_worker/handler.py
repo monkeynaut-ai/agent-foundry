@@ -188,7 +188,14 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         container_handle = container_mgr.create_container(
             workspace_volume=f"archipelago-{int(time.time())}",
             constraints=worker_input.constraints,
-            extra_env={"ARCHIPELAGO_WS_URL": ws_url, **repo_env},
+            extra_env={
+                "ARCHIPELAGO_WS_URL": ws_url,
+                "ARCHIPELAGO_TURN_TIMEOUT": str(worker_input.constraints.turn_timeout_seconds),
+                "ARCHIPELAGO_SKIP_PERMISSIONS": (
+                    "1" if worker_input.constraints.skip_permissions else "0"
+                ),
+                **repo_env,
+            },
         )
         container_mgr.start(container_handle)
 

@@ -55,11 +55,15 @@ def _connect_with_backoff(ws_url: str, timeout: float = 30.0):
             attempt += 1
 
 
-def _build_claude_cmd(prompt: str, session_id: str | None = None) -> list[str]:
+def _build_claude_cmd(
+    prompt: str, session_id: str | None = None, skip_permissions: bool = False
+) -> list[str]:
     """Build the claude CLI command for headless mode."""
     cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose"]
     if session_id:
         cmd.extend(["--resume", session_id])
+    if skip_permissions:
+        cmd.append("--dangerously-skip-permissions")
     return cmd
 
 
@@ -197,6 +201,7 @@ def run_headless_turn(
     protocol_session_id: str,
     claude_session_id: str | None = None,
     timeout: float = 600.0,
+    skip_permissions: bool = False,
 ) -> tuple[str | None, int, bool]:
     """Run a single headless turn: send prompt to Claude Code, stream events to WS.
 
@@ -204,7 +209,7 @@ def run_headless_turn(
     task_complete is True if ARCHIPELAGO_TASK_COMPLETE was found in output.
     The claude_session_id can be used for --resume on the next turn.
     """
-    cmd = _build_claude_cmd(prompt, claude_session_id)
+    cmd = _build_claude_cmd(prompt, claude_session_id, skip_permissions=skip_permissions)
     logger.info("Running: %s", " ".join(cmd))
 
     captured_session_id = claude_session_id
@@ -292,6 +297,7 @@ def run_headless_adapter(
     protocol_session_id: str = "default",
     connect_timeout: float = 30.0,
     turn_timeout: float = 600.0,
+    skip_permissions: bool = False,
 ) -> int:
     """Run a headless adapter session.
 
@@ -341,6 +347,7 @@ def run_headless_adapter(
             ws,
             protocol_session_id,
             timeout=turn_timeout,
+            skip_permissions=skip_permissions,
         )
 
         if task_complete:
@@ -392,6 +399,7 @@ def run_headless_adapter(
                     protocol_session_id,
                     claude_session_id=claude_session_id,
                     timeout=turn_timeout,
+                    skip_permissions=skip_permissions,
                 )
 
                 if task_complete:
@@ -436,7 +444,8 @@ def run_headless_adapter(
     return exit_code
 
 
-if __name__ == "__main__":
+def _parse_adapter_args(argv=None):
+    """Parse adapter CLI arguments. Exposed for testing."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Headless Claude Code adapter")
@@ -464,12 +473,22 @@ if __name__ == "__main__":
         help="timeout per turn in seconds (default: 600)",
     )
     parser.add_argument(
+        "--dangerously-skip-permissions",
+        action="store_true",
+        default=False,
+        help="pass --dangerously-skip-permissions to claude CLI",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
         help="enable debug logging",
     )
-    args = parser.parse_args()
+    return parser.parse_args(argv)
+
+
+if __name__ == "__main__":
+    args = _parse_adapter_args()
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -482,5 +501,6 @@ if __name__ == "__main__":
             ws_url=args.protocol,
             protocol_session_id=args.session_id,
             turn_timeout=args.timeout,
+            skip_permissions=args.dangerously_skip_permissions,
         )
     )
