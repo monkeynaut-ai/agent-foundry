@@ -15,7 +15,6 @@ from archipelago.docker_worker.models import WorkerConstraints
 logger = logging.getLogger(__name__)
 
 DEFAULT_ENV_ALLOWLIST = {
-    "PATH",
     "LANG",
     "TERM",
     "ANTHROPIC_API_KEY",

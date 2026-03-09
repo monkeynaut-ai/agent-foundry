@@ -77,7 +77,7 @@ class _HandlerWSServer:
             finally:
                 self.message_queue.put(None)  # sentinel
 
-        self._server = serve(_handler, "localhost", port)
+        self._server = serve(_handler, "0.0.0.0", port)
         self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._server_thread.start()
 
@@ -199,9 +199,9 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         )
         container_mgr.start(container_handle)
 
-        # Wait for adapter to connect
-        if not ws_server.connected.wait(timeout=60):
-            raise TimeoutError("Adapter did not connect within 60 seconds")
+        # Wait for adapter to connect (120s: git clone + npm version check can be slow)
+        if not ws_server.connected.wait(timeout=120):
+            raise TimeoutError("Adapter did not connect within 120 seconds")
 
         # Collect output and state
         output_lines: list[str] = []

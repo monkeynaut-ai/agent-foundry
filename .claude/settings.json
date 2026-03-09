@@ -1,4 +1,30 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(pdm add *)",
+      "Bash(pdm install*)",
+      "Bash(pdm run pytest*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(ls*)",
+      "Bash(pwd*)",
+      "Bash(git push*)",
+      "Bash(gh pr *)",
+      "Bash(mkdir *)",
+      "Bash(pdm run:*)",
+      "Bash(find:*)",
+      "Bash(docker *)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git reset*)",
+      "Bash(git clean*)",
+      "Bash(rm -rf *)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -21,31 +47,6 @@
           }
         ]
       }
-    ]
-  },
-  "permissions": {
-    "allow": [
-      "Bash(pdm add *)",
-      "Bash(pdm install*)",
-      "Bash(pdm run pytest*)",
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(git status*)",
-      "Bash(git diff*)",
-      "Bash(git log*)",
-      "Bash(ls*)",
-      "Bash(pwd*)",
-      "Bash(git push*)",
-      "Bash(gh pr *)",
-      "Bash(mkdir *)",
-      "Bash(pdm run:*)",
-      "Bash(find:*)"
-    ],
-    "deny": [
-      "Bash(git push --force*)",
-      "Bash(git reset*)",
-      "Bash(git clean*)",
-      "Bash(rm -rf *)"
     ]
   }
 }
