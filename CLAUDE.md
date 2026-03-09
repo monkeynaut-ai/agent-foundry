@@ -27,4 +27,4 @@ A reusable agentic workflow platform built on LangGraph (orchestration) using La
 
 ## work-status.md
 
-`work-status.md` at the project root is the source of truth for ongoing work on the demo-archipelago subsystem.
+`work-status.md` at the project root is the source of truth for ongoing work on the demo-archipelago subsystem. Always use the `work-status` skill (via the Skill tool) to update it — never edit the file directly.
