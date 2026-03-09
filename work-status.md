@@ -13,10 +13,6 @@ _(none)_
 
 When the handler receives `status: completed`, it currently breaks the loop and returns `completed` unconditionally. The intended two-stage protocol: gate node validates the work; if rejected, resume the same Claude session (`--resume SESSION_ID`) with feedback; if accepted, send `control: terminate`. Requires the handler to run gate logic before returning, and to send either a new `InputMessage` (resume) or a `control: terminate`. Depends on [WorkerManager](#9-design-and-implement-the-workermanager-service) for session-ID persistence across node transitions.
 
-#### 7. Add `max_turns` to `WorkerConstraints` and wire to Claude CLI
-
-No `--max-turns` is passed. A runaway session is only stopped by `timeout_seconds` (blunt). Add `max_turns: int | None` to `WorkerConstraints`, pass as `--max-turns` in `_build_claude_cmd()`.
-
 #### 8. Raise default `mem_limit_mb` to 2048
 
 Current default is 512MB. Claude Code (Node.js) + Python adapter + git + test runners easily exceed this on real workloads, causing silent OOM kills.
@@ -41,6 +37,10 @@ Current default is 512MB. Claude Code (Node.js) + Python adapter + git + test ru
 - Turn-taking: `send()` acquires a per-session lock; `release()` drops it. A node that calls `send()` while another holds the lock blocks (or raises after a timeout)
 - The existing handler becomes a thin client: it calls WorkerManager instead of hosting its own WS server and managing its own Docker lifecycle
 - Fold container registry responsibilities into WorkerManager — it owns both Docker resources and the protocol layer on top
+
+#### 24. Document Archipelago architecture
+
+The architecture has spread across multiple documents and important aspects are undocumented. Consolidate all architectural documentation and fill in the gaps. Key missing piece: the interaction loop between the dev container (running `claude -p`) and the Archipelago orchestration node — how prompts flow in, how responses flow out, how turns are managed, and how the handler drives the loop. Other areas to cover: WorkerManager design, the adapter protocol, the gate check flow, and node-to-node handoff.
 
 #### 10. Design the test-designer node
 
@@ -108,6 +108,7 @@ Bake platform defaults into `/home/claude/.claude/CLAUDE.md` (worker role, proto
 20. **Direct dev_test input mode** — Added `run_dev_test()` to `runner.py` (calls `docker_worker_handler` directly, bypasses graph). CLI detects `dev_test_input` YAML key and routes to `run_dev_test`. Input schema: `repo_url`, `repo_ref`, `feature_spec`, `test_commands`, `constraints`.
 5. **Handle `status: completed` in the handler loop** — Loop now breaks on `status: completed` (sets `session_exit_code = 0`). Gate check deferred to a future backlog item.
 22. **Fix end-to-end container connectivity** — Four bugs found during first live run: (1) WS server bound to `localhost` — container couldn't reach it via `host.docker.internal`; changed to `0.0.0.0`. (2) `PATH` in env allowlist — host PATH overrode container PATH, hiding the `claude` binary; removed from allowlist. (3) npm version check `curl` had no timeout — could block adapter startup indefinitely; capped at 10s. (4) Adapter connect timeout was 60s — too short for git clone + npm check; raised to 120s.
+7. **Add `max_turns` to `WorkerConstraints` and wire to Claude CLI** — Cancelled. `max_turns` is difficult to set a priori — complex tasks may require 20–40 tool-use iterations per invocation. Each prompt/response exchange in Archipelago requires action from an external entity (human or agent), which provides a natural opportunity to monitor progress and decide whether to end the task. A hard turn cap is unnecessary and counterproductive.
 
 ---
-next item number: 23
+next item number: 25
