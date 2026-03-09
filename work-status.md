@@ -58,6 +58,14 @@ The dev node needs a way to ask probing and clarifying questions and receive ans
 
 Nodes in the same graph instance share a Docker named volume mounted at `/workspace`. If two nodes run concurrently (e.g., dev_test writing changes while a reviewer reads), there is no file locking — Docker volumes allow concurrent access but provide no coordination. Investigate whether LangGraph's execution model prevents true simultaneity on the same thread, or whether explicit coordination is needed (e.g., a write lock, a hand-off protocol, or a graph topology constraint that serializes access to the shared volume). Define the policy before any multi-node workflow is wired up.
 
+### P2 — Developer Experience
+
+#### 23. Create a "lessons learned" global skill
+
+Create a skill (at the global Claude level, not project-level) that maintains a structured log of lessons learned during development sessions. Lessons should be project-agnostic — applicable to any future collaboration. The skill should make it easy to add a new lesson, browse existing ones, and remove outdated entries.
+
+**Note on MEMORY.md:** The current approach stores lessons in `MEMORY.md` alongside architectural notes and project-specific context. As lessons accumulate, `MEMORY.md` will hit the 200-line truncation limit. The lessons-learned skill should manage its own dedicated log file, and `MEMORY.md` should link to it rather than inline all lessons. Revisit `MEMORY.md` structure when implementing this skill.
+
 ### P2 — Agent Foundry Core
 
 #### 13. Implement error and exception handling in Agent Foundry
