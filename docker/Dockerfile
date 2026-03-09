@@ -20,6 +20,9 @@ ENV PATH="/home/claude/.local/bin:${PATH}"
 # Verify installation
 RUN claude --version
 
+# Install Python dependencies for the headless adapter
+RUN pip install --no-cache-dir websockets
+
 # Copy configuration and entrypoint
 # Build context must be the project root:
 #   docker build -t archipelago-cc-worker:latest -f docker/Dockerfile .

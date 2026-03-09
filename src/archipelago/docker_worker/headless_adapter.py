@@ -27,7 +27,7 @@ from typing import Any
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect as ws_connect
 
-from archipelago.docker_worker.protocol import INTERRUPT_PATTERN as _INTERRUPT_PATTERN
+_INTERRUPT_PATTERN = re.compile(r"^ARCHIPELAGO_NEED_(CLARIFICATION|PERMISSION)\s+(\{.*\})$")
 
 logger = logging.getLogger(__name__)
 
