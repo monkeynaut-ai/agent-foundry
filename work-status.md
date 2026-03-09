@@ -99,6 +99,7 @@ Bake platform defaults into `/home/claude/.claude/CLAUDE.md` (worker role, proto
 6. **Worker configuration: permissions, timeouts, and resource limits** — Added `skip_permissions: bool` and `turn_timeout_seconds: int = 3600` to `WorkerConstraints`. Wired through handler `extra_env` → container → `entrypoint.sh` (`--timeout`, `--dangerously-skip-permissions`) → adapter → `_build_claude_cmd()`. Exposed `_parse_adapter_args()` for testing.
 20. **Direct dev_test input mode** — Added `run_dev_test()` to `runner.py` (calls `docker_worker_handler` directly, bypasses graph). CLI detects `dev_test_input` YAML key and routes to `run_dev_test`. Input schema: `repo_url`, `repo_ref`, `feature_spec`, `test_commands`, `constraints`.
 5. **Handle `status: completed` in the handler loop** — Loop now breaks on `status: completed` (sets `session_exit_code = 0`). Gate check deferred to a future backlog item.
+22. **Fix end-to-end container connectivity** — Four bugs found during first live run: (1) WS server bound to `localhost` — container couldn't reach it via `host.docker.internal`; changed to `0.0.0.0`. (2) `PATH` in env allowlist — host PATH overrode container PATH, hiding the `claude` binary; removed from allowlist. (3) npm version check `curl` had no timeout — could block adapter startup indefinitely; capped at 10s. (4) Adapter connect timeout was 60s — too short for git clone + npm check; raised to 120s.
 
 ---
-next item number: 22
+next item number: 23
