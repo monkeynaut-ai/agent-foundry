@@ -29,6 +29,7 @@ RUN pip install --no-cache-dir websockets
 COPY --chown=claude:claude docker/settings.json /home/claude/.claude/settings.json
 COPY --chown=claude:claude docker/CLAUDE.md /home/claude/.claude/CLAUDE.md
 COPY --chown=claude:claude docker/claude.json /home/claude/.claude.json
+COPY --chown=claude:claude docker/skills/lessons-learned/SKILL.md /home/claude/.claude/skills/lessons-learned/SKILL.md
 COPY --chown=claude:claude docker/entrypoint.sh /home/claude/entrypoint.sh
 RUN chmod +x /home/claude/entrypoint.sh
 COPY --chown=claude:claude src/archipelago/docker_worker/headless_adapter.py /home/claude/adapter.py
