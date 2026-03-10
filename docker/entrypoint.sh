@@ -22,6 +22,14 @@ if [ -n "$GITHUB_TOKEN" ]; then
   chmod 600 /home/claude/.netrc
 fi
 
+# Configure git identity if provided.
+if [ -n "$GIT_USER_NAME" ]; then
+  git config --global user.name "$GIT_USER_NAME"
+fi
+if [ -n "$GIT_USER_EMAIL" ]; then
+  git config --global user.email "$GIT_USER_EMAIL"
+fi
+
 # Clone the repo into /workspace if REPO_URL is set and workspace is not already populated.
 # Skipped when the workspace volume already has a repo (shared volume, subsequent nodes,
 # or crash recovery).
