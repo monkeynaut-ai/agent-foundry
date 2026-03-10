@@ -100,6 +100,7 @@ def _map_event_to_protocol(
                     stripped = line.strip()
                     if stripped == TASK_COMPLETE_MARKER:
                         task_complete = True
+                        logger.info("ARCHIPELAGO_TASK_COMPLETE marker detected in assistant output")
                         continue
                     interrupt_match = _INTERRUPT_PATTERN.match(stripped)
                     if interrupt_match:
@@ -352,6 +353,7 @@ def run_headless_adapter(
 
         if task_complete:
             completed = True
+            logger.info("Sending status: completed (source: task_complete_marker)")
             _send_msg(
                 {
                     "type": "status",
