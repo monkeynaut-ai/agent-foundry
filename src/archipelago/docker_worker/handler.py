@@ -248,16 +248,15 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
                     payload = msg.payload
                     blocking = payload.get("blocking", True)
                     if blocking:
-                        return {
-                            **state,
-                            "breakpoint_payload": {
-                                "type": "clarification",
-                                "question": payload.get("question", ""),
-                                "options": payload.get("options", []),
-                                "default": payload.get("default"),
-                            },
-                            "worker_result": None,
-                        }
+                        question = payload.get("question", "")
+                        options = payload.get("options", [])
+                        print("\n[clarification needed]", flush=True)
+                        print(f"  {question}", flush=True)
+                        if options:
+                            for i, opt in enumerate(options, 1):
+                                print(f"  {i}. {opt}", flush=True)
+                        answer = input("Your answer: ").strip()
+                        _send_input(ws_server, session_id, answer)
                 elif msg.interrupt_type == "permission":
                     payload = msg.payload
                     risk_level = payload.get("risk_level", "medium")
