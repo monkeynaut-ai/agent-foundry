@@ -47,6 +47,20 @@ If you need permission for a risky action, output this and wait:
 ARCHIPELAGO_NEED_PERMISSION {"action": "...", "risk_level": "low|medium|high", "why_needed": "..."}
 ```
 
+## LSP-first code navigation
+
+This container has a Pyright LSP server. Use the LSP tool instead of Grep or Read for these operations:
+
+- **Go to definition**: find where a function, class, or variable is defined
+- **Find references**: find all call sites before renaming, moving, or deleting a symbol
+- **Hover**: check a symbol's type signature without reading the whole file
+- **Document symbols**: list all functions, classes, and variables in a file
+- **Workspace symbol search**: find a symbol by name across the codebase
+- **Incoming/outgoing calls**: trace what calls a function and what it calls
+- **Diagnostics**: after editing a file, check for type errors and missing imports
+
+Fall back to Grep only when working with file types that Pyright does not cover (e.g. Markdown, YAML, Dockerfile).
+
 ## Working style
 
 - **TDD**: Write failing tests first, then implement until they pass

@@ -30,6 +30,11 @@ if [ -n "$GIT_USER_EMAIL" ]; then
   git config --global user.email "$GIT_USER_EMAIL"
 fi
 
+# Install Pyright LSP plugin from the official marketplace.
+# Requires network access and auth (validated above).
+claude plugin marketplace add anthropics/claude-plugins-official
+claude plugin install pyright-lsp@claude-plugins-official --scope user
+
 # Clone the repo into /workspace if REPO_URL is set and workspace is not already populated.
 # Skipped when the workspace volume already has a repo (shared volume, subsequent nodes,
 # or crash recovery).

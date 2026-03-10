@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13
 
 # Install system dependencies
 RUN apt-get update \
@@ -22,6 +22,12 @@ RUN claude --version
 
 # Install Python dependencies for the headless adapter
 RUN pip install --no-cache-dir websockets
+
+# Install Pyright language server for LSP code intelligence.
+# The first invocation downloads a bundled Node.js — do it at build time
+# so the container starts with Pyright ready immediately.
+RUN pip install --no-cache-dir pyright \
+    && pyright --version
 
 # Copy configuration and entrypoint
 # Build context must be the project root:
