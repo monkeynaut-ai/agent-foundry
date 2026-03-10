@@ -2,7 +2,15 @@
 
 ## In Progress
 
-_(none)_
+#### 25. Build Claude Code capability stack for the worker container
+
+The full set of configuration, skills, hooks, and instructions that enable Claude Code running inside the Archipelago worker container to produce high-quality autonomous software development work.
+
+Scope defined so far:
+
+- **Software design principles** — Update `docker/CLAUDE.md` to articulate the design principles Claude should apply: coherence, separation of concerns, abstractions, and information/implementation hiding
+- **Lessons learned skill** — Create a worker-scoped skill that maintains a structured log of observations and ideas to improve future sessions. Initially for human consumption. Invoked automatically via a SessionEnd hook: at the end of each session Claude analyzes what it did, the information given to it, and the capabilities available to it, and appends any useful lessons to the log.
+- **Pyright LSP plugin** — Install the pyright LSP plugin in the worker image and instruct Claude in `docker/CLAUDE.md` on when to use it.
 
 ## Backlog
 
@@ -111,4 +119,4 @@ Bake platform defaults into `/home/claude/.claude/CLAUDE.md` (worker role, proto
 7. **Add `max_turns` to `WorkerConstraints` and wire to Claude CLI** — Cancelled. `max_turns` is difficult to set a priori — complex tasks may require 20–40 question-response iterations per invocation. Each prompt/response exchange in Archipelago requires action from an external entity (human or agent), which provides a natural opportunity to monitor progress and decide whether to end the task. A hard turn cap is unnecessary and counterproductive.
 
 ---
-next item number: 25
+next item number: 26
