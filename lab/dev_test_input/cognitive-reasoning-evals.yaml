@@ -1,0 +1,41 @@
+dev_test_input:
+  repo_url: "https://github.com/730alchemy/crodino.git"
+  repo_ref: "main"
+  feature_spec:
+    title: "Cognitive Reasoning Eval Suite"
+    description: >
+      Read the paper at docs/papers/cognitive-foundations.pdf. It defines a taxonomy
+      of 28 cognitive elements that underpin reasoning in LLMs. Read the eval
+      methodology guide at docs/references/demystifying-evals-for-ai-agents.md
+      (from Anthropic). Create a complete eval suite following that methodology.
+    requirements:
+      - >
+        Extract all 28 cognitive elements from the paper's taxonomy. For each element,
+        document: name, category, definition, and why it matters for reasoning.
+      - >
+        Create eval tasks for each cognitive element. Each task must include: an input
+        prompt designed to probe that specific element, success criteria, a grading
+        rubric, and a reference solution or expected behavior.
+      - >
+        Implement graders: model-based graders with rubrics for subjective reasoning
+        quality, and code-based graders for structural/format checks where applicable.
+      - >
+        Create an eval harness (Python) that: runs tasks against a target model,
+        supports multiple trials per task, collects full transcripts, and computes
+        pass@k and pass^k scores.
+      - >
+        Add configuration for: target model selection, number of trials, grader
+        settings, and output format.
+      - >
+        Write a README explaining the taxonomy, how to run evals, how to interpret
+        results, and how to add new tasks.
+      - >
+        Organize the repo with clear separation: taxonomy documentation, eval tasks,
+        graders, harness, configuration, and a results directory for transcripts.
+  test_commands:
+    - "python -m pytest tests/ -v"
+  constraints:
+    timeout_seconds: 7200
+    turn_timeout_seconds: 7200
+    skip_permissions: true
+    mem_limit_mb: 2048
