@@ -1,0 +1,400 @@
+---
+dev_test_input:
+  test_commands:
+    - ""
+  constraints:
+    timeout_seconds: 7200
+    turn_timeout_seconds: 7200
+    skip_permissions: true
+    mem_limit_mb: 2048
+  repo_url: "https://github.com/730alchemy/crodino.git"
+  repo_ref: "main"
+  feature_spec:
+    title: "Crodino Web App — Eval results viewer"
+    description: >
+      A static single-page application for browsing cognitive reasoning eval results.
+      The app displays runs, tasks, taxonomy definitions, and full transcripts with
+      grading detail. It reads all data from the existing YAML task definitions,
+      YAML taxonomy, and JSON result files, transforming them to JSON at build time.
+      Built with Vite + React + TypeScript, styled with Tailwind CSS and shadcn/ui,
+      dark mode by default. Lives in a self-contained web/ subdirectory alongside the
+      existing Python project. Primary use case is inspecting individual transcripts
+      and understanding how models performed on each cognitive element.
+    architecture:
+      stack:
+        - "Vite (build tool and dev server)"
+        - "React 18+ with TypeScript"
+        - "Tailwind CSS 4"
+        - "shadcn/ui (Radix-based components)"
+        - "react-router (client-side routing)"
+        - "react-markdown with remark-gfm and shiki (syntax highlighting)"
+
+      directory_structure: >
+        All web app code lives under web/. The repo root is unchanged.
+        web/src/components/ holds React components. web/src/pages/ holds
+        route-level page components. web/src/data/ holds the generated JSON
+        files produced by the build-time data preparation script.
+        web/scripts/ holds the YAML-to-JSON preparation script.
+
+      data_flow: >
+        A build-time script (web/scripts/prepare-data.ts) reads taxonomy/cognitive_elements.yaml,
+        all tasks/**/*.yaml files, and all results/*.json files. It emits consolidated JSON
+        files into web/src/data/: taxonomy.json, tasks.json, and runs.json. The React app
+        imports these JSON files directly as static ES modules. No runtime file I/O or API
+        calls. To pick up new eval runs, re-run the preparation script and rebuild.
+
+    requirements:
+      # ── Data preparation ──────────────────────────────────────────────
+
+      - >
+        Create web/scripts/prepare-data.ts. It reads taxonomy/cognitive_elements.yaml
+        and emits web/src/data/taxonomy.json. The output preserves the full taxonomy
+        structure: categories, element definitions, subcategories, descriptions, and
+        citations. The script uses js-yaml to parse YAML.
+
+      - >
+        The prepare-data script reads every YAML file under tasks/**/ and emits
+        web/src/data/tasks.json. Each task entry includes element_id, element_name,
+        category, prompt, success_criteria, rubric (with dimensions, weights, score
+        levels, and criteria text), reference_solution, grader_type, and tags.
+
+      - >
+        The prepare-data script reads every summary_*.json and transcripts_*.json
+        pair from results/ and emits web/src/data/runs.json. Each run entry includes
+        the full summary (run_id, target_model, n_trials, n_tasks, overall_pass_rate,
+        pass_at_k, pass_hat_k, per-task results) and the full transcript array (all
+        trials with prompts, responses, model_grade, code_grade, usage, timestamps).
+
+      - >
+        The prepare-data script is invoked via "npm run prepare-data" defined in
+        web/package.json. The "npm run dev" and "npm run build" scripts must run
+        prepare-data first, so that the JSON files exist before Vite processes the
+        source. If no results/ files exist, the script emits empty arrays and does
+        not error.
+
+      # ── TypeScript data model ─────────────────────────────────────────
+
+      - >
+        Define TypeScript types in web/src/types.ts that mirror the data model:
+        TaxonomyCategory, TaxonomyElement, Task, RubricDimension, Run, RunSummary,
+        TaskResult, Transcript, ModelGrade, DimensionScore, CodeGrade, CodeCheck.
+        All data access throughout the app is fully typed. No use of any or
+        type assertions on data imports.
+
+      # ── Routing and navigation ────────────────────────────────────────
+
+      - >
+        Use react-router with the following routes: / (Dashboard), /runs (Runs List),
+        /runs/:runId (Run Detail), /runs/compare?ids=id1,id2 (Run Comparison),
+        /taxonomy (Taxonomy Browser), /tasks/:elementId (Task Detail),
+        /transcripts/:runId/:elementId/:trialIndex (Transcript Viewer).
+
+      - >
+        Render a persistent top navigation bar on all pages with links to Dashboard,
+        Runs, and Taxonomy. The nav bar shows the app name "Crodino" on the left.
+        The current route is visually indicated in the nav. The nav bar is fixed
+        at the top and does not scroll with page content.
+
+      # ── Dashboard page (/) ────────────────────────────────────────────
+
+      - >
+        Display a row of run summary cards, ordered newest first. Each card shows
+        the target model name, overall pass rate as a large percentage, number of
+        trials, number of tasks, and the run date (formatted from the run_id
+        timestamp). Clicking a card navigates to that run's detail page.
+
+      - >
+        Below the run cards, display a 28-element heatmap grid for the most recent
+        run. Elements are grouped by their four taxonomy categories, with category
+        labels as row headers. Each cell shows the element name (abbreviated if
+        needed) and is colored by mean_score: green gradient for passing scores
+        (>= 0.60), red gradient for failing scores (< 0.60). Clicking a cell
+        navigates to the Task Detail page for that element.
+
+      # ── Runs List page (/runs) ────────────────────────────────────────
+
+      - >
+        Display a table of all runs with columns: Run ID, Model, Trials, Tasks,
+        Overall Pass Rate, and Date. Rows are sorted newest first. Clicking a row
+        navigates to the Run Detail page. Each row has a checkbox for selecting
+        runs for comparison.
+
+      - >
+        Display a "Compare Selected" button above the table. It is disabled until
+        exactly 2 runs are checked. Clicking it navigates to the Run Comparison
+        page with the selected run IDs as query parameters.
+
+      # ── Run Detail page (/runs/:runId) ────────────────────────────────
+
+      - >
+        Display a header with the run's model name, overall pass rate, number of
+        trials, number of tasks, and date.
+
+      - >
+        Display a filter bar with toggles: All, Pass Only, Fail Only. Display a
+        "Group by" selector with options: Category (default) and Score.
+
+      - >
+        Display task results grouped by taxonomy category (when grouped by Category).
+        Each group has a category header. Within each group, display a table with
+        columns: Element (linked to Task Detail), Pass Rate, Mean Score, and one
+        score pill per trial. Score pills are small colored badges showing the
+        numeric score, colored green (>= 0.60) or red (< 0.60). Clicking a score
+        pill navigates to the Transcript Viewer for that specific trial.
+
+      - >
+        When grouped by Score, display all 28 elements in a single table sorted by
+        mean_score ascending, so the worst-performing elements appear first.
+
+      # ── Run Comparison page (/runs/compare?ids=id1,id2) ──────────────
+
+      - >
+        Display a header showing the two models being compared (or the same model
+        if both runs use the same one) with their overall pass rates.
+
+      - >
+        Display a comparison table with columns: Element, Run A score, Run B score,
+        and Delta. Delta is colored green for improvements and red for regressions.
+        The table is sortable by any column. Default sort is by absolute delta
+        descending (biggest differences first).
+
+      - >
+        Display filter toggles above the table: All, Inversions Only (passed in one
+        run but failed in the other), Regressions (score decreased), Gains (score
+        increased).
+
+      # ── Taxonomy Browser page (/taxonomy) ─────────────────────────────
+
+      - >
+        Display a two-panel layout. The left panel is a collapsible tree of taxonomy
+        categories. Each category shows its name and element count. Expanding a
+        category reveals its elements. Clicking an element selects it and populates
+        the right panel.
+
+      - >
+        The right detail panel shows the selected element's name, category,
+        subcategory, definition, "why it matters" text, and citations. Below the
+        description, display two links: "View Task" (navigates to Task Detail)
+        and "View Results" (navigates to Task Detail with the Results tab active).
+
+      # ── Task Detail page (/tasks/:elementId) ──────────────────────────
+
+      - >
+        Display the element name, category, and subcategory as a header with
+        breadcrumb-style context (e.g., "Reasoning Operations > Modification >
+        Abstraction").
+
+      - >
+        Display a tabbed interface with four tabs: Prompt, Rubric, Reference
+        Solution, and Results.
+
+      - >
+        The Prompt tab displays the task prompt text in a styled block and the
+        success criteria as a checklist (non-interactive checkboxes with the
+        criteria text).
+
+      - >
+        The Rubric tab displays a table of rubric dimensions with columns:
+        Dimension Name, Weight (as percentage), and Criteria text. Each row is
+        expandable to reveal the score level definitions (excellent, good,
+        partial, poor with their numeric values).
+
+      - >
+        The Reference Solution tab displays the reference solution text, collapsed
+        by default behind a "Show Reference Solution" toggle button. When expanded,
+        the solution renders as markdown.
+
+      - >
+        The Results tab displays a table of all runs that include this element.
+        Columns: Run ID (linked to Run Detail), Model, trial score pills (one per
+        trial, clicking navigates to Transcript Viewer), and Mean Score. Rows are
+        sorted newest first.
+
+      # ── Transcript Viewer page (/transcripts/:runId/:elementId/:trialIndex) ─
+
+      - >
+        Display a header with the element name, run ID, model name, trial number
+        (e.g., "Trial 1 of 3"), overall score, pass/fail badge, and timestamp.
+
+      - >
+        Display the model response in a styled panel with full markdown rendering.
+        Use react-markdown with remark-gfm for GitHub-flavored markdown (tables,
+        task lists, strikethrough). Use shiki for syntax-highlighted code blocks.
+        The panel is scrollable if the response is long.
+
+      - >
+        Below the response, display the grading section. If model_grade exists,
+        show "Model Grader" with the overall score and a table of dimension scores.
+        Columns: Dimension, Score (numeric), Label (excellent/good/partial/poor),
+        and Reasoning. Each label is color-coded (green for excellent, yellow-green
+        for good, orange for partial, red for poor).
+
+      - >
+        Below the model grader, if code_grade exists, display "Code Grader" with
+        the overall score and a list of checks. Each check shows a pass/fail icon,
+        the check name, and the message.
+
+      - >
+        Display a "Grader Reasoning" section that shows the model grader's
+        grader_reasoning field (the overall assessment text) in a collapsible panel,
+        expanded by default.
+
+      - >
+        Display token usage (input_tokens / output_tokens) in a small footer area.
+
+      - >
+        Display previous/next trial navigation buttons at the bottom.
+        "Previous Trial" and "Next Trial" navigate between trials of the same
+        element within the same run. Disable when at the first or last trial.
+
+      # ── Page layouts ─────────────────────────────────────────────────
+
+      - >
+        Dashboard layout: a horizontal row of run summary cards spanning the full
+        content width at the top. Below the cards, a heatmap grid where each row
+        is a taxonomy category (4 rows: Reasoning Invariants, Metacognitive Controls,
+        Reasoning Representations, Reasoning Operations). Each row has a category
+        label on the left and a horizontal sequence of element cells to the right.
+        The grid reads like a grouped periodic table of cognitive elements.
+
+      - >
+        Runs List layout: a full-width data table with a toolbar above it containing
+        the "Compare Selected" button aligned right. The table fills the page width.
+        Checkboxes are in the leftmost column.
+
+      - >
+        Run Detail layout: a header bar with run metadata, then a filter/group
+        toolbar, then the task results. When grouped by category, each category
+        is a visually distinct section with a section header spanning the full width
+        and a table beneath it. The trial score pills appear inline in the rightmost
+        table columns — one small colored badge per trial, arranged horizontally.
+
+      - >
+        Run Comparison layout: a header showing the two runs side by side (model name
+        and pass rate for each), then a filter toolbar, then a single full-width
+        table. The Delta column uses colored text (green positive, red negative) and
+        an up/down arrow indicator.
+
+      - >
+        Taxonomy Browser layout: a two-panel side-by-side layout. The left panel is
+        a narrow (approximately 280px) scrollable sidebar with a collapsible tree.
+        The right panel fills the remaining width and displays the selected element's
+        detail. On viewports narrower than 768px, the left panel stacks above the
+        right panel at full width.
+
+      - >
+        Task Detail layout: a breadcrumb header at the top, then a horizontal tab
+        bar with four tabs. Tab content renders below the tab bar in a single
+        content area. The Results tab content is a table identical in style to the
+        Run Detail tables, with score pills that link to transcripts.
+
+      - >
+        Transcript Viewer layout: a metadata header bar at the top (element name,
+        run, trial number, score, pass/fail badge, timestamp). Below that, a large
+        panel (the majority of the viewport) displaying the rendered markdown model
+        response. Below the response panel, the grading section: first Model Grader
+        (overall score + dimension table), then Code Grader (overall score + check
+        list), then Grader Reasoning (collapsible). A small token usage footer at
+        the bottom. Previous/Next trial buttons are anchored at the bottom of the
+        page, aligned left and right respectively.
+
+      # ── Navigation flow ──────────────────────────────────────────────
+
+      - >
+        Every clickable navigation path in the app: (1) Dashboard run card clicks
+        navigate to /runs/:runId (Run Detail). (2) Dashboard heatmap cell clicks
+        navigate to /tasks/:elementId (Task Detail) with the Results tab active,
+        filtered to the most recent run. (3) Runs List row clicks navigate to
+        /runs/:runId (Run Detail). (4) Runs List "Compare Selected" navigates to
+        /runs/compare?ids=id1,id2. (5) Run Detail element name clicks navigate to
+        /tasks/:elementId (Task Detail). (6) Run Detail score pill clicks navigate
+        to /transcripts/:runId/:elementId/:trialIndex (Transcript Viewer).
+        (7) Taxonomy Browser element clicks populate the detail panel in place.
+        (8) Taxonomy Browser "View Task" link navigates to /tasks/:elementId.
+        (9) Taxonomy Browser "View Results" link navigates to /tasks/:elementId
+        with the Results tab active. (10) Task Detail Results tab score pill clicks
+        navigate to /transcripts/:runId/:elementId/:trialIndex. (11) Task Detail
+        Results tab Run ID clicks navigate to /runs/:runId. (12) Transcript Viewer
+        Previous/Next Trial buttons navigate to adjacent trial indices within the
+        same run and element.
+
+      - >
+        The Task Detail page is the central hub connecting taxonomy browsing and
+        result inspection. A user can arrive at Task Detail from three paths:
+        the Dashboard heatmap, the Run Detail element name, or the Taxonomy Browser
+        links. From the Task Detail Results tab, the user can drill into any
+        specific transcript across any run. This makes Task Detail the bridge
+        between understanding what a task evaluates and seeing how models performed.
+
+      # ── Styling and design system ─────────────────────────────────────
+
+      - >
+        Use shadcn/ui components for all UI primitives: Card, Table, Tabs,
+        Collapsible, Badge, Button, NavigationMenu, and Separator. Initialize
+        shadcn/ui with the "zinc" base color and dark mode as the default theme.
+
+      - >
+        Define a score color scale used consistently across all views: scores
+        >= 0.90 are bright green, 0.75-0.89 are muted green, 0.60-0.74 are
+        yellow, 0.40-0.59 are orange, and below 0.40 are red. Pass/fail badges
+        use green/red. Apply this scale to heatmap cells, score pills, and
+        dimension score labels.
+
+      - >
+        All pages must be responsive down to 768px viewport width. The taxonomy
+        browser switches from side-by-side panels to a stacked layout on narrow
+        viewports. Tables become horizontally scrollable on narrow viewports
+        rather than wrapping.
+
+      # ── Project setup ─────────────────────────────────────────────────
+
+      - >
+        Initialize the web/ directory with Vite + React + TypeScript template.
+        Configure Tailwind CSS 4, install and initialize shadcn/ui, and add
+        all required dependencies: react-router, react-markdown, remark-gfm,
+        shiki, js-yaml, and their TypeScript type packages.
+
+      - >
+        Add web/node_modules/ and web/dist/ to the repo root .gitignore.
+        Add web/src/data/*.json to .gitignore since these are generated files.
+
+      - >
+        Commit web/src/data/.gitkeep so the data directory exists in the repo
+        even though its JSON contents are gitignored.
+
+    pr_plan:
+      - title: "Project scaffolding and data pipeline"
+        commits:
+          - "Initialize Vite + React + TypeScript project in web/ with Tailwind and shadcn/ui"
+          - "Create TypeScript types mirroring the eval data model"
+          - "Implement prepare-data script that transforms YAML/JSON to static imports"
+          - "Update .gitignore for node_modules, dist, and generated data files"
+
+      - title: "Navigation shell and Dashboard"
+        commits:
+          - "Add react-router with route definitions and persistent top nav bar"
+          - "Build Dashboard page with run summary cards"
+          - "Build Dashboard heatmap grid with score color scale"
+
+      - title: "Runs List and Run Detail pages"
+        commits:
+          - "Build Runs List page with sortable table and comparison selection"
+          - "Build Run Detail page with grouped task results and filter/group controls"
+          - "Build score pill components with navigation to transcript viewer"
+
+      - title: "Taxonomy Browser and Task Detail pages"
+        commits:
+          - "Build Taxonomy Browser with collapsible tree and detail panel"
+          - "Build Task Detail page with Prompt, Rubric, Reference Solution, and Results tabs"
+
+      - title: "Transcript Viewer"
+        commits:
+          - "Build Transcript Viewer with markdown rendering and syntax highlighting"
+          - "Build grading detail sections (model grader dimensions, code grader checks)"
+          - "Add trial navigation and token usage display"
+
+      - title: "Run Comparison page and polish"
+        commits:
+          - "Build Run Comparison page with delta table and filter toggles"
+          - "Apply consistent score color scale across all views"
+          - "Responsive layout adjustments for narrow viewports"
