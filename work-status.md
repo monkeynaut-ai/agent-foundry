@@ -10,7 +10,7 @@ Scope defined so far:
 
 - **Software design principles** — Update `docker/CLAUDE.md` to articulate the design principles Claude should apply: coherence, separation of concerns, abstractions, and information/implementation hiding
 - **Lessons learned skill** — Create a worker-scoped skill that maintains a structured log of observations and ideas to improve future sessions. Initially for human consumption. Invoked automatically via a SessionEnd hook: at the end of each session Claude analyzes what it did, the information given to it, and the capabilities available to it, and appends any useful lessons to the log.
-- **Pyright LSP plugin** — Install the pyright LSP plugin in the worker image and instruct Claude in `docker/CLAUDE.md` on when to use it.
+- **Pyright LSP plugin** — Done. Base image switched from `python:3.13-slim` to `python:3.13` (avoids missing system libraries). Pyright installed with bundled Node.js pre-downloaded at build time. Plugin installed from official marketplace via entrypoint. `ENABLE_LSP_TOOL=1` and `enabledPlugins` added to `settings.json`. LSP-first navigation instructions added to `docker/CLAUDE.md`. Interactive test script added (`docker/run-interactive.sh`).
 
 ## Backlog
 
