@@ -2,15 +2,7 @@
 
 ## In Progress
 
-#### 25. Build Claude Code capability stack for the worker container
-
-The full set of configuration, skills, hooks, and instructions that enable Claude Code running inside the Archipelago worker container to produce high-quality autonomous software development work.
-
-Scope defined so far:
-
-- **Software design principles** — Update `docker/CLAUDE.md` to articulate the design principles Claude should apply: coherence, separation of concerns, abstractions, and information/implementation hiding
-- **Lessons learned skill** — Create a worker-scoped skill that maintains a structured log of observations and ideas to improve future sessions. Initially for human consumption. Invoked automatically via a SessionEnd hook: at the end of each session Claude analyzes what it did, the information given to it, and the capabilities available to it, and appends any useful lessons to the log.
-- **Pyright LSP plugin** — Done. Base image switched from `python:3.13-slim` to `python:3.13` (avoids missing system libraries). Pyright installed with bundled Node.js pre-downloaded at build time. Plugin installed from official marketplace via entrypoint. `ENABLE_LSP_TOOL=1` and `enabledPlugins` added to `settings.json`. LSP-first navigation instructions added to `docker/CLAUDE.md`. Interactive test script added (`docker/run-interactive.sh`).
+(none)
 
 ## Backlog
 
@@ -117,6 +109,7 @@ Bake platform defaults into `/home/claude/.claude/CLAUDE.md` (worker role, proto
 5. **Handle `status: completed` in the handler loop** — Loop now breaks on `status: completed` (sets `session_exit_code = 0`). Gate check deferred to a future backlog item.
 22. **Fix end-to-end container connectivity** — Four bugs found during first live run: (1) WS server bound to `localhost` — container couldn't reach it via `host.docker.internal`; changed to `0.0.0.0`. (2) `PATH` in env allowlist — host PATH overrode container PATH, hiding the `claude` binary; removed from allowlist. (3) npm version check `curl` had no timeout — could block adapter startup indefinitely; capped at 10s. (4) Adapter connect timeout was 60s — too short for git clone + npm check; raised to 120s.
 7. **Add `max_turns` to `WorkerConstraints` and wire to Claude CLI** — Cancelled. `max_turns` is difficult to set a priori — complex tasks may require 20–40 question-response iterations per invocation. Each prompt/response exchange in Archipelago requires action from an external entity (human or agent), which provides a natural opportunity to monitor progress and decide whether to end the task. A hard turn cap is unnecessary and counterproductive.
+25. **Build Claude Code capability stack for the worker container** — Completed as Agent Container Protocol (ACP) in `src/agent_foundry/acp/`. Protocol models, adapter interface, Claude Code adapter with configurable MarkerMapping, container lifecycle management, capability stack model, generic Docker base image with product-init.sh hook. Archipelago migrated to use ACP (thin re-exports). Docker assets split: `acp-cc-worker:latest` base → `archipelago-cc-worker:latest` overlay.
 
 ---
 next item number: 26
