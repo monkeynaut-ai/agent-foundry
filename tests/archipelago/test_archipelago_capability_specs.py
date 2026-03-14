@@ -155,10 +155,10 @@ class TestDevSpec:
 
 
 class TestRegistryIntegration:
-    def test_given_all_yaml_specs_when_registry_loaded_then_contains_12_capabilities(
+    def test_given_all_yaml_specs_when_registry_loaded_then_contains_13_capabilities(
         self, registry
     ):
-        assert len(registry) == 12
+        assert len(registry) == 13
 
     def test_given_registry_when_searched_by_archipelago_tag_then_returns_exactly_4(self, registry):
         results = registry.search(tags=["archipelago"])

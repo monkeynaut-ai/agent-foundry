@@ -19,9 +19,7 @@ from agent_foundry.acp.errors import ProtocolError
 
 class TestOutputMessage:
     def test_given_valid_fields_when_constructed_then_all_fields_present(self):
-        msg = OutputMessage(
-            session_id="s1", text="hello world", stream="stdout", timestamp=1.0
-        )
+        msg = OutputMessage(session_id="s1", text="hello world", stream="stdout", timestamp=1.0)
         assert msg.type == "output"
         assert msg.session_id == "s1"
         assert msg.text == "hello world"
@@ -88,9 +86,7 @@ class TestStatusMessage:
     def test_given_exited_status_when_constructed_with_exit_code_then_exit_code_stored(
         self,
     ):
-        msg = StatusMessage(
-            session_id="s1", status="exited", exit_code=0, timestamp=1.0
-        )
+        msg = StatusMessage(session_id="s1", status="exited", exit_code=0, timestamp=1.0)
         assert msg.exit_code == 0
 
     def test_given_error_status_when_constructed_with_detail_then_detail_stored(self):
@@ -118,9 +114,7 @@ class TestControlMessage:
         assert msg.args == {}
 
     def test_given_resize_command_when_constructed_with_args_then_args_stored(self):
-        msg = ControlMessage(
-            session_id="s1", command="resize", args={"rows": 24, "cols": 80}
-        )
+        msg = ControlMessage(session_id="s1", command="resize", args={"rows": 24, "cols": 80})
         assert msg.args == {"rows": 24, "cols": 80}
 
 
@@ -202,9 +196,7 @@ class TestParseProtocolMessage:
 
     def test_given_unknown_type_when_parsed_then_raises_protocol_error(self):
         with pytest.raises(ProtocolError, match="Unknown message type"):
-            parse_protocol_message(
-                json.dumps({"type": "bogus", "session_id": "s1"})
-            )
+            parse_protocol_message(json.dumps({"type": "bogus", "session_id": "s1"}))
 
     def test_given_all_adapter_message_types_when_checked_then_union_includes_agent_event(
         self,

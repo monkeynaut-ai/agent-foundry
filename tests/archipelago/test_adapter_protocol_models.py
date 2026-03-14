@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from archipelago.docker_worker.protocol import (
+    AgentEventMessage,
     ControlMessage,
     InputMessage,
     InterruptMessage,
@@ -53,53 +54,54 @@ class TestOutputMessage:
             )
 
 
-class TestInterruptMessage:
-    def test_given_clarification_payload_when_instantiated_then_validates(self):
-        msg = InterruptMessage(
-            type="interrupt",
+class TestAgentEventMessage:
+    """Tests for AgentEventMessage (formerly InterruptMessage)."""
+
+    def test_given_clarification_event_when_instantiated_then_validates(self):
+        msg = AgentEventMessage(
             session_id="s1",
-            interrupt_type="clarification",
+            event_type="clarification_requested",
             payload={"question": "Which DB?", "options": ["pg"], "default": "pg", "blocking": True},
             raw_line='ARCHIPELAGO_NEED_CLARIFICATION {"question":"Which DB?"}',
             timestamp=1.0,
         )
-        assert msg.interrupt_type == "clarification"
+        assert msg.event_type == "clarification_requested"
         assert msg.payload["question"] == "Which DB?"
 
-    def test_given_permission_payload_when_instantiated_then_validates(self):
-        msg = InterruptMessage(
-            type="interrupt",
+    def test_given_permission_event_when_instantiated_then_validates(self):
+        msg = AgentEventMessage(
             session_id="s1",
-            interrupt_type="permission",
+            event_type="permission_requested",
             payload={"action": "delete file", "risk_level": "high", "why_needed": "cleanup"},
             raw_line="ARCHIPELAGO_NEED_PERMISSION ...",
             timestamp=1.0,
         )
-        assert msg.interrupt_type == "permission"
+        assert msg.event_type == "permission_requested"
 
-    def test_given_update_available_payload_when_instantiated_then_validates(self):
-        msg = InterruptMessage(
-            type="interrupt",
+    def test_given_update_available_event_when_instantiated_then_validates(self):
+        msg = AgentEventMessage(
             session_id="s1",
-            interrupt_type="update_available",
+            event_type="update_available",
             payload={"installed": "1.0.0", "latest": "1.1.0"},
             raw_line="ARCHIPELAGO_UPDATE_AVAILABLE ...",
             timestamp=1.0,
         )
-        assert msg.interrupt_type == "update_available"
+        assert msg.event_type == "update_available"
 
     def test_given_valid_instance_when_json_round_tripped_then_no_field_loss(self):
-        msg = InterruptMessage(
-            type="interrupt",
+        msg = AgentEventMessage(
             session_id="s1",
-            interrupt_type="clarification",
+            event_type="clarification_requested",
             payload={"question": "Which DB?", "options": ["pg"]},
             raw_line="raw",
             timestamp=2.5,
         )
         json_str = msg.model_dump_json()
-        restored = InterruptMessage.model_validate_json(json_str)
+        restored = AgentEventMessage.model_validate_json(json_str)
         assert restored == msg
+
+    def test_given_interrupt_message_alias_then_is_same_class(self):
+        assert InterruptMessage is AgentEventMessage
 
 
 class TestStatusMessage:
@@ -196,7 +198,8 @@ class TestParseProtocolMessage:
         assert isinstance(msg, OutputMessage)
         assert msg.text == "hi"
 
-    def test_given_interrupt_json_when_parsed_then_returns_interrupt_message(self):
+    def test_given_old_interrupt_json_when_parsed_then_returns_agent_event_message(self):
+        """Backward compatibility: old 'interrupt' type gets converted."""
         data = json.dumps(
             {
                 "type": "interrupt",
@@ -208,7 +211,23 @@ class TestParseProtocolMessage:
             }
         )
         msg = parse_protocol_message(data)
-        assert isinstance(msg, InterruptMessage)
+        assert isinstance(msg, AgentEventMessage)
+        assert msg.event_type == "clarification_requested"
+
+    def test_given_new_agent_event_json_when_parsed_then_returns_agent_event_message(self):
+        data = json.dumps(
+            {
+                "type": "agent_event",
+                "session_id": "s1",
+                "event_type": "task_complete",
+                "payload": {},
+                "raw_line": "DONE",
+                "timestamp": 1.0,
+            }
+        )
+        msg = parse_protocol_message(data)
+        assert isinstance(msg, AgentEventMessage)
+        assert msg.event_type == "task_complete"
 
     def test_given_status_json_when_parsed_then_returns_status_message(self):
         data = json.dumps(

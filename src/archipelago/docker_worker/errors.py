@@ -1,25 +1,14 @@
-"""Error classes for the Docker worker subsystem."""
+"""Error classes for the Docker worker subsystem.
 
+Re-exports from Agent Container Protocol. Archipelago code should import
+from here for backward compatibility; new code should import from
+agent_foundry.acp.errors directly.
+"""
 
-class ContainerCreationError(Exception):
-    """Raised when container creation fails."""
-
-    def __init__(self, message: str, image: str | None = None):
-        super().__init__(message)
-        self.image = image
-
-
-class ContainerLifecycleError(Exception):
-    """Raised when a container lifecycle operation fails."""
-
-    def __init__(self, message: str, container_id: str | None = None):
-        super().__init__(message)
-        self.container_id = container_id
-
-
-class SessionError(Exception):
-    """Raised when a PTY session operation fails."""
-
-    def __init__(self, message: str, container_id: str | None = None):
-        super().__init__(message)
-        self.container_id = container_id
+from agent_foundry.acp.errors import (  # noqa: F401
+    AdapterError,
+    ContainerCreationError,
+    ContainerLifecycleError,
+    ProtocolError,
+    SessionError,
+)

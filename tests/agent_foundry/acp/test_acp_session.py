@@ -35,9 +35,7 @@ class TestLaunchSession:
         assert isinstance(session, SessionHandle)
         assert session.exec_id == "exec-abc"
 
-    def test_given_running_container_when_launch_called_then_tty_allocated(
-        self, session_manager
-    ):
+    def test_given_running_container_when_launch_called_then_tty_allocated(self, session_manager):
         handle = _mock_container_handle()
         session_manager.launch_session(handle, "claude -p")
         kw = handle._container.client.api.exec_create.call_args.kwargs
@@ -51,7 +49,9 @@ class TestOutputStream:
         done = threading.Event()
 
         manager = SessionManager()
-        manager.register_output_callback(lambda line, cid, ts: (lines.append(line), done.set() if line == "line2" else None))
+        manager.register_output_callback(
+            lambda line, cid, ts: (lines.append(line), done.set() if line == "line2" else None)
+        )
 
         handle = _mock_container_handle()
         handle._container.client.api.exec_start.return_value = iter([b"line1\nline2\n"])

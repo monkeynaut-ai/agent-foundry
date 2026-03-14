@@ -68,7 +68,7 @@ class ContainerManager:
         self,
         image: str | None = None,
         workspace_volume: str = "",
-        constraints: ContainerConfig | None = None,
+        constraints: Any = None,
         extra_env: dict[str, str] | None = None,
     ) -> ContainerHandle:
         """Create a container with safety baseline enforced."""

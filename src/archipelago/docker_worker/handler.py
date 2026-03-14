@@ -14,7 +14,7 @@ from typing import Any, Literal
 import docker
 from websockets.sync.server import ServerConnection, serve
 
-from archipelago.docker_worker.container import ContainerManager
+from archipelago.docker_worker.container import create_archipelago_container_manager
 from archipelago.docker_worker.models import (
     CommitEvidence,
     PatchInfo,
@@ -24,9 +24,9 @@ from archipelago.docker_worker.models import (
 )
 from archipelago.docker_worker.progress import parse_progress
 from archipelago.docker_worker.protocol import (
+    AgentEventMessage,
     ControlMessage,
     InputMessage,
-    InterruptMessage,
     OutputMessage,
     ProtocolError,
     StatusMessage,
@@ -170,7 +170,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         )
         return {**state, "worker_result": result.model_dump()}
 
-    container_mgr = ContainerManager(client)
+    container_mgr = create_archipelago_container_manager(client)
 
     # Start WS server on ephemeral port
     ws_server = _HandlerWSServer()
@@ -241,10 +241,10 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
                 output_lines.append(msg.text)
                 print(f"[cc] {msg.text}", flush=True)
 
-            elif isinstance(msg, InterruptMessage):
-                if msg.interrupt_type == "update_available":
+            elif isinstance(msg, AgentEventMessage):
+                if msg.event_type == "update_available":
                     mutable["update_available"] = msg.payload
-                elif msg.interrupt_type == "clarification":
+                elif msg.event_type == "clarification_requested":
                     payload = msg.payload
                     blocking = payload.get("blocking", True)
                     if blocking:
@@ -257,7 +257,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
                                 print(f"  {i}. {opt}", flush=True)
                         answer = input("Your answer: ").strip()
                         _send_input(ws_server, session_id, answer)
-                elif msg.interrupt_type == "permission":
+                elif msg.event_type == "permission_requested":
                     payload = msg.payload
                     risk_level = payload.get("risk_level", "medium")
                     if risk_level == "low" and auto_approve_low_risk:

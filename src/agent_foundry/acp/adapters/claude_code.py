@@ -77,8 +77,7 @@ class ClaudeCodeAdapter(AdapterBase):
     ):
         self._marker_mappings = marker_mappings or []
         self._compiled_markers = [
-            (re.compile(m.pattern), m.event_type, m.payload_group)
-            for m in self._marker_mappings
+            (re.compile(m.pattern), m.event_type, m.payload_group) for m in self._marker_mappings
         ]
         self._skip_permissions = skip_permissions
         self._turn_timeout = turn_timeout
@@ -336,7 +335,9 @@ class ClaudeCodeAdapter(AdapterBase):
             )
 
             result = self.run_turn(
-                initial_prompt, ws, protocol_session_id,
+                initial_prompt,
+                ws,
+                protocol_session_id,
             )
             claude_session_id = result.agent_session_id
             exit_code = result.exit_code
@@ -384,7 +385,9 @@ class ClaudeCodeAdapter(AdapterBase):
                     )
 
                     result = self.run_turn(
-                        text, ws, protocol_session_id,
+                        text,
+                        ws,
+                        protocol_session_id,
                         claude_session_id=claude_session_id,
                     )
                     claude_session_id = result.agent_session_id
@@ -436,31 +439,43 @@ def _parse_adapter_args(argv=None):
 
     parser = argparse.ArgumentParser(description="Claude Code ACP adapter")
     parser.add_argument(
-        "prompt", nargs="?", default=None,
+        "prompt",
+        nargs="?",
+        default=None,
         help="initial prompt (if omitted, waits for first input message over WS)",
     )
     parser.add_argument(
-        "--protocol", metavar="WS_URL", default="ws://localhost:8765",
+        "--protocol",
+        metavar="WS_URL",
+        default="ws://localhost:8765",
         help="WebSocket URL to connect to",
     )
     parser.add_argument(
-        "--session-id", default="default",
+        "--session-id",
+        default="default",
         help="protocol session ID",
     )
     parser.add_argument(
-        "--timeout", type=float, default=600.0,
+        "--timeout",
+        type=float,
+        default=600.0,
         help="timeout per turn in seconds",
     )
     parser.add_argument(
-        "--dangerously-skip-permissions", action="store_true", default=False,
+        "--dangerously-skip-permissions",
+        action="store_true",
+        default=False,
         help="pass --dangerously-skip-permissions to claude CLI",
     )
     parser.add_argument(
-        "--verbose", "-v", action="store_true",
+        "--verbose",
+        "-v",
+        action="store_true",
         help="enable debug logging",
     )
     parser.add_argument(
-        "--marker-config", default=None,
+        "--marker-config",
+        default=None,
         help="path to JSON file defining marker mappings",
     )
     return parser.parse_args(argv)
@@ -478,6 +493,7 @@ if __name__ == "__main__":
     mappings: list[MarkerMapping] = []
     if args.marker_config:
         import pathlib
+
         raw = json.loads(pathlib.Path(args.marker_config).read_text())
         mappings = [MarkerMapping(**m) for m in raw]
 

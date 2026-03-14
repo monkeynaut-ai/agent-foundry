@@ -18,7 +18,7 @@ from archipelago.docker_worker.handler import (
 )
 from archipelago.docker_worker.models import WorkerConstraints, WorkerResult
 from archipelago.docker_worker.protocol import (
-    InterruptMessage,
+    AgentEventMessage,
     OutputMessage,
     StatusMessage,
 )
@@ -96,14 +96,13 @@ def _status_msg(status: str, exit_code: int | None = None, session_id: str = "te
 
 
 def _interrupt_msg(
-    interrupt_type: str,
+    event_type: str,
     payload: dict,
     session_id: str = "test",
 ) -> str:
-    return InterruptMessage(
-        type="interrupt",
+    return AgentEventMessage(
         session_id=session_id,
-        interrupt_type=interrupt_type,
+        event_type=event_type,
         payload=payload,
         raw_line="raw",
         timestamp=1.0,
@@ -218,7 +217,7 @@ class TestDockerWorkerHandler:
         mock_ws_cls.return_value = _preload_ws_server(
             [
                 _interrupt_msg(
-                    "clarification",
+                    "clarification_requested",
                     {
                         "question": "Which DB?",
                         "options": ["pg"],
@@ -444,7 +443,7 @@ class TestHandlerProtocol:
         mock_ws_cls.return_value = _preload_ws_server(
             [
                 _interrupt_msg(
-                    "clarification",
+                    "clarification_requested",
                     {
                         "question": "Which DB?",
                         "options": ["pg"],
@@ -469,7 +468,7 @@ class TestHandlerProtocol:
         ws_server = _preload_ws_server(
             [
                 _interrupt_msg(
-                    "permission",
+                    "permission_requested",
                     {
                         "action": "delete file",
                         "risk_level": "low",

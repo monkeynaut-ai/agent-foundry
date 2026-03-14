@@ -94,18 +94,14 @@ class TestCreateContainer:
         client = MagicMock()
         client.containers.create.return_value = MagicMock(id="c1")
 
-        mgr = ContainerManager(
-            client, default_image="img:1", env_allowlist={"ALLOWED_VAR"}
-        )
+        mgr = ContainerManager(client, default_image="img:1", env_allowlist={"ALLOWED_VAR"})
         mgr.create_container()
 
         env = client.containers.create.call_args.kwargs["environment"]
         assert "ALLOWED_VAR" in env
         assert "SECRET_VAR" not in env
 
-    def test_given_extra_env_when_create_called_then_extra_env_merged(
-        self, manager, mock_client
-    ):
+    def test_given_extra_env_when_create_called_then_extra_env_merged(self, manager, mock_client):
         manager.create_container(extra_env={"WS_URL": "ws://host:1234"})
         env = mock_client.containers.create.call_args.kwargs["environment"]
         assert env["WS_URL"] == "ws://host:1234"
