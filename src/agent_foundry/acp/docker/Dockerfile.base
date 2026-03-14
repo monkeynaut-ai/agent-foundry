@@ -1,0 +1,45 @@
+# Agent Container Protocol — Base Claude Code Worker Image
+#
+# Provides: Claude Code CLI, websockets, non-root user, entrypoint.
+# Products layer on top to add CLAUDE.md, skills, plugins, etc.
+#
+# Build:
+#   docker build -t acp-cc-worker:latest -f src/agent_foundry/acp/docker/Dockerfile.base .
+
+FROM python:3.13
+
+# Install system dependencies
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git curl jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user matching ContainerManager's user="1000:1000"
+RUN groupadd -g 1000 claude \
+    && useradd -m -u 1000 -g claude -s /bin/sh claude
+
+USER claude
+ENV HOME=/home/claude
+WORKDIR /home/claude
+
+# Install Claude Code native binary
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/home/claude/.local/bin:${PATH}"
+
+# Verify installation
+RUN claude --version
+
+# Install Python dependencies for the headless adapter
+RUN pip install --no-cache-dir websockets
+
+# Copy base configuration and entrypoint
+COPY --chown=claude:claude src/agent_foundry/acp/docker/settings.json /home/claude/.claude/settings.json
+COPY --chown=claude:claude src/agent_foundry/acp/docker/claude.json /home/claude/.claude.json
+COPY --chown=claude:claude src/agent_foundry/acp/docker/entrypoint.sh /home/claude/entrypoint.sh
+RUN chmod +x /home/claude/entrypoint.sh
+
+# Copy the ACP Claude Code adapter
+COPY --chown=claude:claude src/agent_foundry/acp/adapters/claude_code.py /home/claude/adapter.py
+
+WORKDIR /workspace
+
+ENTRYPOINT ["/home/claude/entrypoint.sh"]

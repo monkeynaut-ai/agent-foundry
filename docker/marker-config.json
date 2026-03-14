@@ -1,0 +1,21 @@
+[
+  {
+    "pattern": "^ARCHIPELAGO_TASK_COMPLETE$",
+    "event_type": "task_complete"
+  },
+  {
+    "pattern": "^ARCHIPELAGO_NEED_CLARIFICATION\\s+(\\{.*\\})$",
+    "event_type": "clarification_requested",
+    "payload_group": 1
+  },
+  {
+    "pattern": "^ARCHIPELAGO_NEED_PERMISSION\\s+(\\{.*\\})$",
+    "event_type": "permission_requested",
+    "payload_group": 1
+  },
+  {
+    "pattern": "^ARCHIPELAGO_UPDATE_AVAILABLE\\s+(\\{.*\\})$",
+    "event_type": "update_available",
+    "payload_group": 1
+  }
+]

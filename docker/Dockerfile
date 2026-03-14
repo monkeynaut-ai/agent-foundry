@@ -1,27 +1,12 @@
-FROM python:3.13
+# Archipelago Claude Code Worker
+#
+# Layers Archipelago-specific customizations on the ACP base image.
+#
+# Build (from project root):
+#   docker build -t acp-cc-worker:latest -f src/agent_foundry/acp/docker/Dockerfile.base .
+#   docker build -t archipelago-cc-worker:latest -f docker/Dockerfile .
 
-# Install system dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends git curl jq \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create non-root user matching container.py's user="1000:1000"
-RUN groupadd -g 1000 claude \
-    && useradd -m -u 1000 -g claude -s /bin/sh claude
-
-USER claude
-ENV HOME=/home/claude
-WORKDIR /home/claude
-
-# Install Claude Code native binary
-RUN curl -fsSL https://claude.ai/install.sh | bash
-ENV PATH="/home/claude/.local/bin:${PATH}"
-
-# Verify installation
-RUN claude --version
-
-# Install Python dependencies for the headless adapter
-RUN pip install --no-cache-dir websockets
+FROM acp-cc-worker:latest
 
 # Install Pyright language server for LSP code intelligence.
 # The first invocation downloads a bundled Node.js — do it at build time
@@ -29,17 +14,18 @@ RUN pip install --no-cache-dir websockets
 RUN pip install --no-cache-dir pyright \
     && pyright --version
 
-# Copy configuration and entrypoint
-# Build context must be the project root:
-#   docker build -t archipelago-cc-worker:latest -f docker/Dockerfile .
+# Archipelago-specific settings (adds plugin config on top of ACP base)
 COPY --chown=claude:claude docker/settings.json /home/claude/.claude/settings.json
+
+# Archipelago worker instructions and skills
 COPY --chown=claude:claude docker/CLAUDE.md /home/claude/.claude/CLAUDE.md
-COPY --chown=claude:claude docker/claude.json /home/claude/.claude.json
 COPY --chown=claude:claude docker/skills/lessons-learned/SKILL.md /home/claude/.claude/skills/lessons-learned/SKILL.md
-COPY --chown=claude:claude docker/entrypoint.sh /home/claude/entrypoint.sh
-RUN chmod +x /home/claude/entrypoint.sh
-COPY --chown=claude:claude src/archipelago/docker_worker/headless_adapter.py /home/claude/adapter.py
+
+# Archipelago marker configuration for the ACP adapter
+COPY --chown=claude:claude docker/marker-config.json /home/claude/marker-config.json
+
+# Product init script — installs Pyright plugin at container start
+COPY --chown=claude:claude docker/product-init.sh /home/claude/product-init.sh
+RUN chmod +x /home/claude/product-init.sh
 
 WORKDIR /workspace
-
-ENTRYPOINT ["/home/claude/entrypoint.sh"]
