@@ -31,6 +31,12 @@ RUN claude --version
 # Install Python dependencies for the headless adapter
 RUN pip install --no-cache-dir websockets
 
+# Install Pyright language server for LSP code intelligence.
+# The first invocation downloads a bundled Node.js — do it at build time
+# so the container starts with Pyright ready immediately.
+RUN pip install --no-cache-dir pyright \
+    && pyright --version
+
 # Shell configuration — bash completion, git prompt, useful aliases
 COPY --chown=claude:claude src/agent_foundry/acp/docker/.bashrc /home/claude/.bashrc
 

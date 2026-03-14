@@ -35,6 +35,12 @@ if [ -n "$REPO_URL" ] && [ ! -d /workspace/.git ]; then
   git clone --branch "${REPO_REF:-main}" "$REPO_URL" /workspace
 fi
 
+# ── LSP plugins ──
+# Install language server plugins baked into the base image.
+# Additional LSP servers will be added here as they're needed.
+claude plugin marketplace add anthropics/claude-plugins-official
+claude plugin install pyright-lsp@claude-plugins-official --scope user
+
 # ── Product-specific init hook ──
 # Source product init script if it exists (products drop this in via Dockerfile)
 if [ -f /home/claude/product-init.sh ]; then

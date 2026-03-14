@@ -12,5 +12,16 @@
     "DISABLE_AUTOUPDATER": "1",
     "CLAUDE_CODE_TMPDIR": "/tmp",
     "ENABLE_LSP_TOOL": "1"
+  },
+  "extraKnownMarketplaces": {
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "pyright-lsp@claude-plugins-official": true
   }
 }

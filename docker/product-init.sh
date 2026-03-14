@@ -1,10 +1,8 @@
 #!/bin/sh
 # Archipelago product initialization — runs inside the container at startup.
 # Sourced by the ACP base entrypoint via product-init.sh hook.
-
-# Install Pyright LSP plugin from the official marketplace.
-claude plugin marketplace add anthropics/claude-plugins-official
-claude plugin install pyright-lsp@claude-plugins-official --scope user
+#
+# Note: Pyright LSP plugin installation is now handled by the base image entrypoint.
 
 # Check for Claude Code updates and notify via protocol.
 INSTALLED=$(/home/claude/.local/bin/claude --version 2>/dev/null || echo "unknown")
