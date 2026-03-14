@@ -37,7 +37,7 @@ Replace the placeholder `dev_implement_feature_tdd` handler with a real implemen
 - Must integrate with the existing `CapabilityRegistry`, `GraphWiringPlan`, `compile_plan()`, `ExecutionTracer`, and breakpoint infrastructure without forking or duplicating them.
 - Handler signature remains `def handler(state: dict[str, Any]) -> dict[str, Any]` -- the Docker worker handler wraps the container lifecycle behind this interface.
 - Pydantic v2 models for all new data structures (container config, progress events, interrupt payloads, worker result).
-- The existing `dev_implement_feature_tdd` capability spec YAML (`capabilities/dev_implement_feature_tdd.yaml`) will be replaced by a new `coding_implement_feature_from_spec` capability spec with expanded I/O schemas. The old spec is retained for backward compatibility but tagged as `deprecated`.
+- The existing `dev_implement_feature_tdd` capability spec YAML (`src/archipelago/capabilities/dev_implement_feature_tdd.yaml`) will be replaced by a new `coding_implement_feature_from_spec` capability spec with expanded I/O schemas. The old spec is retained for backward compatibility but tagged as `deprecated`.
 - Docker SDK for Python (`docker` package) for container management; no shell-out to `docker` CLI.
 - Python 3.13 (per `pyproject.toml`), PDM for package management.
 - LangGraph `StateGraph` as the execution engine; existing checkpoint/resume mechanics (PR 5 of the orchestrator spec) are prerequisites for the breakpoint flow.
@@ -426,21 +426,21 @@ Replace the placeholder `dev_implement_feature_tdd` handler with a real implemen
 **Dependencies**: PR 1-5 (all prior phases provide the components composed here)
 
 **Files created**:
-- `capabilities/coding_implement_feature_from_spec.yaml`
+- `src/archipelago/capabilities/coding_implement_feature_from_spec.yaml`
 - `src/archipelago/docker_worker/handler.py`
 - `tests/archipelago/test_docker_worker_capability_spec.py`
 - `tests/archipelago/test_docker_worker_handler.py`
 - `tests/archipelago/test_docker_worker_e2e.py`
 
 **Files modified**:
-- `capabilities/dev_implement_feature_tdd.yaml` (add `deprecated: true` tag)
+- `src/archipelago/capabilities/dev_implement_feature_tdd.yaml` (add `deprecated: true` tag)
 - `src/archipelago/pipeline_plan.json` (update `dev_test` node to use `coding.implement_feature_from_spec`)
 - `src/agent_foundry/planner/planner.py` (update `_ARCHIPELAGO_PIPELINE_PLAN` to reference new capability)
 
 **Commits**:
 
 1. **Add coding.implement_feature_from_spec capability spec YAML**
-   - Create `capabilities/coding_implement_feature_from_spec.yaml`:
+   - Create `src/archipelago/capabilities/coding_implement_feature_from_spec.yaml`:
      - `name: coding.implement_feature_from_spec`
      - `description: Delegates feature implementation to Claude Code running in an ephemeral Docker container with TDD workflow`
      - `version: "1.0.0"`
@@ -449,7 +449,7 @@ Replace the placeholder `dev_implement_feature_tdd` handler with a real implemen
      - `outputs_schema`: JSON Schema matching `WorkerResult.model_json_schema()`
      - `tags: [archipelago, docker-worker, coding, tdd, implementation]`
      - `quality_controls: {timeout_seconds: 7200, max_retries: 1}`
-   - Update `capabilities/dev_implement_feature_tdd.yaml`: add `deprecated` to tags list.
+   - Update `src/archipelago/capabilities/dev_implement_feature_tdd.yaml`: add `deprecated` to tags list.
    - Create `tests/archipelago/test_docker_worker_capability_spec.py` with tests:
      - `TestCodingSpec::test_given_yaml_file_when_loaded_then_returns_valid_capability_spec`
      - `TestCodingSpec::test_given_coding_spec_when_inputs_schema_validates_worker_input_then_passes`
@@ -529,7 +529,7 @@ PR 4 and PR 5 are independent of each other and can be developed in parallel onc
 
 ### Patterns to Follow
 
-- **Capability spec YAML structure**: Follow the exact format of existing specs (e.g., `capabilities/dev_implement_feature_tdd.yaml`). Fields: `name`, `description`, `version`, `implementation`, `inputs_schema`, `outputs_schema`, `tags`, `quality_controls`.
+- **Capability spec YAML structure**: Follow the exact format of existing specs (e.g., `src/archipelago/capabilities/dev_implement_feature_tdd.yaml`). Fields: `name`, `description`, `version`, `implementation`, `inputs_schema`, `outputs_schema`, `tags`, `quality_controls`.
 - **Handler function signature**: `def handler(state: dict[str, Any]) -> dict[str, Any]` -- takes full state, returns merged state. Follow `_retriever_handler` in `src/agent_foundry/demo/runner.py`.
 - **Handler registry**: A plain `dict[str, Callable]` mapping capability names to handler functions. Follow `DEMO_HANDLERS` in `src/agent_foundry/demo/runner.py`.
 - **Module structure**: New code goes under `src/archipelago/docker_worker/`. Submodules: `models.py`, `container.py`, `session.py`, `interrupts.py`, `progress.py`, `recovery.py`, `handler.py`.
@@ -575,7 +575,7 @@ The `InterruptDetector` uses a regex pattern `^ARCHIPELAGO_NEED_(CLARIFICATION|P
 - **Progress file corruption**: `parse_progress()` skips malformed JSON lines with a warning rather than failing the entire parse. The `get_resume_point()` function is conservative -- if it cannot determine a clean boundary, it returns the earliest incomplete commit.
 - **Container resource leaks**: The `docker_worker_handler` uses a try/finally block to ensure `destroy()` is called. The `ContainerManager` also tracks all created containers and provides a `cleanup_all()` method for emergency cleanup.
 - **Schema drift between models and YAML specs**: Each commit that adds or modifies a model includes a test verifying the model's `model_json_schema()` matches the YAML spec's schema. This catches drift immediately.
-- **Existing test regressions**: Adding the new capability spec to `capabilities/` increases the registry size. Any test asserting a specific registry size must be updated. The `dev_implement_feature_tdd` spec remains but is tagged `deprecated` so existing tag searches for `"archipelago"` will still include it (5 results instead of 4). Tests asserting `len == 4` for the `"archipelago"` tag must be updated to account for this.
+- **Existing test regressions**: Adding the new capability spec to `src/archipelago/capabilities/` increases the registry size. Any test asserting a specific registry size must be updated. The `dev_implement_feature_tdd` spec remains but is tagged `deprecated` so existing tag searches for `"archipelago"` will still include it (5 results instead of 4). Tests asserting `len == 4` for the `"archipelago"` tag must be updated to account for this.
 
 ---
 

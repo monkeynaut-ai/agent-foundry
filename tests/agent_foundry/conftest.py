@@ -7,7 +7,7 @@ import pytest
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.registry import CapabilityRegistry
 
-CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "capabilities"
+CAPABILITIES_DIR = Path(__file__).parent.parent.parent / "src" / "agent_foundry" / "capabilities"
 
 
 @pytest.fixture

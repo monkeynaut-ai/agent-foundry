@@ -153,7 +153,7 @@ The demo runner (`demo/runner.py`, `demo/cli.py`) is a product-like example that
 These YAML files ship with the `agent_foundry` package as package data:
 
 ```
-agent_foundry/capabilities/
+src/agent_foundry/capabilities/
     schema_validator.yaml
     citation_validator.yaml
     uncertainty_completeness_validator.yaml
@@ -161,6 +161,7 @@ agent_foundry/capabilities/
     rag_retriever.yaml
     tool_calling.yaml
     human_approval_gate.yaml
+    structured_output_pydantic.yaml
 ```
 
 These are auto-loaded by the registry (see Registry Auto-Loading section).
@@ -172,11 +173,11 @@ These are auto-loaded by the registry (see Registry Auto-Loading section).
 | `src/agent_foundry/planner/planner.py` (`_ARCHIPELAGO_PIPELINE_PLAN`) | `archipelago` repo | Archipelago's pipeline plan definition |
 | `src/agent_foundry/planner/planner.py` (`_DECISION_SUPPORT_PLAN`, `_DECISION_SUPPORT_WITH_TOOLS_PLAN`) | `examples/decision_support/` | Demo plans |
 | `src/agent_foundry/planner/planner.py` (`WiringPlanner` class) | Deleted | Products own their plans |
-| `capabilities/strategy_generate_product_brief.yaml` | `archipelago` repo | Archipelago capability spec |
-| `capabilities/architecture_generate_feature_arch.yaml` | `archipelago` repo | Archipelago capability spec |
-| `capabilities/spec_generate_feature_spec.yaml` | `archipelago` repo | Archipelago capability spec |
-| `capabilities/dev_implement_feature_tdd.yaml` | `archipelago` repo | Archipelago capability spec |
-| `capabilities/coding_implement_feature_from_spec.yaml` | `archipelago` repo | Archipelago capability spec |
+| `src/archipelago/capabilities/strategy_generate_product_brief.yaml` | in `archipelago` repo | Archipelago capability spec |
+| `src/archipelago/capabilities/architecture_generate_feature_arch.yaml` | in `archipelago` repo | Archipelago capability spec |
+| `src/archipelago/capabilities/spec_generate_feature_spec.yaml` | in `archipelago` repo | Archipelago capability spec |
+| `src/archipelago/capabilities/dev_implement_feature_tdd.yaml` | in `archipelago` repo | Archipelago capability spec |
+| `src/archipelago/capabilities/coding_implement_feature_from_spec.yaml` | in `archipelago` repo | Archipelago capability spec |
 | `src/archipelago/` (entire package) | `archipelago` repo | Product code |
 
 ---
@@ -509,7 +510,7 @@ packages = ["src/agent_foundry"]
 
 ### Current inventory (13 specs)
 
-**Framework-level (7)** -- stay in `agent_foundry/capabilities/`:
+**Framework-level (8)** -- stay in `src/agent_foundry/capabilities/`:
 
 | Spec name                            | Rationale                                              |
 | ------------------------------------ | ------------------------------------------------------ |

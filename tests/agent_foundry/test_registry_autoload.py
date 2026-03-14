@@ -18,9 +18,9 @@ FIXTURES = Path(__file__).parent / "fixtures"
 class TestWithBuiltins:
     """CapabilityRegistry.with_builtins() loads framework specs automatically."""
 
-    def test_given_with_builtins_called_when_len_checked_then_returns_7(self):
+    def test_given_with_builtins_called_when_len_checked_then_returns_8(self):
         registry = CapabilityRegistry.with_builtins()
-        assert len(registry) == 7
+        assert len(registry) == 8
 
     def test_given_with_builtins_called_when_get_schema_validator_then_returns_valid_spec(
         self,
@@ -43,6 +43,7 @@ class TestWithBuiltins:
                 "human_approval_gate",
                 "rag_retriever",
                 "schema_validator",
+                "structured_output_pydantic",
                 "tool_calling",
                 "uncertainty_completeness_validator",
             ]
@@ -58,7 +59,7 @@ class TestWithProductSpecs:
         d = tmp_path / "capabilities"
         d.mkdir()
         # Copy Archipelago specs as product specs
-        repo_caps = Path(__file__).parents[2] / "capabilities"
+        repo_caps = Path(__file__).parents[2] / "src" / "archipelago" / "capabilities"
         for name in [
             "strategy_generate_product_brief.yaml",
             "architecture_generate_feature_arch.yaml",
@@ -69,9 +70,9 @@ class TestWithProductSpecs:
             shutil.copy(repo_caps / name, d / name)
         return d
 
-    def test_given_product_dir_with_5_specs_when_len_checked_then_returns_12(self, product_dir):
+    def test_given_product_dir_with_5_specs_when_len_checked_then_returns_13(self, product_dir):
         registry = CapabilityRegistry.with_product_specs(product_dir)
-        assert len(registry) == 12
+        assert len(registry) == 13
 
     def test_given_product_dir_when_get_product_spec_then_returns_it(self, product_dir):
         registry = CapabilityRegistry.with_product_specs(product_dir)

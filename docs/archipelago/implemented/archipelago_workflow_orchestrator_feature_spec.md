@@ -50,7 +50,7 @@ Implement an end-to-end Archipelago pipeline that chains four agent stages -- st
 2. **Given** the `archipelago.models` module exists, **when** a `FeatureArchitecture`, `FeatureSpec`, `TestPlan`, `CodePatch`, or `TestResults` is instantiated with valid fields, **then** each validates and round-trips identically.
 3. **Given** any artifact model, **when** instantiated with missing required fields, **then** a Pydantic `ValidationError` is raised listing the missing fields.
 4. **Given** a YAML capability spec file for `strategy.generate_product_brief`, **when** loaded via `load_capability_spec()`, **then** it returns a valid `CapabilitySpec` with `inputs_schema` and `outputs_schema` that match the `ProductBrief` model's JSON Schema.
-5. **Given** all 4 Archipelago capability YAML specs exist in `capabilities/`, **when** `CapabilityRegistry.from_directory()` is called on that directory, **then** the registry contains all 4 new capabilities alongside the existing 8, totaling 12.
+5. **Given** all 4 Archipelago capability YAML specs exist in `src/archipelago/capabilities/`, **when** `CapabilityRegistry.from_directory()` is called on that directory, **then** the registry contains all 4 new capabilities alongside the existing 8, totaling 12.
 6. **Given** any Archipelago capability spec, **when** its `outputs_schema` is used to validate the corresponding Pydantic model's `.model_dump()`, **then** JSON Schema validation passes.
 7. **Given** the Archipelago capability specs, **when** searched by tag `"archipelago"`, **then** all 4 and only those 4 are returned.
 
@@ -143,16 +143,16 @@ Implement an end-to-end Archipelago pipeline that chains four agent stages -- st
 **Dependencies**: PR 1 (models must exist for schema reference)
 
 **Files created**:
-- `capabilities/strategy_generate_product_brief.yaml`
-- `capabilities/architecture_generate_feature_arch.yaml`
-- `capabilities/spec_generate_feature_spec.yaml`
-- `capabilities/dev_implement_feature_tdd.yaml`
+- `src/archipelago/capabilities/strategy_generate_product_brief.yaml`
+- `src/archipelago/capabilities/architecture_generate_feature_arch.yaml`
+- `src/archipelago/capabilities/spec_generate_feature_spec.yaml`
+- `src/archipelago/capabilities/dev_implement_feature_tdd.yaml`
 - `tests/test_archipelago_capability_specs.py`
 
 **Commits**:
 
 1. **Add strategy and architecture capability spec YAML files**
-   - Create `capabilities/strategy_generate_product_brief.yaml`:
+   - Create `src/archipelago/capabilities/strategy_generate_product_brief.yaml`:
      - `name: strategy_generate_product_brief`
      - `description: Generates a product brief from high-level input`
      - `version: "1.0.0"`
@@ -161,7 +161,7 @@ Implement an end-to-end Archipelago pipeline that chains four agent stages -- st
      - `outputs_schema`: JSON Schema matching `ProductBrief.model_json_schema()`
      - `tags: [archipelago, strategy, generation]`
      - `quality_controls: {timeout_seconds: 120, max_retries: 1}`
-   - Create `capabilities/architecture_generate_feature_arch.yaml` with analogous structure, inputs referencing `ProductBrief` schema, outputs referencing `FeatureArchitecture` schema.
+   - Create `src/archipelago/capabilities/architecture_generate_feature_arch.yaml` with analogous structure, inputs referencing `ProductBrief` schema, outputs referencing `FeatureArchitecture` schema.
    - Create `tests/test_archipelago_capability_specs.py` with tests:
      - `TestStrategySpec::test_given_yaml_file_when_loaded_then_returns_valid_capability_spec`
      - `TestStrategySpec::test_given_strategy_spec_when_outputs_schema_validates_model_dump_then_passes`
@@ -169,11 +169,11 @@ Implement an end-to-end Archipelago pipeline that chains four agent stages -- st
      - `TestArchitectureSpec::test_given_architecture_spec_when_outputs_schema_validates_model_dump_then_passes`
 
 2. **Add spec and dev/test capability spec YAML files**
-   - Create `capabilities/spec_generate_feature_spec.yaml`:
+   - Create `src/archipelago/capabilities/spec_generate_feature_spec.yaml`:
      - Inputs reference `FeatureArchitecture` schema.
      - Outputs reference both `FeatureSpec` and `TestPlan` schemas (combined object).
      - `tags: [archipelago, spec, generation]`
-   - Create `capabilities/dev_implement_feature_tdd.yaml`:
+   - Create `src/archipelago/capabilities/dev_implement_feature_tdd.yaml`:
      - Inputs reference `FeatureSpec` and `TestPlan` schemas.
      - Outputs reference `CodePatch` and `TestResults` schemas (combined object).
      - `tags: [archipelago, dev, tdd, implementation]`
@@ -410,7 +410,7 @@ PR 4 and PR 5 are independent of each other and can be developed in parallel onc
 
 ### Patterns to Follow
 
-- **Capability spec YAML structure**: Follow the exact format of existing specs (e.g., `capabilities/human_approval_gate.yaml`). Fields: `name`, `description`, `version`, `implementation`, `inputs_schema`, `outputs_schema`, `tags`, `quality_controls`.
+- **Capability spec YAML structure**: Follow the exact format of existing specs (e.g., `src/archipelago/capabilities/human_approval_gate.yaml`). Fields: `name`, `description`, `version`, `implementation`, `inputs_schema`, `outputs_schema`, `tags`, `quality_controls`.
 - **Handler function signature**: `def handler(state: dict[str, Any]) -> dict[str, Any]` -- takes full state, returns merged state. Follow `_retriever_handler` in `demo/runner.py`.
 - **Handler registry**: A plain `dict[str, Callable]` mapping capability names to handler functions. Follow `DEMO_HANDLERS` in `demo/runner.py`.
 - **Plan definition**: Static dict in `planner.py` registered in `_GOAL_PLANS`. Follow `_DECISION_SUPPORT_PLAN`.
@@ -424,5 +424,5 @@ All handler tests (PR 4) must mock the LLM to avoid real API calls and ensure de
 ### Risk Mitigations
 
 - **Schema drift**: Each commit that adds a model also adds a test verifying the model's `model_json_schema()` matches the YAML spec's `outputs_schema`. This catches drift immediately.
-- **Existing test regressions**: Each PR must run the full test suite before merge. The new capabilities added to `capabilities/` will increase the registry size, so any test that asserts `len(registry) == 8` must be updated.
+- **Existing test regressions**: Each PR must run the full test suite before merge. The new capabilities added to `src/archipelago/capabilities/` will increase the registry size, so any test that asserts `len(registry) == 8` must be updated.
 - **LLM output instability**: Handlers should use Pydantic structured output mode (`with_structured_output()`) to constrain LLM responses. Tests use mocks so instability only affects manual/integration testing.

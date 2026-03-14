@@ -58,7 +58,7 @@ Design slices so each PR is a vertical slice delivering deployable value. Each s
   2) Impl (green): exception types, error wrapping, metadata extraction.
 
 **S1.3 — Multi-file registry initialization + duplicate detection**
-- Includes: load `capabilities/*.(yaml|json)`, build `CapabilityRegistry`, deterministic duplicate-name detection.
+- Includes: load `src/agent_foundry/capabilities/*.(yaml|json)`, build `CapabilityRegistry`, deterministic duplicate-name detection.
 - Addresses AC: Step 1 #3.
 - Dependencies: S1.2.
 - Feature flags: none.

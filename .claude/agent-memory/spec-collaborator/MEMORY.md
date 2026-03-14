@@ -4,7 +4,7 @@
 
 ### Codebase Patterns
 - **Module structure**: `src/agent_foundry/<module>/` with `__init__.py`, main logic files, `errors.py`
-- **Capability specs**: YAML files in `capabilities/` with fields: name, description, version, implementation (module + class_name), inputs_schema, outputs_schema, tags, quality_controls
+- **Capability specs**: YAML files in `src/agent_foundry/capabilities/` (platform built-ins) and `src/archipelago/capabilities/` (product-specific) with fields: name, description, version, implementation (module + class_name), inputs_schema, outputs_schema, tags, quality_controls
 - **Handler signature**: `def handler(state: dict[str, Any]) -> dict[str, Any]` -- takes full state dict, returns merged state
 - **Handler registry**: Plain `dict[str, Callable]` mapping capability names to handler functions (see `DEMO_HANDLERS` in `demo/runner.py`)
 - **Plans**: Static dicts in `planner.py` registered in `_GOAL_PLANS` dict, keyed by goal string
@@ -34,12 +34,12 @@
 - Capability spec loader: `src/agent_foundry/registry/spec.py`
 - Demo runner (pattern reference): `src/agent_foundry/demo/runner.py`
 - Tracer: `src/agent_foundry/observability/tracer.py`
-- Existing specs: `capabilities/*.yaml` (12 total: 8 base + 4 archipelago)
+- Existing specs: `src/agent_foundry/capabilities/*.yaml` (8 platform built-ins) + `src/archipelago/capabilities/*.yaml` (5 archipelago-specific) = 13 total
 - Existing feature spec (format reference): `docs/demo-archipelago/archipelago_workflow_orchestrator_feature_spec.md`
 - MVP analysis: `docs/demo-archipelago/archipelago_workflow_orchestrator_mvp_analysis.md`
 
 ### Registry Size Notes
-- Currently 13 capabilities in `capabilities/` dir (8 framework + 5 archipelago: strategy, architecture, spec, dev_implement, coding_implement)
+- Currently 13 capabilities: 8 in `src/agent_foundry/capabilities/` (framework) + 5 in `src/archipelago/capabilities/` (archipelago: strategy, architecture, spec, dev_implement, coding_implement)
 - Adding new specs changes this count -- must update any tests asserting specific registry size
 - Tag searches: "archipelago" currently returns 4 specs (not 5; coding_implement may lack the tag)
 
@@ -47,7 +47,7 @@
 - Spec: `docs/agent-foundry-separation-spec.md`
 - Key decisions: AF is single package, products own plans (WiringPlanner deleted), registry auto-loads builtins via `importlib.resources`, `with_product_specs()` is the new product entry point
 - 5 migration phases: package builtins -> remove WiringPlanner -> separate archipelago package -> lint enforcement -> repo split
-- 8 framework specs stay in `agent_foundry/capabilities/`, 5 product specs move to archipelago repo
+- 8 framework specs stay in `src/agent_foundry/capabilities/`, 5 product specs are in `src/archipelago/capabilities/`
 - Public API surface documented: plan schema, validators, compiler, registry, observability, handler protocol
 - Open questions: demo disposition, built-in handler implementations, private PyPI vs git dep, version coordination, test infrastructure sharing
 
