@@ -202,7 +202,7 @@ Implement an end-to-end Archipelago pipeline that chains four agent stages -- st
 **Dependencies**: PR 2 (capability specs must be registered for validation)
 
 **Files created**:
-- `src/agent_foundry/archipelago/pipeline_plan.json`
+- `src/agent_foundry/archipelago/archipelago_system.json`
 - `tests/test_archipelago_pipeline_plan.py`
 
 **Files modified**:
@@ -211,7 +211,7 @@ Implement an end-to-end Archipelago pipeline that chains four agent stages -- st
 **Commits**:
 
 1. **Add static archipelago pipeline plan JSON and parse tests**
-   - Create `src/agent_foundry/archipelago/pipeline_plan.json` with the plan:
+   - Create `src/agent_foundry/archipelago/archipelago_system.json` with the plan:
      ```
      goal: "archipelago-pipeline"
      nodes:

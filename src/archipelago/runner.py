@@ -11,7 +11,7 @@ from archipelago.docker_worker.handler import docker_worker_handler
 from archipelago.docker_worker.models import WorkerConstraints, WorkerInput
 from archipelago.handlers import ARCHIPELAGO_HANDLERS
 
-PLAN_PATH = Path(__file__).parent / "pipeline_plan.json"
+PLAN_PATH = Path(__file__).parent / "archipelago_system.json"
 
 
 def load_archipelago_plan() -> GraphWiringPlan:

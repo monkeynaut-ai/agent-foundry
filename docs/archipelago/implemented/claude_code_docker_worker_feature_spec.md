@@ -434,7 +434,7 @@ Replace the placeholder `dev_implement_feature_tdd` handler with a real implemen
 
 **Files modified**:
 - `src/archipelago/capabilities/dev_implement_feature_tdd.yaml` (add `deprecated: true` tag)
-- `src/archipelago/pipeline_plan.json` (update `dev_test` node to use `coding.implement_feature_from_spec`)
+- `src/archipelago/archipelago_system.json` (update `dev_test` node to use `coding.implement_feature_from_spec`)
 - `src/agent_foundry/planner/planner.py` (update `_ARCHIPELAGO_PIPELINE_PLAN` to reference new capability)
 
 **Commits**:
@@ -481,7 +481,7 @@ Replace the placeholder `dev_implement_feature_tdd` handler with a real implemen
      - `TestDockerWorkerHandler::test_given_handler_completes_when_called_then_container_destroyed`
 
 3. **Update pipeline plan and planner to use new capability**
-   - Update `src/archipelago/pipeline_plan.json`: change `dev_test` node's `capability` from `dev_implement_feature_tdd` to `coding.implement_feature_from_spec`; update `capability_versions` accordingly.
+   - Update `src/archipelago/archipelago_system.json`: change `dev_test` node's `capability` from `dev_implement_feature_tdd` to `coding.implement_feature_from_spec`; update `capability_versions` accordingly.
    - Update `_ARCHIPELAGO_PIPELINE_PLAN` in `src/agent_foundry/planner/planner.py` to match.
    - Add tests to `tests/archipelago/test_docker_worker_handler.py`:
      - `TestPipelineIntegration::test_given_updated_plan_when_validated_then_all_7_checks_pass`

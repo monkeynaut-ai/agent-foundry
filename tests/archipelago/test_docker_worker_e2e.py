@@ -14,7 +14,7 @@ from agent_foundry.registry.spec import load_capability_spec
 
 from .conftest import PRODUCT_CAPS_DIR
 
-PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "pipeline_plan.json"
+PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "archipelago_system.json"
 
 
 def _stub_strategy(state: dict[str, Any]) -> dict[str, Any]:

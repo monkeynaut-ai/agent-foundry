@@ -265,7 +265,7 @@ Products define their wiring plans as data. Two options:
 **Option A: JSON file (recommended for most cases)**
 
 ```json
-// archipelago/pipeline_plan.json
+// archipelago/archipelago_system.json
 {
   "goal": "archipelago-pipeline",
   "nodes": [
@@ -298,7 +298,7 @@ Agent Foundry provides a loader for this:
 ```python
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 
-plan = GraphWiringPlan.from_json("pipeline_plan.json")
+plan = GraphWiringPlan.from_json("archipelago_system.json")
 ```
 
 **Option B: Python dict (useful when plans are computed or composed programmatically)**
@@ -356,7 +356,7 @@ HANDLER_REGISTRY = {
 
 def run(product_brief_input: str) -> dict[str, Any]:
     # Load plan from JSON file
-    plan = GraphWiringPlan.from_json(Path(__file__).parent / "pipeline_plan.json")
+    plan = GraphWiringPlan.from_json(Path(__file__).parent / "archipelago_system.json")
 
     # Registry auto-loads Agent Foundry builtins.
     # Product adds its own specs on top.
@@ -590,7 +590,7 @@ Separation is done in phases. Each phase is independently mergeable. The system 
 **Steps:**
 
 1. Move `_DECISION_SUPPORT_PLAN` and `_DECISION_SUPPORT_WITH_TOOLS_PLAN` into separate JSON files: `examples/decision_support/decision_support_plan.json` and `examples/decision_support/decision_support_with_tools_plan.json`.
-2. Delete `_ARCHIPELAGO_PIPELINE_PLAN` from `planner.py` (it already exists in `src/archipelago/pipeline_plan.json` in the product).
+2. Delete `_ARCHIPELAGO_PIPELINE_PLAN` from `planner.py` (it already exists in `src/archipelago/archipelago_system.json` in the product).
 3. Delete the `WiringPlanner` class from `planner.py`.
 4. Update or delete `planner.py`. If it becomes empty, delete it and adjust `__init__.py` exports.
 5. Update the demo runner to load its plan from a local file instead of `WiringPlanner`.
@@ -600,7 +600,7 @@ Separation is done in phases. Each phase is independently mergeable. The system 
 
 - Given the `agent_foundry.planner` module, when its public exports are inspected, then `WiringPlanner` is not present.
 - Given the demo runner, when it runs, then it loads its plan from a local JSON file (not from `WiringPlanner`).
-- Given the Archipelago runner, when it runs, then it loads its plan from `archipelago/pipeline_plan.json`.
+- Given the Archipelago runner, when it runs, then it loads its plan from `archipelago/archipelago_system.json`.
 - Given `agent_foundry.planner.planner` (if it still exists), when imported, then it contains no product-specific plan data.
 
 **Complexity:** M

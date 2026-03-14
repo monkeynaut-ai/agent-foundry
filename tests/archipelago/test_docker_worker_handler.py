@@ -23,7 +23,7 @@ from archipelago.docker_worker.protocol import (
     StatusMessage,
 )
 
-PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "pipeline_plan.json"
+PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "archipelago_system.json"
 
 
 @pytest.fixture
