@@ -23,5 +23,27 @@
   },
   "enabledPlugins": {
     "pyright-lsp@claude-plugins-official": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'LSP CHECK: Is this symbol navigation (finding references, definitions, types, call chains, implementations)? If so, use LSP findReferences/goToDefinition/hover/incomingCalls/outgoingCalls/workspaceSymbol instead.' >&2"
+          }
+        ]
+      },
+      {
+        "matcher": "Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'LSP CHECK: Are you searching for a class, function, or symbol by name? If so, use LSP workspaceSymbol instead.' >&2"
+          }
+        ]
+      }
+    ]
   }
 }
