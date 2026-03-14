@@ -1,5 +1,9 @@
 # Agent Foundry Users Guide
 
+## Topics
+
+- [Agent Containers](agent-containers.md) — running AI agents in Docker containers with structured communication
+
 ## CLAUDE.md Layering
 
 There are at least three layers of CLAUDE.md files in the system, serving different audiences at different times:
