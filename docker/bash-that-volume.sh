@@ -10,6 +10,6 @@ if [ -z "$1" ]; then
 fi
 
 docker run -it --rm \
-  --entrypoint /bin/sh \
+  --entrypoint /bin/bash \
   -v "$1":/workspace \
   archipelago-cc-worker:latest
