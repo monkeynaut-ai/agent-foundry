@@ -31,7 +31,8 @@ if docker inspect --type container "$TARGET" >/dev/null 2>&1; then
   IMAGE=$(docker inspect "$TARGET" --format '{{.Config.Image}}')
 
   # Extract the volume or bind mount at /workspace
-  VOLUME=$(docker inspect "$TARGET" --format '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Name}}{{.Source}}{{end}}{{end}}')
+  # Prefer .Name (named volume); fall back to .Source (bind mount)
+  VOLUME=$(docker inspect "$TARGET" --format '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{if .Name}}{{.Name}}{{else}}{{.Source}}{{end}}{{end}}{{end}}')
 
   if [ -z "$VOLUME" ]; then
     echo "ERROR: Container '$TARGET' has no mount at /workspace"
