@@ -58,6 +58,34 @@ The dev node needs a way to ask probing and clarifying questions and receive ans
 
 Nodes in the same graph instance share a Docker named volume mounted at `/workspace`. If two nodes run concurrently (e.g., dev_test writing changes while a reviewer reads), there is no file locking — Docker volumes allow concurrent access but provide no coordination. Investigate whether LangGraph's execution model prevents true simultaneity on the same thread, or whether explicit coordination is needed (e.g., a write lock, a hand-off protocol, or a graph topology constraint that serializes access to the shared volume). Define the policy before any multi-node workflow is wired up.
 
+### P2 — Architecture
+
+#### 26. Move planning-stage handlers into containers
+
+The strategy, architecture, and spec nodes currently run as in-process LLM calls via LangChain in `archipelago/handlers.py`. They should execute in containers like the dev_test node does, using the ACP infrastructure. This will also eliminate Archipelago's direct dependency on `langchain_anthropic` and `langchain_core`, fully decoupling Archipelago from LangChain.
+
+#### 27. Consolidate schema validation onto node boundaries
+
+Currently capability specs define input/output JSON schemas that are validated on capability entry/exit, duplicating the state contract (once in graph wiring, once in each capability spec). Move schema validation to the node boundary where state actually flows, rather than on the capability itself. This simplifies the capability spec and aligns with LangGraph's principle that state is shared memory and nodes format data locally.
+
+#### 28. Support node-driven routing (Command-style)
+
+Currently edges are defined statically in the system JSON. LangGraph recommends `Command` objects where nodes decide routing based on their results. Static edges work for linear pipelines but will break down for conditional flows like gate rejection → resume loops. The compiler already supports conditional edges, but the design should shift toward nodes declaring their own routing. This is a prerequisite for the [gate check](#21-implement-gate-check-after-status-completed) and [test-designer dialogue](#10-design-the-test-designer-node).
+
+#### 29. Add operation-type awareness to node execution
+
+LangGraph categorizes nodes into four types (LLM, data, action, user input), each with different retry/caching/failure strategies. Agent Foundry's `quality_controls` only has timeout + retries, with no distinction of *why* a node might fail. A container timeout needs different handling than an LLM hallucination. Add operation type metadata to capability specs and use it to drive type-appropriate error handling and retry strategies.
+
+### P2 — Ontology
+
+#### 30. Rename capability vocabulary to role vocabulary
+
+The platform ontology uses Role/Participant/System as core concepts (see `docs/architecture/agent-foundry-ontology.md`). The codebase still uses "capability" everywhere: ~825 references across ~82 files. Rename directory `src/agent_foundry/capabilities/` to `roles/`, classes (`CapabilitySpec`→`RoleSpec`, `CapabilityRegistry`→`RoleRegistry`, etc.), Pydantic fields (`NodeDef.capability`→`NodeDef.role`, `capability_versions`→`role_versions`), 5 error classes, 11 functions, 8 YAML spec files, `archipelago_system.json`, all imports, and `CapabilityStack`→`RoleStack` in ACP. Execute as a single atomic PR after the test-writer/code-writer split lands.
+
+#### 32. Evaluate explicit Participant and System model types
+
+The ontology defines Participant and System as first-class concepts, but the code currently represents them implicitly (`NodeDef` + handler registry for participants, `GraphWiringPlan` for systems). Evaluate whether explicit `ParticipantDef` and `SystemDef` model classes add value or whether the current implicit representation is sufficient. If explicit types are warranted, define them and migrate `NodeDef` and `GraphWiringPlan` accordingly.
+
 ### P2 — Developer Experience
 
 #### 23. Create a "lessons learned" global skill
@@ -110,6 +138,7 @@ Bake platform defaults into `/home/claude/.claude/CLAUDE.md` (worker role, proto
 22. **Fix end-to-end container connectivity** — Four bugs found during first live run: (1) WS server bound to `localhost` — container couldn't reach it via `host.docker.internal`; changed to `0.0.0.0`. (2) `PATH` in env allowlist — host PATH overrode container PATH, hiding the `claude` binary; removed from allowlist. (3) npm version check `curl` had no timeout — could block adapter startup indefinitely; capped at 10s. (4) Adapter connect timeout was 60s — too short for git clone + npm check; raised to 120s.
 7. **Add `max_turns` to `WorkerConstraints` and wire to Claude CLI** — Cancelled. `max_turns` is difficult to set a priori — complex tasks may require 20–40 question-response iterations per invocation. Each prompt/response exchange in Archipelago requires action from an external entity (human or agent), which provides a natural opportunity to monitor progress and decide whether to end the task. A hard turn cap is unnecessary and counterproductive.
 25. **Build Claude Code capability stack for the worker container** — Completed as Agent Container Protocol (ACP) in `src/agent_foundry/acp/`. Protocol models, adapter interface, Claude Code adapter with configurable MarkerMapping, container lifecycle management, capability stack model, generic Docker base image with product-init.sh hook. Archipelago migrated to use ACP (thin re-exports). Docker assets split: `acp-cc-worker:latest` base → `archipelago-cc-worker:latest` overlay.
+31. **Move implementation pointer from role spec to participant declaration** — Cancelled. The motivating scenario (same role, different implementations) doesn't hold up in practice — differences that drive a different implementation almost always mean the contract is different, making them different roles.
 
 ---
-next item number: 26
+next item number: 33
