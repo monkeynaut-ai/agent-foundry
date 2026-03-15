@@ -4,19 +4,7 @@
 
 Replace the placeholder `dev_implement_feature_tdd` handler with a real implementation that delegates coding work to Claude Code (CC) running inside an ephemeral Docker container. The orchestrator manages the full lifecycle -- container provisioning, repo checkout, session management, structured progress reporting, interactive breakpoints (clarification/permission), and crash recovery -- while CC operates as a self-contained TDD worker iterating across the spec's PRs and commits.
 
-> **Note — Adapter Protocol Evolution**: The original design used PTY-based session management (`SessionManager` via Docker exec). This has been superseded by a structured WebSocket protocol with two adapter modes:
->
-> - **Headless adapter** (preferred): Uses `claude -p --output-format stream-json` — no PTY, no ANSI, no TUI noise. Multi-turn via `--resume`.
-> - **PTY adapter** (legacy): Spawns Claude Code in a PTY, scrapes TUI output.
->
-> See `docs/demo-archipelago/adapter_protocol_spec.md` for the full protocol specification, including task completion signaling, gate node integration, and architecture decisions.
->
-> **Key architectural decisions since initial spec**:
-> - The adapter communicates via WebSocket JSON protocol, not Docker exec stdin/stdout
-> - Task completion uses a two-layer signal: Claude outputs `ARCHIPELAGO_TASK_COMPLETE` marker (fast path), gate node validates (safety net)
-> - Containers stay alive after `completed` status — gate can resume same Claude session on rejection
-> - Status lifecycle: `started` → `running` → `turn_complete` → `completed` → `exited`
-> - The worker container's CLAUDE.md must include task completion protocol instructions
+> **Note — Adapter Protocol Evolution**: The original PTY-based session management design has been superseded by a structured WebSocket protocol using the headless adapter (`claude -p --output-format stream-json`). See [`docs/archipelago/adapter_protocol_spec.md`](../adapter_protocol_spec.md) for the full protocol specification, including message types, status lifecycle, task completion signaling, gate node integration, and architecture decisions.
 
 ### Success Criteria
 

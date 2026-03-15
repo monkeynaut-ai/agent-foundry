@@ -1,4 +1,6 @@
-# Claude Code Docker Worker - Testing Notes
+# Claude Code Docker Worker - Testing Log
+
+> **Historical document.** This is a testing journal recording experiments, discoveries, and decisions made during Docker worker development. For the authoritative protocol specification, see [`adapter_protocol_spec.md`](adapter_protocol_spec.md). For the Dockerfile gap analysis, see [`../agent-foundry-claude-dockerfile.md`](../agent-foundry-claude-dockerfile.md).
 
 ## How to use this document
 
@@ -361,46 +363,11 @@ Sequence: launch session → retry `\r` every 2s until trust accepted → send p
 
 1. **Auth strategy**: Use `claude setup-token` + `CLAUDE_CODE_OAUTH_TOKEN` env var (Option A). Subscription pricing, 1-year token, simple. Fall back to `ANTHROPIC_API_KEY` if multi-container issues arise.
 
-2. **Adapter-to-Archipelago transport**: WebSocket now, gRPC streaming later.
+2. **Adapter-to-Archipelago transport**: WebSocket. See [`docs/archipelago/adapter_protocol_spec.md`](archipelago/adapter_protocol_spec.md) for the full protocol design including transport rationale, message types, and architecture decisions.
 
-   The in-container PTY adapter needs a transport to communicate with Archipelago. Archipelago will have an internal event/notification system where any graph node can react to adapter output. The adapter's job is simple: bridge PTY to a single transport endpoint. Fan-out to nodes happens inside Archipelago's orchestration layer.
+3. **Application-level protocol**: Structured JSON messages over WebSocket. See [`docs/archipelago/adapter_protocol_spec.md`](archipelago/adapter_protocol_spec.md) for the complete protocol specification.
 
-   **Chosen**: WebSocket — message-framed out of the box (no custom delimiter/length-prefix protocol), bidirectional (output events + input commands on one connection), lightweight, easy to debug.
-
-   **Future**: gRPC streaming — when we need strong typing and structured messages (protobuf).
-
-   **Rejected permanently**:
-   - TCP socket — raw bytes with no framing, would require a custom protocol layer
-   - HTTP + SSE — unidirectional output stream, input needs a separate channel
-   - Redis/NATS/ZMQ — message brokers add infrastructure and put pub/sub responsibility inside the container adapter, violating separation of concerns. The adapter should not know about Archipelago's internal event distribution.
-
-3. **Application-level protocol for adapter↔Archipelago communication.**
-
-   The raw WebSocket transport (decision #2) carries structured JSON messages defined by a transport-agnostic protocol. This protocol is a standard for communication with any remote coding agent — not Docker-specific.
-
-   **Key design decisions:**
-
-   - **Structured messages only, no raw bytes.** The adapter parses interrupt markers and strips ANSI escape codes locally. Archipelago receives only typed JSON messages (`output`, `interrupt`, `status`, `input`, `control`). It never scans raw PTY output.
-   - **Adapter connects outward to Archipelago** (not the other way around). Archipelago starts a WebSocket server; the adapter connects to it. Works through NAT, scales to N containers, natural fit for future SSH adapters.
-   - **Per-handler WebSocket server** to start. Each handler invocation starts its own ephemeral server. Session ID in the URL path future-proofs for migration to a centralized server when the event bus is built.
-   - **ICRNL encapsulated in the adapter.** Archipelago sends `\n`-terminated text in input messages. The adapter converts `\n` → `\r` before writing to the PTY. The `\r` vs `\n` concern is invisible to the orchestrator.
-   - **Interrupt parsing moves to the adapter.** The adapter detects `ARCHIPELAGO_NEED_*` markers in PTY output and emits structured `interrupt` messages. Marker lines are not sent as `output` messages.
-
-   Full specification: `docs/demo-archipelago/adapter_protocol_spec.md`
-
-4. **Container entrypoint: adapter as PID 1, remove `sleep infinity`.**
-
-   The current `create_container()` overrides the Dockerfile entrypoint with `sleep infinity`, then reaches in via `docker exec` to start Claude Code. This is not a Docker best practice — it breaks health checks, signal handling, and restart policies.
-
-   **Change:** The container's Dockerfile entrypoint runs the adapter directly. The adapter spawns Claude Code and connects to Archipelago over WebSocket. Container lifecycle becomes clean: start → adapter runs → CC exits → container exits. Docker exec is retained only for utility commands (git clone, image validation, crash recovery).
-
-   **Four uses of Docker exec today:**
-   | # | What | Stays? |
-   |---|---|---|
-   | 1 | Launch entrypoint.sh with PTY + stdin/stdout channel | **Replaced by WebSocket** |
-   | 2 | `git clone` for workspace setup | Yes |
-   | 3 | `which <cmd>` for image validation | Yes |
-   | 4 | `git rev-parse/diff` for crash recovery | Yes |
+4. **Container entrypoint: adapter as PID 1.** The adapter runs as the entrypoint, spawns Claude Code, and connects to the orchestrator over WebSocket. Docker exec is retained only for utility commands (git clone, image validation, crash recovery).
 
 ### Open
 

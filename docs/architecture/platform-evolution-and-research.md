@@ -1,5 +1,7 @@
 # Platform Evolution & Research
 
+> **Related:** For the Docker worker capability stack details, see [`docs/archipelago/adapter_protocol_spec.md`](../archipelago/adapter_protocol_spec.md). For the Dockerfile gap analysis, see [`docs/agent-foundry-claude-dockerfile.md`](../agent-foundry-claude-dockerfile.md).
+
 ## Feedback Loop
 
 Systems built on Agent Foundry produce reusable components. These push down into the platform, strengthening all systems.

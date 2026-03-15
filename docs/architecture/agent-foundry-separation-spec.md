@@ -1,5 +1,7 @@
 # Specification: Agent Foundry / Product Layer Architectural Separation
 
+> **Related:** For the conceptual model (System, Participant, Role) that this separation implements, see [`agent-foundry-ontology.md`](agent-foundry-ontology.md).
+
 ## Objective
 
 Define the architectural boundary between Agent Foundry (reusable platform) and its product layer (Archipelago and future products). This specification establishes what Agent Foundry owns, what products own, how products consume the framework, and the phased migration plan from the current monorepo to cleanly separated packages. The end state is two independent repos -- `agent-foundry` and `archipelago` -- where Archipelago depends on Agent Foundry as a Python package, and any future product does the same.

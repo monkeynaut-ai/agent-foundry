@@ -1,4 +1,6 @@
-Analysis of the "agent foundry initial build instructions" document in the context of “Workflow Orchestrator MVP (Control Plane Lite)”
+Analysis of the “agent foundry initial build instructions” document in the context of “Workflow Orchestrator MVP (Control Plane Lite)”
+
+> **Cross-references:** This document analyzes the Agent Foundry build instructions ([`docs/implemented/agent_foundry_initial_build_instructions.md`](../implemented/agent_foundry_initial_build_instructions.md)). For the resulting orchestrator feature spec, see [`implemented/archipelago_workflow_orchestrator_feature_spec.md`](implemented/archipelago_workflow_orchestrator_feature_spec.md). For the platform conceptual model, see [`docs/architecture/agent-foundry-ontology.md`](../architecture/agent-foundry-ontology.md).
 
 ## Executive summary
 The attached document describes a plan-compiled orchestration platform that closely matches the “Control Plane Lite” requirements: (1) a DAG of agent/tool steps with typed inputs/outputs, (2) a capability registry that defines runnable units and enforces schemas, (3) breakpoint-driven human gates plus checkpoint/resume, and (4) tracing/observability as a core primitive.
