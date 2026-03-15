@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 
 from agent_foundry.acp.errors import ProtocolError
 
-
 # ── Agent-to-orchestrator messages ──
 
 
@@ -34,7 +33,8 @@ class AgentEventMessage(BaseModel):
 
     type: Literal["agent_event"] = "agent_event"
     session_id: str
-    event_type: str  # ACP vocabulary: task_complete, clarification_requested, permission_requested, stuck, etc.
+    # ACP vocabulary: task_complete, clarification_requested, permission_requested, stuck, etc.
+    event_type: str
     payload: dict[str, Any]
     raw_line: str  # original marker line for audit
     timestamp: float

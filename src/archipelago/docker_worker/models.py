@@ -17,6 +17,7 @@ class WorkerConstraints(BaseModel):
     pids_limit: int | None = None
     turn_timeout_seconds: int = 3600
     skip_permissions: bool = False
+    connection_timeout_seconds: int = 120
 
 
 class WorkerInput(BaseModel):

@@ -266,7 +266,9 @@ class TestDockerWorkerHandler:
         ws_server.connected = threading.Event()  # NOT set
         mock_ws_cls.return_value = ws_server
 
-        state = {"worker_input": _valid_worker_input()}
+        worker_input = _valid_worker_input()
+        worker_input["constraints"]["connection_timeout_seconds"] = 0
+        state = {"worker_input": worker_input}
         result = docker_worker_handler(state)
 
         assert result["worker_result"]["status"] == "failed"
@@ -305,7 +307,14 @@ class TestDockerWorkerHandler:
 
     def test_given_entrypoint_when_read_then_contains_archipelago_ws_url_check(self):
         """Entrypoint launches adapter when ARCHIPELAGO_WS_URL is set."""
-        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        entrypoint = (
+            Path(__file__).parent.parent.parent
+            / "src"
+            / "agent_foundry"
+            / "acp"
+            / "docker"
+            / "entrypoint.sh"
+        )
         content = entrypoint.read_text()
         assert "ARCHIPELAGO_WS_URL" in content
         assert "adapter.py" in content
@@ -376,30 +385,65 @@ class TestDockerWorkerHandler:
 
 class TestEntrypointProvisioning:
     def test_given_entrypoint_when_read_then_writes_netrc_when_github_token_set(self):
-        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        entrypoint = (
+            Path(__file__).parent.parent.parent
+            / "src"
+            / "agent_foundry"
+            / "acp"
+            / "docker"
+            / "entrypoint.sh"
+        )
         content = entrypoint.read_text()
         assert "GITHUB_TOKEN" in content
         assert ".netrc" in content
 
     def test_given_entrypoint_when_read_then_clones_from_repo_url_when_workspace_empty(self):
-        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        entrypoint = (
+            Path(__file__).parent.parent.parent
+            / "src"
+            / "agent_foundry"
+            / "acp"
+            / "docker"
+            / "entrypoint.sh"
+        )
         content = entrypoint.read_text()
         assert "REPO_URL" in content
         assert "git clone" in content
         assert ".git" in content  # skips clone if workspace already has a repo
 
     def test_given_entrypoint_when_read_then_uses_repo_ref_as_branch(self):
-        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        entrypoint = (
+            Path(__file__).parent.parent.parent
+            / "src"
+            / "agent_foundry"
+            / "acp"
+            / "docker"
+            / "entrypoint.sh"
+        )
         content = entrypoint.read_text()
         assert "REPO_REF" in content
 
     def test_given_entrypoint_when_read_then_netrc_written_before_clone(self):
-        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        entrypoint = (
+            Path(__file__).parent.parent.parent
+            / "src"
+            / "agent_foundry"
+            / "acp"
+            / "docker"
+            / "entrypoint.sh"
+        )
         content = entrypoint.read_text()
         assert content.index(".netrc") < content.index("git clone")
 
     def test_given_entrypoint_when_read_then_passes_turn_timeout_to_adapter(self):
-        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        entrypoint = (
+            Path(__file__).parent.parent.parent
+            / "src"
+            / "agent_foundry"
+            / "acp"
+            / "docker"
+            / "entrypoint.sh"
+        )
         content = entrypoint.read_text()
         assert "ARCHIPELAGO_TURN_TIMEOUT" in content
         assert "--timeout" in content
@@ -407,7 +451,14 @@ class TestEntrypointProvisioning:
     def test_given_entrypoint_when_read_then_conditionally_passes_dangerously_skip_permissions(
         self,
     ):
-        entrypoint = Path(__file__).parent.parent.parent / "docker" / "entrypoint.sh"
+        entrypoint = (
+            Path(__file__).parent.parent.parent
+            / "src"
+            / "agent_foundry"
+            / "acp"
+            / "docker"
+            / "entrypoint.sh"
+        )
         content = entrypoint.read_text()
         assert "ARCHIPELAGO_SKIP_PERMISSIONS" in content
         assert "--dangerously-skip-permissions" in content

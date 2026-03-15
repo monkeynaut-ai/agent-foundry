@@ -1,7 +1,5 @@
 """Tests for ACP adapter interface."""
 
-from dataclasses import dataclass
-
 import pytest
 
 from agent_foundry.acp.adapter import AdapterBase, TurnResult

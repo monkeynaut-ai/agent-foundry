@@ -7,9 +7,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from archipelago.docker_worker.container import (
+    DEFAULT_ENV_ALLOWLIST,
     ContainerHandle,
     ContainerManager,
-    DEFAULT_ENV_ALLOWLIST,
 )
 from archipelago.docker_worker.errors import ContainerCreationError
 from archipelago.docker_worker.models import WorkerConstraints

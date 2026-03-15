@@ -3,11 +3,13 @@
 Re-exports ACP container infrastructure with Archipelago-specific defaults.
 """
 
+from agent_foundry.acp.container import (
+    DEFAULT_ENV_ALLOWLIST as _ACP_ENV_ALLOWLIST,
+)
 from agent_foundry.acp.container import (  # noqa: F401
     ContainerConfig,
     ContainerHandle,
     ContainerManager,
-    DEFAULT_ENV_ALLOWLIST as _ACP_ENV_ALLOWLIST,
 )
 
 # Archipelago extends the generic ACP allowlist with product-specific env vars

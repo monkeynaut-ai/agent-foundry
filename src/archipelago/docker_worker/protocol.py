@@ -7,20 +7,17 @@ that accepts both old "interrupt" and new "agent_event" message types.
 
 import json
 import re
-from typing import cast
 
-from pydantic import BaseModel
-
-from agent_foundry.acp.errors import ProtocolError  # noqa: F401
+from agent_foundry.acp.errors import ProtocolError
 from agent_foundry.acp.protocol import (
     AdapterMessage,  # noqa: F401
     AgentEventMessage,
     ControlMessage,  # noqa: F401
     InputMessage,  # noqa: F401
-    MarkerMapping,  # noqa: F401
+    MarkerMapping,
     OrchestratorMessage,  # noqa: F401
     OutputMessage,  # noqa: F401
-    ProtocolMessage,  # noqa: F401
+    ProtocolMessage,
     StatusMessage,  # noqa: F401
 )
 from agent_foundry.acp.protocol import parse_protocol_message as _acp_parse

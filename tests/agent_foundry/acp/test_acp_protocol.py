@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from agent_foundry.acp.errors import ProtocolError
 from agent_foundry.acp.protocol import (
     AdapterMessage,
     AgentEventMessage,
@@ -14,7 +15,6 @@ from agent_foundry.acp.protocol import (
     StatusMessage,
     parse_protocol_message,
 )
-from agent_foundry.acp.errors import ProtocolError
 
 
 class TestOutputMessage:

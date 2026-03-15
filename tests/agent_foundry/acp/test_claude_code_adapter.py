@@ -1,7 +1,5 @@
 """Tests for Claude Code ACP adapter — marker matching and event mapping."""
 
-import json
-
 from agent_foundry.acp.adapters.claude_code import ClaudeCodeAdapter, _build_claude_cmd
 from agent_foundry.acp.protocol import MarkerMapping
 
@@ -131,7 +129,7 @@ class TestEventMapping:
     def test_given_error_event_when_mapped_then_stderr_output_emitted(self):
         adapter = _make_adapter()
         event = {"type": "error", "error": {"message": "rate limited"}}
-        msgs, tc = adapter._map_event_to_protocol(event, "s1")
+        msgs, _tc = adapter._map_event_to_protocol(event, "s1")
         assert len(msgs) == 1
         assert msgs[0]["stream"] == "stderr"
         assert "rate limited" in msgs[0]["text"]
@@ -150,7 +148,7 @@ class TestEventMapping:
                 ]
             },
         }
-        msgs, tc = adapter._map_event_to_protocol(event, "s1")
+        msgs, _tc = adapter._map_event_to_protocol(event, "s1")
         assert len(msgs) == 1
         assert "[tool_use: Bash] pytest -v" in msgs[0]["text"]
 
