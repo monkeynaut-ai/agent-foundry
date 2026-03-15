@@ -47,7 +47,13 @@ echo "Installing dependencies..."
 pdm install
 info "Dependencies installed"
 
-# --- 3. Set up .env ---
+# --- 3. Configure git hooks ---
+
+echo ""
+git config core.hooksPath .githooks
+info "Git hooks configured (.githooks/)"
+
+# --- 4. Set up .env ---
 
 echo ""
 if [[ ! -f .env ]]; then
@@ -57,7 +63,7 @@ else
     info ".env already exists"
 fi
 
-# --- 4. Run tests ---
+# --- 5. Run tests ---
 
 echo ""
 echo "Running tests..."
@@ -67,7 +73,7 @@ else
     warn "Some tests failed — check output above"
 fi
 
-# --- 5. Summary ---
+# --- 6. Summary ---
 
 echo ""
 echo "========================================="

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Worktree-safe pre-commit hook.
+# Resolves pre-commit from the worktree's own .venv rather than
+# hardcoding a single venv path (which breaks across worktrees).
+
+WORKTREE_ROOT="$(git rev-parse --show-toplevel)"
+VENV_PYTHON="${WORKTREE_ROOT}/.venv/bin/python"
+
+ARGS=(hook-impl --config=.pre-commit-config.yaml --hook-type=pre-commit)
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ARGS+=(--hook-dir "$HERE" -- "$@")
+
+if [ -x "$VENV_PYTHON" ]; then
+    exec "$VENV_PYTHON" -mpre_commit "${ARGS[@]}"
+elif command -v pre-commit > /dev/null; then
+    exec pre-commit "${ARGS[@]}"
+else
+    echo '`pre-commit` not found. No .venv/bin/python in worktree root and pre-commit not on PATH.' 1>&2
+    exit 1
+fi
