@@ -1,4 +1,4 @@
-"""Tests for dynamic handler resolution in the compiler via CapabilityRegistry."""
+"""Tests for dynamic handler resolution in the compiler via RoleRegistry."""
 
 from typing import Any
 from unittest.mock import patch
@@ -6,11 +6,11 @@ from unittest.mock import patch
 import pytest
 
 from agent_foundry.compiler.compiler import compile_plan
-from agent_foundry.compiler.errors import CapabilityInstantiationError
+from agent_foundry.compiler.errors import RoleInstantiationError
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
+from agent_foundry.registry.registry import RoleRegistry
 from agent_foundry.registry.spec import (
-    CapabilitySpec,
+    RoleSpec,
     ImplementationPointer,
 )
 
@@ -18,7 +18,7 @@ from agent_foundry.registry.spec import (
 def _make_spec(
     name, module, class_name, method="__call__", inputs_schema=None, outputs_schema=None
 ):
-    return CapabilitySpec(
+    return RoleSpec(
         name=name,
         description="test",
         version="1.0.0",
@@ -32,13 +32,13 @@ def _make_spec(
     )
 
 
-def _one_node_plan(capability="test_cap") -> GraphWiringPlan:
+def _one_node_plan(role_name="test_cap") -> GraphWiringPlan:
     return GraphWiringPlan(
         goal="test",
-        nodes=[{"id": "n1", "capability": capability, "config": {}}],
+        nodes=[{"id": "n1", "role": role_name, "config": {}}],
         edges=[],
         entry_point="n1",
-        capability_versions={capability: "1.0.0"},
+        role_versions={role_name: "1.0.0"},
     )
 
 
@@ -47,18 +47,18 @@ def _explicit_handler(state: dict[str, Any]) -> dict[str, Any]:
 
 
 class TestExplicitHandlerPriority:
-    def test_given_capability_in_explicit_registry_when_compiled_then_uses_explicit_handler(self):
+    def test_given_role_in_explicit_registry_when_compiled_then_uses_explicit_handler(self):
         spec = _make_spec("test_cap", "tests.agent_foundry.stub_handler", "StubHandler")
-        registry = CapabilityRegistry(specs={"test_cap": spec})
+        registry = RoleRegistry(specs={"test_cap": spec})
         handler_registry = {"test_cap": _explicit_handler}
 
         graph = compile_plan(_one_node_plan(), registry, handler_registry=handler_registry)
         result = graph.invoke({"input": "hello"})
         assert result["explicit"] is True
 
-    def test_given_capability_in_both_registries_when_compiled_then_explicit_takes_priority(self):
+    def test_given_role_in_both_registries_when_compiled_then_explicit_takes_priority(self):
         spec = _make_spec("test_cap", "tests.agent_foundry.stub_handler", "StubHandler")
-        registry = CapabilityRegistry(specs={"test_cap": spec})
+        registry = RoleRegistry(specs={"test_cap": spec})
         handler_registry = {"test_cap": _explicit_handler}
 
         graph = compile_plan(_one_node_plan(), registry, handler_registry=handler_registry)
@@ -78,7 +78,7 @@ class TestExplicitHandlerPriority:
                 "required": ["required_field"],
             },
         )
-        registry = CapabilityRegistry(specs={"test_cap": spec})
+        registry = RoleRegistry(specs={"test_cap": spec})
         handler_registry = {"test_cap": _explicit_handler}
 
         # Input lacks required_field, but explicit handlers skip validation
@@ -88,11 +88,11 @@ class TestExplicitHandlerPriority:
 
 
 class TestDynamicResolution:
-    def test_given_capability_not_in_explicit_registry_but_in_capability_registry_when_compiled_then_dynamically_resolves(
+    def test_given_role_not_in_explicit_registry_but_in_role_registry_when_compiled_then_dynamically_resolves(
         self,
     ):
         spec = _make_spec("test_cap", "tests.agent_foundry.stub_handler", "StubHandler")
-        registry = CapabilityRegistry(specs={"test_cap": spec})
+        registry = RoleRegistry(specs={"test_cap": spec})
 
         graph = compile_plan(_one_node_plan(), registry)
         result = graph.invoke({"input": "hello"})
@@ -105,7 +105,7 @@ class TestDynamicResolution:
             "StubHandler",
             method="custom_method",
         )
-        registry = CapabilityRegistry(specs={"test_cap": spec})
+        registry = RoleRegistry(specs={"test_cap": spec})
 
         graph = compile_plan(_one_node_plan(), registry)
         result = graph.invoke({"input": "hello"})
@@ -115,7 +115,7 @@ class TestDynamicResolution:
         self,
     ):
         spec = _make_spec("test_cap", "tests.agent_foundry.stub_handler", "StubHandler")
-        registry = CapabilityRegistry(specs={"test_cap": spec})
+        registry = RoleRegistry(specs={"test_cap": spec})
 
         graph = compile_plan(_one_node_plan(), registry)
         result = graph.invoke({"key1": "val1", "key2": "val2"})
@@ -139,7 +139,7 @@ class TestDynamicResolutionWithSchemaValidation:
             },
             outputs_schema={"type": "object", "properties": {}},
         )
-        registry = CapabilityRegistry(specs={"test_cap": spec})
+        registry = RoleRegistry(specs={"test_cap": spec})
 
         graph = compile_plan(_one_node_plan(), registry)
         result = graph.invoke({"input": "hello"})
@@ -158,18 +158,18 @@ class TestDynamicResolutionWithSchemaValidation:
                 "required": ["required_field"],
             },
         )
-        registry = CapabilityRegistry(specs={"test_cap": spec})
+        registry = RoleRegistry(specs={"test_cap": spec})
 
         graph = compile_plan(_one_node_plan(), registry)
         with pytest.raises(Exception) as exc_info:
             graph.invoke({"wrong_field": "hello"})
-        # The CapabilityExecutionError gets wrapped by LangGraph, so check the cause chain
+        # The RoleExecutionError gets wrapped by LangGraph, so check the cause chain
         assert "input_validation" in str(exc_info.value) or "required_field" in str(exc_info.value)
 
 
 class TestFallbackToPassthrough:
-    def test_given_capability_in_neither_registry_when_compiled_then_uses_passthrough(self):
-        registry = CapabilityRegistry(specs={})
+    def test_given_role_in_neither_registry_when_compiled_then_uses_passthrough(self):
+        registry = RoleRegistry(specs={})
 
         graph = compile_plan(_one_node_plan(), registry)
         result = graph.invoke({"input": "hello"})
@@ -178,20 +178,20 @@ class TestFallbackToPassthrough:
 
 
 class TestDynamicResolutionErrors:
-    def test_given_dynamic_resolution_fails_import_when_compiled_then_raises_capability_instantiation_error(
+    def test_given_dynamic_resolution_fails_import_when_compiled_then_raises_role_instantiation_error(
         self,
     ):
         spec = _make_spec("test_cap", "nonexistent.module", "BadClass")
-        registry = CapabilityRegistry(specs={"test_cap": spec})
+        registry = RoleRegistry(specs={"test_cap": spec})
 
-        with pytest.raises(CapabilityInstantiationError) as exc_info:
+        with pytest.raises(RoleInstantiationError) as exc_info:
             compile_plan(_one_node_plan(), registry)
         assert exc_info.value.node_id == "n1"
-        assert exc_info.value.capability == "test_cap"
+        assert exc_info.value.role == "test_cap"
 
     def test_given_feature_flag_off_when_compiled_then_falls_through_to_passthrough(self):
         spec = _make_spec("test_cap", "tests.agent_foundry.stub_handler", "StubHandler")
-        registry = CapabilityRegistry(specs={"test_cap": spec})
+        registry = RoleRegistry(specs={"test_cap": spec})
 
         with patch("agent_foundry.registry.imports.FF_CAPABILITY_IMPORTS", False):
             graph = compile_plan(_one_node_plan(), registry)

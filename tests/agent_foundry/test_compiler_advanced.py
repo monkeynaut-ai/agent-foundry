@@ -15,7 +15,7 @@ import pytest
 
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.compiler.errors import (
-    CapabilityInstantiationError,
+    RoleInstantiationError,
     PlanCompilationError,
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
@@ -50,10 +50,10 @@ class TestCompileErrors:
     def test_invalid_plan_missing_entry_node(self, registry):
         plan = GraphWiringPlan(
             goal="test",
-            nodes=[{"id": "n1", "capability": "schema_validator"}],
+            nodes=[{"id": "n1", "role": "schema_validator"}],
             edges=[],
             entry_point="nonexistent",
-            capability_versions={"schema_validator": "1.0.0"},
+            role_versions={"schema_validator": "1.0.0"},
         )
         with pytest.raises(PlanCompilationError):
             compile_plan(plan, registry, handler_registry=HANDLERS)
@@ -61,13 +61,13 @@ class TestCompileErrors:
     def test_factory_error_includes_node_id(self, registry):
         plan = GraphWiringPlan(
             goal="test",
-            nodes=[{"id": "n1", "capability": "schema_validator"}],
+            nodes=[{"id": "n1", "role": "schema_validator"}],
             edges=[],
             entry_point="n1",
-            capability_versions={"schema_validator": "1.0.0"},
+            role_versions={"schema_validator": "1.0.0"},
         )
         bad_handlers = {"schema_validator": "not_a_callable"}
-        with pytest.raises(CapabilityInstantiationError) as exc_info:
+        with pytest.raises(RoleInstantiationError) as exc_info:
             compile_plan(plan, registry, handler_registry=bad_handlers)
         assert "n1" in str(exc_info.value) or exc_info.value.node_id == "n1"
 
@@ -82,16 +82,16 @@ class TestConditionalEdges:
         plan = GraphWiringPlan(
             goal="test",
             nodes=[
-                {"id": "start", "capability": "rag_retriever"},
-                {"id": "branch_a", "capability": "schema_validator"},
-                {"id": "branch_b", "capability": "citation_validator"},
+                {"id": "start", "role": "rag_retriever"},
+                {"id": "branch_a", "role": "schema_validator"},
+                {"id": "branch_b", "role": "citation_validator"},
             ],
             edges=[
                 {"source": "start", "target": "branch_a", "condition": "needs_validation"},
                 {"source": "start", "target": "branch_b"},
             ],
             entry_point="start",
-            capability_versions={
+            role_versions={
                 "rag_retriever": "1.0.0",
                 "schema_validator": "1.0.0",
                 "citation_validator": "1.0.0",
@@ -119,13 +119,13 @@ class TestLoopSafety:
         plan = GraphWiringPlan(
             goal="test",
             nodes=[
-                {"id": "loop_node", "capability": "rag_retriever", "config": {"max_iterations": 3}},
+                {"id": "loop_node", "role": "rag_retriever", "config": {"max_iterations": 3}},
             ],
             edges=[
                 {"source": "loop_node", "target": "loop_node", "condition": "should_continue"},
             ],
             entry_point="loop_node",
-            capability_versions={"rag_retriever": "1.0.0"},
+            role_versions={"rag_retriever": "1.0.0"},
         )
         handlers = {"rag_retriever": counting_handler}
         graph = compile_plan(plan, registry, handler_registry=handlers)
@@ -184,12 +184,12 @@ class TestRuntimeSchemaFailures:
         plan = GraphWiringPlan(
             goal="test",
             nodes=[
-                {"id": "n1", "capability": "rag_retriever"},
-                {"id": "n2", "capability": "schema_validator"},
+                {"id": "n1", "role": "rag_retriever"},
+                {"id": "n2", "role": "schema_validator"},
             ],
             edges=[{"source": "n1", "target": "n2"}],
             entry_point="n1",
-            capability_versions={
+            role_versions={
                 "rag_retriever": "1.0.0",
                 "schema_validator": "1.0.0",
             },

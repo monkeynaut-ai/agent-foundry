@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import jsonschema
 import pytest
 
-from agent_foundry.registry.spec import load_capability_spec
+from agent_foundry.registry.spec import load_role_spec
 from archipelago.handlers import (
     ARCHIPELAGO_HANDLERS,
     architecture_handler,
@@ -23,7 +23,7 @@ from archipelago.models import (
     TestResults,
 )
 
-from .conftest import PRODUCT_CAPS_DIR
+from .conftest import PRODUCT_ROLES_DIR
 
 
 def _mock_product_brief():
@@ -112,7 +112,7 @@ class TestStrategyHandler:
         state = {"product_brief_input": "Build a test runner"}
         result = strategy_handler(state)
 
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml")
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "strategy_generate_product_brief.yaml")
         jsonschema.validate({"product_brief": result["product_brief"]}, spec.outputs_schema)
 
     def test_given_empty_input_when_handler_called_then_raises_value_error(self):
@@ -142,7 +142,7 @@ class TestArchitectureHandler:
         state = {"product_brief": _mock_product_brief().model_dump()}
         result = architecture_handler(state)
 
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml")
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "architecture_generate_feature_arch.yaml")
         jsonschema.validate(
             {"feature_architecture": result["feature_architecture"]}, spec.outputs_schema
         )
@@ -177,7 +177,7 @@ class TestSpecHandler:
         state = {"feature_architecture": _mock_feature_architecture().model_dump()}
         result = spec_handler(state)
 
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml")
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "spec_generate_feature_spec.yaml")
         combined = {"feature_spec": result["feature_spec"], "test_plan": result["test_plan"]}
         jsonschema.validate(combined, spec.outputs_schema)
 
@@ -217,7 +217,7 @@ class TestDevTestHandler:
         }
         result = dev_test_handler(state)
 
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml")
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "dev_implement_feature_tdd.yaml")
         combined = {"code_patch": result["code_patch"], "test_results": result["test_results"]}
         jsonschema.validate(combined, spec.outputs_schema)
 

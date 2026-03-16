@@ -97,7 +97,7 @@ class _HandlerWSServer:
 def _build_prompt(worker_input: WorkerInput) -> str:
     """Format the worker input into a prompt string for Claude Code."""
     spec = worker_input.feature_spec
-    role = worker_input.role
+    role = worker_input.worker_mode
 
     if role == "unit_test_writer":
         parts = [
@@ -169,8 +169,8 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         )
 
     # Merge node config from system JSON (injected into state by the compiler)
-    if role := state.get("role"):
-        worker_input.role = role
+    if role := state.get("worker_mode"):
+        worker_input.worker_mode = role
     if acp_hidden_dirs := state.get("acp_hidden_dirs"):
         worker_input.acp_hidden_dirs = acp_hidden_dirs
     if acp_readonly_dirs := state.get("acp_readonly_dirs"):

@@ -1,6 +1,6 @@
 """S6.1-S6.4, S6.6-S6.7 — Observability + Evaluation Gates.
 
-S6.1: Tracing spans per node with timestamps, node id, capability, status.
+S6.1: Tracing spans per node with timestamps, node id, role, status.
 S6.2: Tool and retrieval trace enrichment with redaction.
 S6.3: Schema validator gate (generic).
 S6.4: Decision eval gates: citation, uncertainty, evidence-first.
@@ -26,32 +26,32 @@ class TestTracingSpans:
 
     def test_span_has_required_fields(self):
         tracer = ExecutionTracer()
-        span = tracer.start_span(node_id="n1", capability="rag_retriever")
+        span = tracer.start_span(node_id="n1", role="rag_retriever")
         tracer.end_span(span, status="success")
         assert span.node_id == "n1"
-        assert span.capability == "rag_retriever"
+        assert span.role == "rag_retriever"
         assert span.status == "success"
         assert span.start_time is not None
         assert span.end_time is not None
 
     def test_span_timestamps_are_ordered(self):
         tracer = ExecutionTracer()
-        span = tracer.start_span(node_id="n1", capability="test")
+        span = tracer.start_span(node_id="n1", role="test")
         time.sleep(0.001)
         tracer.end_span(span, status="success")
         assert span.end_time >= span.start_time
 
     def test_tracer_collects_all_spans(self):
         tracer = ExecutionTracer()
-        s1 = tracer.start_span(node_id="n1", capability="a")
+        s1 = tracer.start_span(node_id="n1", role="a")
         tracer.end_span(s1, status="success")
-        s2 = tracer.start_span(node_id="n2", capability="b")
+        s2 = tracer.start_span(node_id="n2", role="b")
         tracer.end_span(s2, status="success")
         assert len(tracer.spans) == 2
 
     def test_span_export(self):
         tracer = ExecutionTracer()
-        span = tracer.start_span(node_id="n1", capability="test")
+        span = tracer.start_span(node_id="n1", role="test")
         tracer.end_span(span, status="success")
         exported = tracer.export()
         assert len(exported) == 1
@@ -66,7 +66,7 @@ class TestTraceEnrichment:
 
     def test_tool_trace_redacts_secrets(self):
         tracer = ExecutionTracer()
-        span = tracer.start_span(node_id="n1", capability="tool_calling")
+        span = tracer.start_span(node_id="n1", role="tool_calling")
         tracer.add_tool_call(
             span,
             tool_name="api_call",
@@ -81,7 +81,7 @@ class TestTraceEnrichment:
 
     def test_retrieval_trace_includes_metadata(self):
         tracer = ExecutionTracer()
-        span = tracer.start_span(node_id="n1", capability="rag_retriever")
+        span = tracer.start_span(node_id="n1", role="rag_retriever")
         tracer.add_retrieval(span, snippet_ids=["s1", "s2"], ranks=[1, 2])
         tracer.end_span(span, status="success")
         assert span.retrieval_info is not None
@@ -89,7 +89,7 @@ class TestTraceEnrichment:
 
     def test_tool_trace_redacts_nested_secrets(self):
         tracer = ExecutionTracer()
-        span = tracer.start_span(node_id="n1", capability="tool_calling")
+        span = tracer.start_span(node_id="n1", role="tool_calling")
         tracer.add_tool_call(
             span,
             tool_name="api_call",
@@ -108,7 +108,7 @@ class TestTraceEnrichment:
 
     def test_tool_trace_redacts_all_sensitive_keys(self):
         tracer = ExecutionTracer()
-        span = tracer.start_span(node_id="n1", capability="tool_calling")
+        span = tracer.start_span(node_id="n1", role="tool_calling")
         tracer.add_tool_call(
             span,
             tool_name="api_call",

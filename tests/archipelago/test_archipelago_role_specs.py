@@ -1,8 +1,8 @@
-"""Archipelago capability specs — loading, schema validation, and registry integration."""
+"""Archipelago role specs — loading, schema validation, and registry integration."""
 
 import jsonschema
 
-from agent_foundry.registry.spec import CapabilitySpec, load_capability_spec
+from agent_foundry.registry.spec import RoleSpec, load_role_spec
 from archipelago.models import (
     CodePatch,
     FeatureArchitecture,
@@ -12,7 +12,7 @@ from archipelago.models import (
     TestResults,
 )
 
-from .conftest import PRODUCT_CAPS_DIR
+from .conftest import PRODUCT_ROLES_DIR
 
 ARCHIPELAGO_SPEC_NAMES = [
     "architecture_generate_feature_arch",
@@ -83,9 +83,9 @@ def _valid_test_results_dump() -> dict:
 
 
 class TestStrategySpec:
-    def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml")
-        assert isinstance(spec, CapabilitySpec)
+    def test_given_yaml_file_when_loaded_then_returns_valid_role_spec(self):
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "strategy_generate_product_brief.yaml")
+        assert isinstance(spec, RoleSpec)
         assert spec.name == "strategy_generate_product_brief"
         assert spec.version == "1.0.0"
         assert "archipelago" in spec.tags
@@ -93,15 +93,15 @@ class TestStrategySpec:
     def test_given_strategy_spec_when_outputs_schema_validates_model_dump_then_passes(
         self,
     ):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml")
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "strategy_generate_product_brief.yaml")
         data = {"product_brief": _valid_product_brief_dump()}
         jsonschema.validate(data, spec.outputs_schema)
 
 
 class TestArchitectureSpec:
-    def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml")
-        assert isinstance(spec, CapabilitySpec)
+    def test_given_yaml_file_when_loaded_then_returns_valid_role_spec(self):
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "architecture_generate_feature_arch.yaml")
+        assert isinstance(spec, RoleSpec)
         assert spec.name == "architecture_generate_feature_arch"
         assert spec.version == "1.0.0"
         assert "archipelago" in spec.tags
@@ -109,7 +109,7 @@ class TestArchitectureSpec:
     def test_given_architecture_spec_when_outputs_schema_validates_model_dump_then_passes(
         self,
     ):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml")
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "architecture_generate_feature_arch.yaml")
         data = {"feature_architecture": _valid_feature_architecture_dump()}
         jsonschema.validate(data, spec.outputs_schema)
 
@@ -118,9 +118,9 @@ class TestArchitectureSpec:
 
 
 class TestSpecSpec:
-    def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml")
-        assert isinstance(spec, CapabilitySpec)
+    def test_given_yaml_file_when_loaded_then_returns_valid_role_spec(self):
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "spec_generate_feature_spec.yaml")
+        assert isinstance(spec, RoleSpec)
         assert spec.name == "spec_generate_feature_spec"
         assert spec.version == "1.0.0"
         assert "archipelago" in spec.tags
@@ -128,7 +128,7 @@ class TestSpecSpec:
     def test_given_spec_spec_when_outputs_schema_validates_model_dump_then_passes(
         self,
     ):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml")
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "spec_generate_feature_spec.yaml")
         data = {
             "feature_spec": _valid_feature_spec_dump(),
             "test_plan": _valid_test_plan_dump(),
@@ -137,15 +137,15 @@ class TestSpecSpec:
 
 
 class TestDevSpec:
-    def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml")
-        assert isinstance(spec, CapabilitySpec)
+    def test_given_yaml_file_when_loaded_then_returns_valid_role_spec(self):
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "dev_implement_feature_tdd.yaml")
+        assert isinstance(spec, RoleSpec)
         assert spec.name == "dev_implement_feature_tdd"
         assert spec.version == "1.0.0"
         assert "archipelago" in spec.tags
 
     def test_given_dev_spec_when_outputs_schema_validates_model_dump_then_passes(self):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml")
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "dev_implement_feature_tdd.yaml")
         data = {
             "code_patch": _valid_code_patch_dump(),
             "test_results": _valid_test_results_dump(),
@@ -157,16 +157,16 @@ class TestDevSpec:
 
 
 class TestUnitTestWriterSpec:
-    def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "write_unit_tests_from_spec.yaml")
-        assert isinstance(spec, CapabilitySpec)
+    def test_given_yaml_file_when_loaded_then_returns_valid_role_spec(self):
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "write_unit_tests_from_spec.yaml")
+        assert isinstance(spec, RoleSpec)
         assert spec.name == "write_unit_tests_from_spec"
         assert spec.version == "1.0.0"
         assert "archipelago" in spec.tags
         assert "unit-test" in spec.tags
 
     def test_given_spec_when_outputs_schema_validates_then_passes(self):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "write_unit_tests_from_spec.yaml")
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "write_unit_tests_from_spec.yaml")
         data = {
             "result_summary": "Tests written",
             "workspace_ref": "/workspace",
@@ -179,19 +179,19 @@ class TestUnitTestWriterSpec:
 
 
 class TestCodeWriterSpec:
-    def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "code_implement_from_tests.yaml")
-        assert isinstance(spec, CapabilitySpec)
+    def test_given_yaml_file_when_loaded_then_returns_valid_role_spec(self):
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "code_implement_from_tests.yaml")
+        assert isinstance(spec, RoleSpec)
         assert spec.name == "code_implement_from_tests"
         assert spec.version == "1.0.0"
         assert "archipelago" in spec.tags
 
     def test_given_spec_when_inputs_require_workspace_volume(self):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "code_implement_from_tests.yaml")
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "code_implement_from_tests.yaml")
         assert "workspace_volume" in spec.inputs_schema["required"]
 
     def test_given_spec_when_outputs_schema_validates_then_passes(self):
-        spec = load_capability_spec(PRODUCT_CAPS_DIR / "code_implement_from_tests.yaml")
+        spec = load_role_spec(PRODUCT_ROLES_DIR / "code_implement_from_tests.yaml")
         data = {
             "result_summary": "Code implemented",
             "workspace_ref": "/workspace",
@@ -217,7 +217,7 @@ class TestRegistryIntegration:
 
     def test_given_each_archipelago_spec_when_name_queried_then_found_in_registry(self, registry):
         for name in ARCHIPELAGO_SPEC_NAMES:
-            assert registry.get(name) is not None, f"Missing capability: {name}"
+            assert registry.get(name) is not None, f"Missing role: {name}"
 
     def test_given_archipelago_tag_search_then_results_sorted_by_name(self, registry):
         results = registry.search(tags=["archipelago"])

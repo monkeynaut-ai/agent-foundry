@@ -1,4 +1,4 @@
-"""Capability execution with input/output schema enforcement and quality controls."""
+"""Role execution with input/output schema enforcement and quality controls."""
 
 import concurrent.futures
 from collections.abc import Callable
@@ -6,30 +6,30 @@ from typing import Any
 
 import jsonschema
 
-from agent_foundry.registry.errors import CapabilityExecutionError
-from agent_foundry.registry.spec import CapabilitySpec
+from agent_foundry.registry.errors import RoleExecutionError
+from agent_foundry.registry.spec import RoleSpec
 
 FF_SCHEMA_ENFORCEMENT = True
 FF_RETRY_TIMEOUTS = False
 
 
-def execute_capability(
-    spec: CapabilitySpec,
+def execute_role(
+    spec: RoleSpec,
     inputs: dict[str, Any],
     handler: Callable[[dict[str, Any]], dict[str, Any]],
 ) -> dict[str, Any]:
-    """Execute a capability handler with optional schema enforcement and quality controls.
+    """Execute a role handler with optional schema enforcement and quality controls.
 
     Args:
-        spec: The capability specification with input/output schemas.
+        spec: The role specification with input/output schemas.
         inputs: The input data to pass to the handler.
-        handler: The callable that performs the capability logic.
+        handler: The callable that performs the role logic.
 
     Returns:
         The handler's output dict.
 
     Raises:
-        CapabilityExecutionError: If validation, timeout, or retry exhaustion fails.
+        RoleExecutionError: If validation, timeout, or retry exhaustion fails.
     """
     if FF_SCHEMA_ENFORCEMENT:
         _validate_schema(inputs, spec.inputs_schema, spec.name, "input_validation")
@@ -46,7 +46,7 @@ def execute_capability(
 
 
 def _execute_with_quality_controls(
-    spec: CapabilitySpec,
+    spec: RoleSpec,
     inputs: dict[str, Any],
     handler: Callable[[dict[str, Any]], dict[str, Any]],
 ) -> dict[str, Any]:
@@ -57,16 +57,16 @@ def _execute_with_quality_controls(
     for attempt in range(max_attempts):
         try:
             return _execute_with_timeout(handler, inputs, timeout, spec.name)
-        except CapabilityExecutionError:
+        except RoleExecutionError:
             raise
         except Exception as e:
             last_error = e
             if attempt < max_attempts - 1:
                 continue
 
-    raise CapabilityExecutionError(
-        message=(f"Capability '{spec.name}' failed after {max_attempts} attempts: {last_error}"),
-        capability_name=spec.name,
+    raise RoleExecutionError(
+        message=(f"Role '{spec.name}' failed after {max_attempts} attempts: {last_error}"),
+        role_name=spec.name,
         phase="retry_exhausted",
     )
 
@@ -75,16 +75,16 @@ def _execute_with_timeout(
     handler: Callable[[dict[str, Any]], dict[str, Any]],
     inputs: dict[str, Any],
     timeout: int,
-    capability_name: str,
+    role_name: str,
 ) -> dict[str, Any]:
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(handler, inputs)
         try:
             return future.result(timeout=timeout)
         except concurrent.futures.TimeoutError as err:
-            raise CapabilityExecutionError(
-                message=f"Capability '{capability_name}' timed out after {timeout}s",
-                capability_name=capability_name,
+            raise RoleExecutionError(
+                message=f"Role '{role_name}' timed out after {timeout}s",
+                role_name=role_name,
                 phase="timeout",
             ) from err
 
@@ -92,7 +92,7 @@ def _execute_with_timeout(
 def _validate_schema(
     data: dict[str, Any],
     schema: dict[str, Any],
-    capability_name: str,
+    role_name: str,
     phase: str,
 ) -> None:
     validator = jsonschema.Draft7Validator(schema)
@@ -102,9 +102,9 @@ def _validate_schema(
             ".".join(str(p) for p in err.absolute_path) or err.json_path for err in errors
         ]
         messages = [err.message for err in errors]
-        raise CapabilityExecutionError(
-            message=f"Schema {phase} failed for '{capability_name}': {'; '.join(messages)}",
-            capability_name=capability_name,
+        raise RoleExecutionError(
+            message=f"Schema {phase} failed for '{role_name}': {'; '.join(messages)}",
+            role_name=role_name,
             phase=phase,
             field_paths=field_paths,
         )

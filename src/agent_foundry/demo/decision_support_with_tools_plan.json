@@ -1,13 +1,13 @@
 {
   "goal": "decision-support-with-tools",
   "nodes": [
-    {"id": "retriever", "capability": "rag_retriever", "config": {}},
-    {"id": "tools", "capability": "tool_calling", "config": {}},
-    {"id": "output", "capability": "structured_output_pydantic", "config": {}},
-    {"id": "schema_gate", "capability": "schema_validator", "config": {}},
-    {"id": "citation_gate", "capability": "citation_validator", "config": {}},
-    {"id": "uncertainty_gate", "capability": "uncertainty_completeness_validator", "config": {}},
-    {"id": "evidence_gate", "capability": "evidence_first_contract", "config": {}}
+    {"id": "retriever", "role": "rag_retriever", "config": {}},
+    {"id": "tools", "role": "tool_calling", "config": {}},
+    {"id": "output", "role": "structured_output_pydantic", "config": {}},
+    {"id": "schema_gate", "role": "schema_validator", "config": {}},
+    {"id": "citation_gate", "role": "citation_validator", "config": {}},
+    {"id": "uncertainty_gate", "role": "uncertainty_completeness_validator", "config": {}},
+    {"id": "evidence_gate", "role": "evidence_first_contract", "config": {}}
   ],
   "edges": [
     {"source": "retriever", "target": "tools"},
@@ -21,7 +21,7 @@
   "tools": [
     {"name": "calculator", "args_schema": {"type": "object", "properties": {"expression": {"type": "string"}}}}
   ],
-  "capability_versions": {
+  "role_versions": {
     "rag_retriever": "1.0.0",
     "structured_output_pydantic": "1.0.0",
     "schema_validator": "1.0.0",

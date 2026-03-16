@@ -1,8 +1,8 @@
-"""Capability stack definition for containerized AI agents.
+"""Role stack definition for containerized AI agents.
 
-A capability stack defines the customizations applied to a container
+A role stack defines the customizations applied to a container
 before the agent starts: instructions, tools, permissions, markers, etc.
-Products provide capability stacks; Agent Foundry applies them.
+Products provide role stacks; Agent Foundry applies them.
 """
 
 from typing import Any
@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from agent_foundry.acp.protocol import MarkerMapping
 
 
-class CapabilityStack(BaseModel):
+class RoleStack(BaseModel):
     """Defines what customizations a container gets before the agent starts.
 
     Attributes:

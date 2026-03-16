@@ -2,8 +2,8 @@ name: evidence_first_contract
 description: Enforces evidence-first policy — no recommendation without evidence
 version: "1.0.0"
 implementation:
-  module: agent_foundry.capabilities.evidence_first
-  class_name: EvidenceFirstContractCapability
+  module: agent_foundry.roles.evidence_first
+  class_name: EvidenceFirstContractRole
 inputs_schema:
   type: object
   properties:

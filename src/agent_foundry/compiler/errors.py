@@ -8,12 +8,12 @@ class PlanCompilationError(Exception):
         super().__init__(message)
 
 
-class CapabilityInstantiationError(Exception):
-    """Raised when a capability handler cannot be instantiated."""
+class RoleInstantiationError(Exception):
+    """Raised when a role handler cannot be instantiated."""
 
-    def __init__(self, message: str, node_id: str, capability: str):
+    def __init__(self, message: str, node_id: str, role: str):
         self.node_id = node_id
-        self.capability = capability
+        self.role = role
         super().__init__(message)
 
 

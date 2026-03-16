@@ -28,7 +28,7 @@ class RetrievalAPI:
         """Retrieve top-k snippets for a query.
 
         Uses vector similarity search with exact-name boosting: if the query
-        matches a capability name exactly, that document is guaranteed in results.
+        matches a role name exactly, that document is guaranteed in results.
         Snippets are truncated to max_snippet_length.
 
         Args:
@@ -44,7 +44,7 @@ class RetrievalAPI:
         if not FF_RETRIEVER:
             raise RuntimeError("retriever is disabled (FF_RETRIEVER=False)")
 
-        # Check for exact capability name match via direct lookup
+        # Check for exact role name match via direct lookup
         exact_match = self._indexer.get_by_source(f"registry:{query}")
 
         # Get vector similarity results

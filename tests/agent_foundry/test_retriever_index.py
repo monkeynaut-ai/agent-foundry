@@ -26,7 +26,7 @@ class TestCorpusIngestion:
     def test_build_index_with_docs(self, registry, index_dir, tmp_path):
         docs_dir = tmp_path / "docs"
         docs_dir.mkdir()
-        (docs_dir / "guide.md").write_text("# How to use RAG\nUse rag_retriever capability.")
+        (docs_dir / "guide.md").write_text("# How to use RAG\nUse rag_retriever role.")
         indexer = RegistryIndexer(index_dir=index_dir)
         indexer.build(registry, docs_dir=docs_dir)
         assert index_dir.exists()

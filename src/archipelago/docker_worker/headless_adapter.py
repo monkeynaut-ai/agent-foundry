@@ -82,7 +82,7 @@ def _map_event_to_protocol(
     task_complete = False
 
     if event_type == "system" and event.get("subtype") == "init":
-        # Capture the Claude Code session_id for resume capability
+        # Capture the Claude Code session_id for resume support
         # Don't emit a protocol message — the adapter already sent "started"
         pass
 

@@ -4,29 +4,29 @@ from agent_foundry.planner.errors import (
     DanglingEdgeError,
     DuplicateNodeIdError,
     PlanValidationError,
-    UnknownCapabilityError,
+    UnknownRoleError,
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
+from agent_foundry.registry.registry import RoleRegistry
 
 FF_PLAN_VALIDATION = True
 
 
-def validate_plan(plan: GraphWiringPlan, registry: CapabilityRegistry) -> None:
-    """Validate a wiring plan against a capability registry.
+def validate_plan(plan: GraphWiringPlan, registry: RoleRegistry) -> None:
+    """Validate a wiring plan against a role registry.
 
-    Checks: duplicate IDs, unknown capabilities, dangling edges,
+    Checks: duplicate IDs, unknown roles, dangling edges,
     tool contracts, breakpoints, version coverage, loop termination.
     """
     if not FF_PLAN_VALIDATION:
         return
 
     _check_duplicate_node_ids(plan)
-    _check_unknown_capabilities(plan, registry)
+    _check_unknown_roles(plan, registry)
     _check_dangling_edges(plan)
     _check_tool_calling_contract(plan)
     _check_breakpoints(plan)
-    _check_capability_versions_coverage(plan)
+    _check_role_versions_coverage(plan)
     _check_loop_termination(plan)
 
 
@@ -41,12 +41,12 @@ def _check_duplicate_node_ids(plan: GraphWiringPlan) -> None:
         seen.add(node.id)
 
 
-def _check_unknown_capabilities(plan: GraphWiringPlan, registry: CapabilityRegistry) -> None:
+def _check_unknown_roles(plan: GraphWiringPlan, registry: RoleRegistry) -> None:
     for node in plan.nodes:
-        if registry.get(node.capability) is None:
-            raise UnknownCapabilityError(
-                message=f"Unknown capability '{node.capability}' in node '{node.id}'",
-                capability=node.capability,
+        if registry.get(node.role) is None:
+            raise UnknownRoleError(
+                message=f"Unknown role '{node.role}' in node '{node.id}'",
+                role=node.role,
                 node_id=node.id,
             )
 
@@ -67,7 +67,7 @@ def _check_dangling_edges(plan: GraphWiringPlan) -> None:
 
 
 def _check_tool_calling_contract(plan: GraphWiringPlan) -> None:
-    has_tool_calling = any(n.capability == "tool_calling" for n in plan.nodes)
+    has_tool_calling = any(n.role == "tool_calling" for n in plan.nodes)
     if not has_tool_calling:
         return
 
@@ -88,11 +88,11 @@ def _check_breakpoints(plan: GraphWiringPlan) -> None:
             raise PlanValidationError(f"breakpoint references non-existent node '{bp}'")
 
 
-def _check_capability_versions_coverage(plan: GraphWiringPlan) -> None:
+def _check_role_versions_coverage(plan: GraphWiringPlan) -> None:
     for node in plan.nodes:
-        if node.capability not in plan.capability_versions:
+        if node.role not in plan.role_versions:
             raise PlanValidationError(
-                f"Missing version entry for capability '{node.capability}' used by node '{node.id}'"
+                f"Missing version entry for role '{node.role}' used by node '{node.id}'"
             )
 
 

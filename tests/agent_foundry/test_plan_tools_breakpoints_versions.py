@@ -2,7 +2,7 @@
 
 S3.4: tool_calling node requires non-empty tools list with unique names.
 S3.5: breakpoints reference existing nodes; persistence has required fields.
-S3.6: capability_versions must cover all node types; loops require termination.
+S3.6: role_versions must cover all node types; loops require termination.
 """
 
 import pytest
@@ -22,12 +22,12 @@ class TestToolCallingContract:
     def test_tool_calling_without_tools_fails(self, registry):
         plan = _make_plan(
             nodes=[
-                {"id": "n1", "capability": "tool_calling"},
+                {"id": "n1", "role": "tool_calling"},
             ],
             edges=[],
             entry_point="n1",
             tools=[],
-            capability_versions={"tool_calling": "1.0.0"},
+            role_versions={"tool_calling": "1.0.0"},
         )
         with pytest.raises(PlanValidationError, match="tool"):
             validate_plan(plan, registry)
@@ -35,7 +35,7 @@ class TestToolCallingContract:
     def test_duplicate_tool_names_fails(self, registry):
         plan = _make_plan(
             nodes=[
-                {"id": "n1", "capability": "tool_calling"},
+                {"id": "n1", "role": "tool_calling"},
             ],
             edges=[],
             entry_point="n1",
@@ -43,7 +43,7 @@ class TestToolCallingContract:
                 {"name": "calc", "args_schema": {}},
                 {"name": "calc", "args_schema": {}},
             ],
-            capability_versions={"tool_calling": "1.0.0"},
+            role_versions={"tool_calling": "1.0.0"},
         )
         with pytest.raises(PlanValidationError, match=r"duplicate.*tool"):
             validate_plan(plan, registry)
@@ -51,14 +51,14 @@ class TestToolCallingContract:
     def test_tool_calling_with_valid_tools_passes(self, registry):
         plan = _make_plan(
             nodes=[
-                {"id": "n1", "capability": "tool_calling"},
+                {"id": "n1", "role": "tool_calling"},
             ],
             edges=[],
             entry_point="n1",
             tools=[
                 {"name": "calc", "args_schema": {"type": "object"}},
             ],
-            capability_versions={"tool_calling": "1.0.0"},
+            role_versions={"tool_calling": "1.0.0"},
         )
         validate_plan(plan, registry)  # Should not raise
 
@@ -98,11 +98,11 @@ class TestPersistenceValidation:
 # --- S3.6: Versioning + Loop Termination ---
 
 
-class TestCapabilityVersionsCoverage:
-    """capability_versions must cover all node types."""
+class TestRoleVersionsCoverage:
+    """role_versions must cover all node types."""
 
     def test_missing_version_entry_fails(self, registry):
-        plan = _make_plan(capability_versions={"rag_retriever": "1.0.0"})
+        plan = _make_plan(role_versions={"rag_retriever": "1.0.0"})
         # schema_validator is missing from versions
         with pytest.raises(PlanValidationError, match="version"):
             validate_plan(plan, registry)
@@ -132,8 +132,8 @@ class TestLoopTermination:
                 {"source": "n2", "target": "n1", "condition": "needs_retry"},
             ],
             nodes=[
-                {"id": "n1", "capability": "rag_retriever", "config": {"max_iterations": 5}},
-                {"id": "n2", "capability": "schema_validator"},
+                {"id": "n1", "role": "rag_retriever", "config": {"max_iterations": 5}},
+                {"id": "n2", "role": "schema_validator"},
             ],
         )
         validate_plan(plan, registry)

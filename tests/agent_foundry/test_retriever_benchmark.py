@@ -10,18 +10,18 @@ import time
 
 import pytest
 
-from agent_foundry.registry.registry import CapabilityRegistry
+from agent_foundry.registry.registry import RoleRegistry
 from agent_foundry.retriever.indexer import RegistryIndexer
 from agent_foundry.retriever.retrieval import RetrievalAPI
 
-from .conftest import CAPABILITIES_DIR
+from .conftest import ROLES_DIR
 
 QUERIES = [f"query_{i}" for i in range(100)]
 
 
 @pytest.fixture(scope="module")
 def retrieval_api(tmp_path_factory):
-    registry = CapabilityRegistry.from_directory(CAPABILITIES_DIR)
+    registry = RoleRegistry.from_directory(ROLES_DIR)
     index_dir = tmp_path_factory.mktemp("index")
     indexer = RegistryIndexer(index_dir=index_dir)
     indexer.build(registry)

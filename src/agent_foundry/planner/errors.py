@@ -1,11 +1,11 @@
 """Typed exceptions for planner operations."""
 
 
-class UnknownCapabilityError(Exception):
-    """Raised when a plan references a capability not in the registry."""
+class UnknownRoleError(Exception):
+    """Raised when a plan references a role not in the registry."""
 
-    def __init__(self, message: str, capability: str, node_id: str):
-        self.capability = capability
+    def __init__(self, message: str, role: str, node_id: str):
+        self.role = role
         self.node_id = node_id
         super().__init__(message)
 

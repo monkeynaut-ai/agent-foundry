@@ -21,7 +21,7 @@ class WorkerConstraints(BaseModel):
 
 
 class WorkerInput(BaseModel):
-    """Typed input for docker worker capabilities."""
+    """Typed input for docker worker roles."""
 
     repo_ref: str
     repo_url: str | None = None
@@ -29,7 +29,7 @@ class WorkerInput(BaseModel):
     constraints: WorkerConstraints
     test_commands: list[str]
     gates: list[str] = Field(default_factory=list)
-    role: str = "full"
+    worker_mode: str = "full"
     acp_hidden_dirs: list[str] = Field(default_factory=list)
     acp_readonly_dirs: list[str] = Field(default_factory=list)
     role_instructions_path: str | None = None
@@ -58,7 +58,7 @@ class CommitEvidence(BaseModel):
 
 
 class WorkerResult(BaseModel):
-    """Typed output from the coding.implement_feature_from_spec capability."""
+    """Typed output from the coding.implement_feature_from_spec role."""
 
     result_summary: str
     workspace_ref: str

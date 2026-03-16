@@ -2,8 +2,8 @@ name: tool_calling
 description: Executes tool calls with argument validation and result capture
 version: "1.0.0"
 implementation:
-  module: agent_foundry.capabilities.tool_calling
-  class_name: ToolCallingCapability
+  module: agent_foundry.roles.tool_calling
+  class_name: ToolCallingRole
 inputs_schema:
   type: object
   properties:

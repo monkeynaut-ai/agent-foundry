@@ -1,12 +1,12 @@
 {
   "goal": "decision-support",
   "nodes": [
-    {"id": "retriever", "capability": "rag_retriever", "config": {"k": 3}},
-    {"id": "output", "capability": "structured_output_pydantic", "config": {}},
-    {"id": "schema_gate", "capability": "schema_validator", "config": {}},
-    {"id": "citation_gate", "capability": "citation_validator", "config": {}},
-    {"id": "uncertainty_gate", "capability": "uncertainty_completeness_validator", "config": {}},
-    {"id": "evidence_gate", "capability": "evidence_first_contract", "config": {}}
+    {"id": "retriever", "role": "rag_retriever", "config": {"k": 3}},
+    {"id": "output", "role": "structured_output_pydantic", "config": {}},
+    {"id": "schema_gate", "role": "schema_validator", "config": {}},
+    {"id": "citation_gate", "role": "citation_validator", "config": {}},
+    {"id": "uncertainty_gate", "role": "uncertainty_completeness_validator", "config": {}},
+    {"id": "evidence_gate", "role": "evidence_first_contract", "config": {}}
   ],
   "edges": [
     {"source": "retriever", "target": "output"},
@@ -16,7 +16,7 @@
     {"source": "uncertainty_gate", "target": "evidence_gate"}
   ],
   "entry_point": "retriever",
-  "capability_versions": {
+  "role_versions": {
     "rag_retriever": "1.0.0",
     "structured_output_pydantic": "1.0.0",
     "schema_validator": "1.0.0",

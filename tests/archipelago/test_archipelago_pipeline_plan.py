@@ -48,11 +48,9 @@ class TestParsePlan:
         reconstructed = GraphWiringPlan(**dumped)
         assert reconstructed == plan
 
-    def test_given_pipeline_json_when_capability_versions_inspected_then_all_nodes_covered(
-        self, plan
-    ):
-        node_capabilities = {n.capability for n in plan.nodes}
-        versioned_capabilities = set(plan.capability_versions.keys())
+    def test_given_pipeline_json_when_role_versions_inspected_then_all_nodes_covered(self, plan):
+        node_capabilities = {n.role for n in plan.nodes}
+        versioned_capabilities = set(plan.role_versions.keys())
         assert node_capabilities == versioned_capabilities
 
 
@@ -82,6 +80,4 @@ class TestValidatePlan:
 
     def test_given_pipeline_plan_when_version_coverage_check_runs_then_all_covered(self, plan):
         for node in plan.nodes:
-            assert node.capability in plan.capability_versions, (
-                f"Missing version for capability: {node.capability}"
-            )
+            assert node.role in plan.role_versions, f"Missing version for role: {node.role}"

@@ -1,6 +1,6 @@
-"""S1.7 — Minimum capability set present + searchable by tags.
+"""S1.7 — Minimum role set present + searchable by tags.
 
-Tests: registry contains all minimum capability names;
+Tests: registry contains all minimum role names;
        tag search returns correct set sorted deterministically.
 Feature flag: FF_MIN_CAP_SET (default on).
 """
@@ -19,12 +19,12 @@ MINIMUM_CAPABILITIES = [
 ]
 
 
-class TestMinimumCapabilitySet:
+class TestMinimumRoleSet:
     """All required minimum capabilities are present."""
 
     @pytest.mark.parametrize("name", MINIMUM_CAPABILITIES)
-    def test_capability_present(self, registry, name):
-        assert registry.get(name) is not None, f"Missing capability: {name}"
+    def test_role_present(self, registry, name):
+        assert registry.get(name) is not None, f"Missing role: {name}"
 
     def test_minimum_set_count(self, registry):
         assert len(registry) >= len(MINIMUM_CAPABILITIES)

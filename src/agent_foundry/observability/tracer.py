@@ -17,7 +17,7 @@ class Span:
     """A trace span for a single node execution."""
 
     node_id: str
-    capability: str
+    role: str
     start_time: float = 0.0
     end_time: float = 0.0
     status: str = "pending"
@@ -35,10 +35,10 @@ class ExecutionTracer:
     def spans(self) -> list[Span]:
         return list(self._spans)
 
-    def start_span(self, node_id: str, capability: str) -> Span:
+    def start_span(self, node_id: str, role: str) -> Span:
         span = Span(
             node_id=node_id,
-            capability=capability,
+            role=role,
             start_time=time.time(),
         )
         self._spans.append(span)
@@ -79,7 +79,7 @@ class ExecutionTracer:
         return [
             {
                 "node_id": s.node_id,
-                "capability": s.capability,
+                "role": s.role,
                 "start_time": s.start_time,
                 "end_time": s.end_time,
                 "status": s.status,

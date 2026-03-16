@@ -14,12 +14,12 @@ def _minimal_plan() -> dict:
         "nodes": [
             {
                 "id": "retriever",
-                "capability": "rag_retriever",
+                "role": "rag_retriever",
                 "config": {"k": 3},
             },
             {
                 "id": "output",
-                "capability": "structured_output_pydantic",
+                "role": "structured_output_pydantic",
                 "config": {},
             },
         ],
@@ -27,7 +27,7 @@ def _minimal_plan() -> dict:
             {"source": "retriever", "target": "output"},
         ],
         "entry_point": "retriever",
-        "capability_versions": {
+        "role_versions": {
             "rag_retriever": "1.0.0",
             "structured_output_pydantic": "1.0.0",
         },
@@ -45,7 +45,7 @@ class TestParseValidPlan:
         plan = GraphWiringPlan(**_minimal_plan())
         assert len(plan.nodes) == 2
         assert plan.nodes[0].id == "retriever"
-        assert plan.nodes[0].capability == "rag_retriever"
+        assert plan.nodes[0].role == "rag_retriever"
 
     def test_parse_edges(self):
         plan = GraphWiringPlan(**_minimal_plan())
@@ -57,9 +57,9 @@ class TestParseValidPlan:
         plan = GraphWiringPlan(**_minimal_plan())
         assert plan.entry_point == "retriever"
 
-    def test_parse_capability_versions(self):
+    def test_parse_role_versions(self):
         plan = GraphWiringPlan(**_minimal_plan())
-        assert plan.capability_versions["rag_retriever"] == "1.0.0"
+        assert plan.role_versions["rag_retriever"] == "1.0.0"
 
 
 class TestJsonRoundTrip:

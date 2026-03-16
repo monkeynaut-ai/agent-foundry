@@ -12,7 +12,7 @@ from agent_foundry.observability.gates import (
     uncertainty_completeness_gate,
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
+from agent_foundry.registry.registry import RoleRegistry
 
 PLAN_PATH = Path(__file__).parent / "decision_support_plan.json"
 
@@ -139,7 +139,7 @@ def run_demo(
     question: str,
     domain: str = "general",
     constraints: list[str] | None = None,
-    registry: CapabilityRegistry | None = None,
+    registry: RoleRegistry | None = None,
     plan: GraphWiringPlan | None = None,
 ) -> dict[str, Any]:
     """Run the Decision Support demo workflow.
@@ -148,14 +148,14 @@ def run_demo(
         question: The user question.
         domain: The domain context.
         constraints: Optional constraints.
-        registry: Optional capability registry (auto-loaded if None).
+        registry: Optional role registry (auto-loaded if None).
         plan: Optional plan (auto-loaded if None).
 
     Returns:
         The final state dict with recommendation and gate results.
     """
     if registry is None:
-        registry = CapabilityRegistry.with_builtins()
+        registry = RoleRegistry.with_builtins()
 
     if plan is None:
         plan = load_demo_plan()

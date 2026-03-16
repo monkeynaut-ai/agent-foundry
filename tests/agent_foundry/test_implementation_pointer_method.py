@@ -1,6 +1,6 @@
 """Tests for the optional method field on ImplementationPointer."""
 
-from agent_foundry.registry.spec import ImplementationPointer, load_capability_spec
+from agent_foundry.registry.spec import ImplementationPointer, load_role_spec
 
 
 class TestImplementationPointerMethod:
@@ -21,8 +21,8 @@ class TestImplementationPointerMethod:
         spec_file = tmp_path / "test_cap.yaml"
         spec_file.write_text(
             """\
-name: test_capability
-description: A test capability
+name: test_role
+description: A test role
 version: "1.0.0"
 implementation:
   module: some.module
@@ -39,7 +39,7 @@ outputs_schema:
       type: string
 """
         )
-        spec = load_capability_spec(spec_file)
+        spec = load_role_spec(spec_file)
         assert spec.implementation.method == "__call__"
 
     def test_given_yaml_spec_with_method_field_when_loaded_then_pointer_method_is_set(
@@ -49,8 +49,8 @@ outputs_schema:
         spec_file = tmp_path / "test_cap.yaml"
         spec_file.write_text(
             """\
-name: test_capability
-description: A test capability
+name: test_role
+description: A test role
 version: "1.0.0"
 implementation:
   module: some.module
@@ -68,5 +68,5 @@ outputs_schema:
       type: string
 """
         )
-        spec = load_capability_spec(spec_file)
+        spec = load_role_spec(spec_file)
         assert spec.implementation.method == "review_performance"

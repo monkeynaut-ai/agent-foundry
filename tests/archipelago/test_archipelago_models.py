@@ -25,7 +25,7 @@ def _valid_product_brief() -> dict:
 def _valid_feature_architecture() -> dict:
     return {
         "feature_name": "Pipeline Orchestrator",
-        "components": ["capability registry", "plan compiler", "execution engine"],
+        "components": ["role registry", "plan compiler", "execution engine"],
         "data_flow": "strategy -> architecture -> spec -> dev/test",
         "technology_choices": ["LangGraph", "Pydantic", "langchain-anthropic"],
     }

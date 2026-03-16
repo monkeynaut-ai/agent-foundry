@@ -13,10 +13,10 @@ from agent_foundry.planner.wiring_plan import GraphWiringPlan
 def _one_node_plan() -> GraphWiringPlan:
     return GraphWiringPlan(
         goal="test",
-        nodes=[{"id": "n1", "capability": "schema_validator", "config": {}}],
+        nodes=[{"id": "n1", "role": "schema_validator", "config": {}}],
         edges=[],
         entry_point="n1",
-        capability_versions={"schema_validator": "1.0.0"},
+        role_versions={"schema_validator": "1.0.0"},
     )
 
 
@@ -24,12 +24,12 @@ def _two_node_plan() -> GraphWiringPlan:
     return GraphWiringPlan(
         goal="test",
         nodes=[
-            {"id": "n1", "capability": "rag_retriever", "config": {}},
-            {"id": "n2", "capability": "schema_validator", "config": {}},
+            {"id": "n1", "role": "rag_retriever", "config": {}},
+            {"id": "n2", "role": "schema_validator", "config": {}},
         ],
         edges=[{"source": "n1", "target": "n2"}],
         entry_point="n1",
-        capability_versions={
+        role_versions={
             "rag_retriever": "1.0.0",
             "schema_validator": "1.0.0",
         },

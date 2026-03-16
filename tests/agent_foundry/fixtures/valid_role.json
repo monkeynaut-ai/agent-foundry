@@ -3,8 +3,8 @@
   "description": "Produces structured output validated by Pydantic models",
   "version": "1.0.0",
   "implementation": {
-    "module": "agent_foundry.capabilities.structured_output",
-    "class_name": "StructuredOutputCapability"
+    "module": "agent_foundry.roles.structured_output",
+    "class_name": "StructuredOutputRole"
   },
   "inputs_schema": {
     "type": "object",

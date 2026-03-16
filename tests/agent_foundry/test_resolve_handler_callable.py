@@ -4,13 +4,13 @@ from unittest.mock import patch
 
 import pytest
 
-from agent_foundry.registry.errors import CapabilityImportError
+from agent_foundry.registry.errors import RoleImportError
 from agent_foundry.registry.imports import resolve_handler_callable
-from agent_foundry.registry.spec import CapabilitySpec, ImplementationPointer
+from agent_foundry.registry.spec import RoleSpec, ImplementationPointer
 
 
 def _make_spec(module, class_name, method="__call__"):
-    return CapabilitySpec(
+    return RoleSpec(
         name="test_cap",
         description="test",
         version="1.0.0",
@@ -39,15 +39,15 @@ class TestResolveHandlerCallable:
         handler = resolve_handler_callable(spec.implementation, spec)
         assert callable(handler)
 
-    def test_given_pointer_to_class_that_fails_init_when_resolved_then_raises_capability_import_error(
+    def test_given_pointer_to_class_that_fails_init_when_resolved_then_raises_role_import_error(
         self,
     ):
         spec = _make_spec("tests.agent_foundry.stub_handler", "BadInitHandler")
-        with pytest.raises(CapabilityImportError) as exc_info:
+        with pytest.raises(RoleImportError) as exc_info:
             resolve_handler_callable(spec.implementation, spec)
         assert "BadInitHandler" in str(exc_info.value)
 
-    def test_given_pointer_with_nonexistent_method_when_resolved_then_raises_capability_import_error(
+    def test_given_pointer_with_nonexistent_method_when_resolved_then_raises_role_import_error(
         self,
     ):
         spec = _make_spec(
@@ -55,7 +55,7 @@ class TestResolveHandlerCallable:
             "StubHandler",
             method="no_such_method",
         )
-        with pytest.raises(CapabilityImportError) as exc_info:
+        with pytest.raises(RoleImportError) as exc_info:
             resolve_handler_callable(spec.implementation, spec)
         assert "no_such_method" in str(exc_info.value)
 

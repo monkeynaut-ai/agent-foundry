@@ -1,4 +1,4 @@
-"""Typed exceptions for capability registry operations."""
+"""Typed exceptions for role registry operations."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ if TYPE_CHECKING:
     from agent_foundry.registry.spec import ImplementationPointer
 
 
-class CapabilitySpecValidationError(Exception):
-    """Raised when a capability spec fails Pydantic validation."""
+class RoleSpecValidationError(Exception):
+    """Raised when a role spec fails Pydantic validation."""
 
     def __init__(
         self,
@@ -23,22 +23,22 @@ class CapabilitySpecValidationError(Exception):
         super().__init__(message)
 
 
-class DuplicateCapabilityError(Exception):
-    """Raised when two specs share the same capability name."""
+class DuplicateRoleError(Exception):
+    """Raised when two specs share the same role name."""
 
     def __init__(
         self,
         message: str,
-        capability_name: str,
+        role_name: str,
         file_paths: list[Path],
     ):
-        self.capability_name = capability_name
+        self.role_name = role_name
         self.file_paths = file_paths
         super().__init__(message)
 
 
-class CapabilityImportError(Exception):
-    """Raised when a capability implementation cannot be imported."""
+class RoleImportError(Exception):
+    """Raised when a role implementation cannot be imported."""
 
     def __init__(
         self,
@@ -49,24 +49,24 @@ class CapabilityImportError(Exception):
         super().__init__(message)
 
 
-class CapabilityExecutionError(Exception):
-    """Raised when capability execution fails due to input/output validation or runtime error."""
+class RoleExecutionError(Exception):
+    """Raised when role execution fails due to input/output validation or runtime error."""
 
     def __init__(
         self,
         message: str,
-        capability_name: str,
+        role_name: str,
         phase: str,
         field_paths: list[str] | None = None,
     ):
-        self.capability_name = capability_name
+        self.role_name = role_name
         self.phase = phase
         self.field_paths = field_paths or []
         super().__init__(message)
 
 
-class CapabilitySpecParseError(Exception):
-    """Raised when a capability spec file cannot be parsed."""
+class RoleSpecParseError(Exception):
+    """Raised when a role spec file cannot be parsed."""
 
     def __init__(
         self,

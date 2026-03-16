@@ -1,11 +1,11 @@
 """Deterministic strategy handler for the Archipelago pipeline."""
 
-from agent_foundry.registry.spec import CapabilitySpec
+from agent_foundry.registry.spec import RoleSpec
 from archipelago.models import ProductBrief
 
 
 class StrategyHandler:
-    def __init__(self, spec: CapabilitySpec) -> None:
+    def __init__(self, spec: RoleSpec) -> None:
         self.spec = spec
 
     def __call__(self, state: dict) -> dict:

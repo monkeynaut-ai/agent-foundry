@@ -1,29 +1,32 @@
-name: uncertainty_completeness_validator
-description: Validates that uncertainty fields (confidence, rationale) are complete
+name: schema_validator
+description: Validates output against a JSON schema and blocks on failure
 version: "1.0.0"
 implementation:
-  module: agent_foundry.capabilities.uncertainty_validator
-  class_name: UncertaintyCompletenessValidatorCapability
+  module: agent_foundry.roles.schema_validator
+  class_name: SchemaValidatorRole
 inputs_schema:
   type: object
   properties:
-    uncertainty:
+    data:
+      type: object
+    schema:
       type: object
   required:
-    - uncertainty
+    - data
+    - schema
 outputs_schema:
   type: object
   properties:
     valid:
       type: boolean
-    missing_fields:
+    errors:
       type: array
   required:
     - valid
 tags:
   - validation
   - eval_gate
-  - uncertainty
+  - schema
 quality_controls:
   timeout_seconds: 10
   max_retries: 0

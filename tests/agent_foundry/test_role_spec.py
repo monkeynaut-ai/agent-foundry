@@ -1,23 +1,23 @@
-"""S1.1 — Load and validate a single capability spec (happy path)."""
+"""S1.1 — Load and validate a single role spec (happy path)."""
 
 from pathlib import Path
 
 import pytest
 
-from agent_foundry.registry.spec import CapabilitySpec, load_capability_spec
+from agent_foundry.registry.spec import RoleSpec, load_role_spec
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 SPEC_CASES = [
     (
         "yaml",
-        FIXTURES / "valid_capability.yaml",
+        FIXTURES / "valid_role.yaml",
         {
             "name": "rag_retriever",
             "description": "Retrieves relevant documents using RAG pattern",
             "version": "1.0.0",
-            "implementation_module": "agent_foundry.capabilities.rag_retriever",
-            "implementation_class": "RagRetrieverCapability",
+            "implementation_module": "agent_foundry.roles.rag_retriever",
+            "implementation_class": "RagRetrieverRole",
             "tags": ["retrieval", "rag", "search"],
             "timeout_seconds": 30,
             "max_retries": 2,
@@ -27,13 +27,13 @@ SPEC_CASES = [
     ),
     (
         "json",
-        FIXTURES / "valid_capability.json",
+        FIXTURES / "valid_role.json",
         {
             "name": "structured_output_pydantic",
             "description": "Produces structured output validated by Pydantic models",
             "version": "1.0.0",
-            "implementation_module": "agent_foundry.capabilities.structured_output",
-            "implementation_class": "StructuredOutputCapability",
+            "implementation_module": "agent_foundry.roles.structured_output",
+            "implementation_class": "StructuredOutputRole",
             "tags": ["structured_output", "pydantic", "llm"],
             "timeout_seconds": 60,
             "max_retries": 3,
@@ -44,7 +44,7 @@ SPEC_CASES = [
 ]
 
 
-def _assert_spec_fields(spec: CapabilitySpec, expected: dict) -> None:
+def _assert_spec_fields(spec: RoleSpec, expected: dict) -> None:
     assert spec.name == expected["name"]
     assert spec.description == expected["description"]
     assert spec.version == expected["version"]
@@ -64,22 +64,22 @@ def _assert_spec_fields(spec: CapabilitySpec, expected: dict) -> None:
 
 
 @pytest.mark.parametrize("_, path, expected", SPEC_CASES)
-def test_load_spec_returns_capability_spec(_, path, expected):
-    spec = load_capability_spec(path)
-    assert isinstance(spec, CapabilitySpec)
+def test_load_spec_returns_role_spec(_, path, expected):
+    spec = load_role_spec(path)
+    assert isinstance(spec, RoleSpec)
     _assert_spec_fields(spec, expected)
 
 
 @pytest.mark.parametrize("_, path, _expected", SPEC_CASES)
 def test_model_dump_round_trip(_, path, _expected):
-    spec = load_capability_spec(path)
+    spec = load_role_spec(path)
     dumped = spec.model_dump()
-    reconstructed = CapabilitySpec(**dumped)
+    reconstructed = RoleSpec(**dumped)
     assert reconstructed == spec
 
 
 def test_json_serialization_round_trip():
-    spec = load_capability_spec(FIXTURES / "valid_capability.yaml")
+    spec = load_role_spec(FIXTURES / "valid_role.yaml")
     json_str = spec.model_dump_json()
-    reconstructed = CapabilitySpec.model_validate_json(json_str)
+    reconstructed = RoleSpec.model_validate_json(json_str)
     assert reconstructed == spec

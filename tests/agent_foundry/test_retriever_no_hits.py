@@ -7,17 +7,17 @@ import logging
 
 import pytest
 
-from agent_foundry.registry.registry import CapabilityRegistry
+from agent_foundry.registry.registry import RoleRegistry
 from agent_foundry.retriever.indexer import RegistryIndexer
 from agent_foundry.retriever.retrieval import RetrievalAPI
 
-from .conftest import CAPABILITIES_DIR
+from .conftest import ROLES_DIR
 
 
 @pytest.fixture
 def retrieval_api(tmp_path):
     """Create a retrieval API with an empty index."""
-    registry = CapabilityRegistry.from_directory(CAPABILITIES_DIR)
+    registry = RoleRegistry.from_directory(ROLES_DIR)
     index_dir = tmp_path / "index"
     indexer = RegistryIndexer(index_dir=index_dir)
     indexer.build(registry)
@@ -43,7 +43,7 @@ class TestNoHitLogging:
         # Build an index with no real content
         empty_dir = tmp_path / "empty_caps"
         empty_dir.mkdir()
-        registry = CapabilityRegistry.from_directory(empty_dir)
+        registry = RoleRegistry.from_directory(empty_dir)
         index_dir = tmp_path / "empty_index"
         indexer = RegistryIndexer(index_dir=index_dir)
         indexer.build(registry)

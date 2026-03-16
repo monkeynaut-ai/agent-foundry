@@ -2,14 +2,14 @@
 
 import pytest
 
-from agent_foundry.registry.spec import CapabilitySpec, load_capability_spec
+from agent_foundry.registry.spec import RoleSpec, load_role_spec
 from archipelago.agents.strategy import StrategyHandler
 
-from .conftest import PRODUCT_CAPS_DIR
+from .conftest import PRODUCT_ROLES_DIR
 
 
-def _make_spec() -> CapabilitySpec:
-    return load_capability_spec(PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml")
+def _make_spec() -> RoleSpec:
+    return load_role_spec(PRODUCT_ROLES_DIR / "strategy_generate_product_brief.yaml")
 
 
 class TestStrategyHandler:

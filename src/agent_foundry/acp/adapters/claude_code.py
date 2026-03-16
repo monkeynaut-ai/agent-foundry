@@ -6,7 +6,7 @@ Launches Claude Code in headless mode with structured JSON output:
 
 Marker detection is configurable via MarkerMapping — no product-specific
 markers are hardcoded. Products pass their marker definitions through the
-capability stack.
+role stack.
 """
 
 import contextlib

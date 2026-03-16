@@ -6,7 +6,7 @@ from typing import Any
 
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.registry import CapabilityRegistry
+from agent_foundry.registry.registry import RoleRegistry
 from archipelago.docker_worker.handler import docker_worker_handler
 from archipelago.docker_worker.models import WorkerConstraints, WorkerInput
 from archipelago.handlers import ARCHIPELAGO_HANDLERS
@@ -22,21 +22,21 @@ def load_archipelago_plan() -> GraphWiringPlan:
 
 def run_archipelago(
     product_brief_input: str,
-    registry: CapabilityRegistry | None = None,
+    registry: RoleRegistry | None = None,
     plan: GraphWiringPlan | None = None,
 ) -> dict[str, Any]:
     """Run the Archipelago pipeline end-to-end.
 
     Args:
         product_brief_input: High-level product idea text.
-        registry: Optional capability registry (auto-loaded if None).
+        registry: Optional role registry (auto-loaded if None).
         plan: Optional plan (auto-loaded if None).
 
     Returns:
         The final state dict with all pipeline artifacts.
     """
     if registry is None:
-        registry = CapabilityRegistry.with_product_specs(Path(__file__).parent / "capabilities")
+        registry = RoleRegistry.with_product_specs(Path(__file__).parent / "roles")
 
     if plan is None:
         plan = load_archipelago_plan()

@@ -1,4 +1,4 @@
-"""Capability spec schema and file loader."""
+"""Role spec schema and file loader."""
 
 import json
 from pathlib import Path
@@ -8,13 +8,13 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 from agent_foundry.registry.errors import (
-    CapabilitySpecParseError,
-    CapabilitySpecValidationError,
+    RoleSpecParseError,
+    RoleSpecValidationError,
 )
 
 
 class ImplementationPointer(BaseModel):
-    """Reference to the Python class that implements a capability."""
+    """Reference to the Python class that implements a role."""
 
     module: str
     class_name: str
@@ -22,14 +22,14 @@ class ImplementationPointer(BaseModel):
 
 
 class QualityControls(BaseModel):
-    """Per-capability quality control settings."""
+    """Per-role quality control settings."""
 
     timeout_seconds: int = Field(default=30, ge=1)
     max_retries: int = Field(default=0, ge=0)
 
 
-class CapabilitySpec(BaseModel):
-    """Schema for a single capability specification."""
+class RoleSpec(BaseModel):
+    """Schema for a single role specification."""
 
     name: str
     description: str
@@ -41,25 +41,25 @@ class CapabilitySpec(BaseModel):
     quality_controls: QualityControls = Field(default_factory=QualityControls)
 
 
-def load_capability_spec(path: Path) -> CapabilitySpec:
-    """Load and validate a capability spec from a YAML or JSON file.
+def load_role_spec(path: Path) -> RoleSpec:
+    """Load and validate a role spec from a YAML or JSON file.
 
     Args:
-        path: Path to a .yaml, .yml, or .json capability spec file.
+        path: Path to a .yaml, .yml, or .json role spec file.
 
     Returns:
-        A validated CapabilitySpec instance.
+        A validated RoleSpec instance.
 
     Raises:
-        CapabilitySpecParseError: If the file cannot be read or parsed.
-        CapabilitySpecValidationError: If the parsed data fails schema validation.
+        RoleSpecParseError: If the file cannot be read or parsed.
+        RoleSpecValidationError: If the parsed data fails schema validation.
     """
     path = Path(path)
 
     try:
         text = path.read_text()
     except OSError as e:
-        raise CapabilitySpecParseError(
+        raise RoleSpecParseError(
             message=f"Cannot read file {path}: {e}",
             file_path=path,
         ) from e
@@ -70,7 +70,7 @@ def load_capability_spec(path: Path) -> CapabilitySpec:
     elif suffix == ".json":
         data = _parse_json(text, path)
     else:
-        raise CapabilitySpecParseError(
+        raise RoleSpecParseError(
             message=f"Unsupported file extension: {suffix}. Use .yaml, .yml, or .json",
             file_path=path,
         )
@@ -87,14 +87,14 @@ def _parse_yaml(text: str, path: Path) -> dict:
         if mark is not None:
             line = mark.line + 1
             column = mark.column + 1
-        raise CapabilitySpecParseError(
+        raise RoleSpecParseError(
             message=f"YAML parse error in {path}: {e}",
             file_path=path,
             line=line,
             column=column,
         ) from e
     if not isinstance(data, dict):
-        raise CapabilitySpecParseError(
+        raise RoleSpecParseError(
             message=f"Expected a mapping in {path}, got {type(data).__name__}",
             file_path=path,
         )
@@ -105,30 +105,30 @@ def _parse_json(text: str, path: Path) -> dict:
     try:
         data = json.loads(text)
     except json.JSONDecodeError as e:
-        raise CapabilitySpecParseError(
+        raise RoleSpecParseError(
             message=f"JSON parse error in {path}: {e}",
             file_path=path,
             line=e.lineno,
             column=e.colno,
         ) from e
     if not isinstance(data, dict):
-        raise CapabilitySpecParseError(
+        raise RoleSpecParseError(
             message=f"Expected a mapping in {path}, got {type(data).__name__}",
             file_path=path,
         )
     return data
 
 
-def _validate_spec(data: dict, path: Path) -> CapabilitySpec:
+def _validate_spec(data: dict, path: Path) -> RoleSpec:
     try:
-        return CapabilitySpec(**data)
+        return RoleSpec(**data)
     except ValidationError as e:
         missing = [
             str(err["loc"][0])
             for err in e.errors()
             if err["type"] == "missing" and len(err["loc"]) > 0
         ]
-        raise CapabilitySpecValidationError(
+        raise RoleSpecValidationError(
             message=f"Validation error in {path}: {e}",
             file_path=path,
             missing_fields=missing,

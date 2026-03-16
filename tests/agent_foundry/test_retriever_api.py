@@ -1,4 +1,4 @@
-"""S2.3 — Retrieval API returns capability snippets for exact name queries.
+"""S2.3 — Retrieval API returns role snippets for exact name queries.
 
 Tests: query="rag_retriever" returns snippet referencing that spec in top-3.
 Feature flag: FF_RETRIEVER (default on after this slice).
@@ -21,7 +21,7 @@ def retrieval_api(registry, tmp_path):
 
 
 class TestExactNameQuery:
-    """Exact capability name queries return relevant snippets."""
+    """Exact role name queries return relevant snippets."""
 
     def test_rag_retriever_in_top_3(self, retrieval_api):
         snippets = retrieval_api.retrieve("rag_retriever")

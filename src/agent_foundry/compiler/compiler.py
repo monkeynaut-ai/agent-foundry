@@ -7,22 +7,22 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 
 from agent_foundry.compiler.errors import (
-    CapabilityInstantiationError,
+    RoleInstantiationError,
     PlanCompilationError,
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.errors import CapabilityImportError
-from agent_foundry.registry.execution import execute_capability
+from agent_foundry.registry.errors import RoleImportError
+from agent_foundry.registry.execution import execute_role
 from agent_foundry.registry.imports import resolve_handler_callable
-from agent_foundry.registry.registry import CapabilityRegistry
-from agent_foundry.registry.spec import CapabilitySpec
+from agent_foundry.registry.registry import RoleRegistry
+from agent_foundry.registry.spec import RoleSpec
 
 logger = logging.getLogger(__name__)
 
 FF_COMPILER = False
 
 
-EVAL_GATE_CAPABILITIES = {
+EVAL_GATE_ROLES = {
     "schema_validator",
     "citation_validator",
     "uncertainty_completeness_validator",
@@ -32,7 +32,7 @@ EVAL_GATE_CAPABILITIES = {
 
 def compile_plan(
     plan: GraphWiringPlan,
-    registry: CapabilityRegistry,
+    registry: RoleRegistry,
     handler_registry: dict[str, Any] | None = None,
     enforce_gates: bool = False,
 ) -> Any:
@@ -40,15 +40,15 @@ def compile_plan(
 
     Args:
         plan: The graph wiring plan.
-        registry: The capability registry.
-        handler_registry: Optional mapping of capability names to handler functions.
+        registry: The role registry.
+        handler_registry: Optional mapping of role names to handler functions.
 
     Returns:
         A compiled LangGraph that can be invoked with state.
 
     Raises:
         PlanCompilationError: If the plan structure is invalid.
-        CapabilityInstantiationError: If a handler cannot be resolved.
+        RoleInstantiationError: If a handler cannot be resolved.
     """
     handler_registry = handler_registry or {}
     node_ids = {n.id for n in plan.nodes}
@@ -71,7 +71,7 @@ def compile_plan(
 
     # Add nodes with loop-safe wrappers if needed
     for node in plan.nodes:
-        handler = _resolve_handler(node.id, node.capability, handler_registry, registry)
+        handler = _resolve_handler(node.id, node.role, handler_registry, registry)
 
         # Wrap with max_iterations if configured
         max_iter = node.config.get("max_iterations")
@@ -139,33 +139,31 @@ def compile_plan(
 
 def _resolve_handler(
     node_id: str,
-    capability: str,
+    role_name: str,
     handler_registry: dict[str, Any],
-    registry: CapabilityRegistry,
+    registry: RoleRegistry,
 ) -> Callable:
     # 1. Explicit handler_registry takes priority (backwards compat)
-    handler = handler_registry.get(capability)
+    handler = handler_registry.get(role_name)
     if handler is not None:
         if not callable(handler):
-            raise CapabilityInstantiationError(
-                message=f"Handler for node '{node_id}' (capability '{capability}') is not callable",
+            raise RoleInstantiationError(
+                message=f"Handler for node '{node_id}' (role '{role_name}') is not callable",
                 node_id=node_id,
-                capability=capability,
+                role=role_name,
             )
         return handler
 
     # 2. Fall back to dynamic resolution from registry spec
-    spec = registry.get(capability)
+    spec = registry.get(role_name)
     if spec is not None:
         try:
             resolved = resolve_handler_callable(spec.implementation, spec)
-        except CapabilityImportError as e:
-            raise CapabilityInstantiationError(
-                message=(
-                    f"Cannot resolve handler for node '{node_id}' (capability '{capability}'): {e}"
-                ),
+        except RoleImportError as e:
+            raise RoleInstantiationError(
+                message=(f"Cannot resolve handler for node '{node_id}' (role '{role_name}'): {e}"),
                 node_id=node_id,
-                capability=capability,
+                role=role_name,
             ) from e
 
         if resolved is not None:
@@ -174,19 +172,19 @@ def _resolve_handler(
     # 3. No handler found anywhere: passthrough
     logger.warning(
         "no_handler_found",
-        extra={"node": node_id, "capability": capability},
+        extra={"node": node_id, "role": role_name},
     )
     return _make_passthrough()
 
 
 def _make_validated_handler(
     handler: Callable,
-    spec: CapabilitySpec,
+    spec: RoleSpec,
 ) -> Callable:
-    """Wrap a handler with execute_capability for schema enforcement."""
+    """Wrap a handler with execute_role for schema enforcement."""
 
     def validated_handler(state: dict[str, Any]) -> dict[str, Any]:
-        return execute_capability(spec, state, handler)
+        return execute_role(spec, state, handler)
 
     return validated_handler
 
@@ -248,12 +246,12 @@ def _create_checkpointer(backend: str) -> Any:
 
 def _check_eval_gates_on_paths(plan: GraphWiringPlan) -> None:
     """Ensure at least one eval gate is on every path from entry to terminal nodes."""
-    gate_nodes = {n.id for n in plan.nodes if n.capability in EVAL_GATE_CAPABILITIES}
+    gate_nodes = {n.id for n in plan.nodes if n.role in EVAL_GATE_ROLES}
 
     if not gate_nodes:
         raise PlanCompilationError(
             "Plan has no eval gate nodes. At least one eval gate "
-            f"({', '.join(sorted(EVAL_GATE_CAPABILITIES))}) must be on every path to final."
+            f"({', '.join(sorted(EVAL_GATE_ROLES))}) must be on every path to final."
         )
 
     # Build adjacency

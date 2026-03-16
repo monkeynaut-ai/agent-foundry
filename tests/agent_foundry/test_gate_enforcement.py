@@ -16,7 +16,7 @@ HANDLERS = {
     "citation_validator": lambda s: {**s, "citations_checked": True},
 }
 
-EVAL_GATE_CAPABILITIES = {
+EVAL_GATE_ROLES = {
     "schema_validator",
     "citation_validator",
     "uncertainty_completeness_validator",
@@ -31,12 +31,12 @@ class TestGateEnforcement:
         plan = GraphWiringPlan(
             goal="test",
             nodes=[
-                {"id": "n1", "capability": "rag_retriever"},
-                {"id": "n2", "capability": "structured_output_pydantic"},
+                {"id": "n1", "role": "rag_retriever"},
+                {"id": "n2", "role": "structured_output_pydantic"},
             ],
             edges=[{"source": "n1", "target": "n2"}],
             entry_point="n1",
-            capability_versions={
+            role_versions={
                 "rag_retriever": "1.0.0",
                 "structured_output_pydantic": "1.0.0",
             },
@@ -51,10 +51,10 @@ class TestGateEnforcementEdgeCases:
     def test_single_node_no_gate_raises_error(self, registry):
         plan = GraphWiringPlan(
             goal="test",
-            nodes=[{"id": "n1", "capability": "rag_retriever"}],
+            nodes=[{"id": "n1", "role": "rag_retriever"}],
             edges=[],
             entry_point="n1",
-            capability_versions={"rag_retriever": "1.0.0"},
+            role_versions={"rag_retriever": "1.0.0"},
         )
         with pytest.raises(PlanCompilationError, match="eval gate"):
             compile_plan(plan, registry, handler_registry=HANDLERS, enforce_gates=True)
@@ -63,12 +63,12 @@ class TestGateEnforcementEdgeCases:
         plan = GraphWiringPlan(
             goal="test",
             nodes=[
-                {"id": "n1", "capability": "rag_retriever"},
-                {"id": "gate", "capability": "schema_validator"},
+                {"id": "n1", "role": "rag_retriever"},
+                {"id": "gate", "role": "schema_validator"},
             ],
             edges=[{"source": "n1", "target": "gate"}],
             entry_point="n1",
-            capability_versions={
+            role_versions={
                 "rag_retriever": "1.0.0",
                 "schema_validator": "1.0.0",
             },
@@ -80,16 +80,16 @@ class TestGateEnforcementEdgeCases:
         plan = GraphWiringPlan(
             goal="test",
             nodes=[
-                {"id": "n1", "capability": "rag_retriever"},
-                {"id": "gate", "capability": "schema_validator"},
-                {"id": "n2", "capability": "structured_output_pydantic"},
+                {"id": "n1", "role": "rag_retriever"},
+                {"id": "gate", "role": "schema_validator"},
+                {"id": "n2", "role": "structured_output_pydantic"},
             ],
             edges=[
                 {"source": "n1", "target": "gate"},
                 {"source": "gate", "target": "n2"},
             ],
             entry_point="n1",
-            capability_versions={
+            role_versions={
                 "rag_retriever": "1.0.0",
                 "schema_validator": "1.0.0",
                 "structured_output_pydantic": "1.0.0",
@@ -104,9 +104,9 @@ class TestGateEnforcementEdgeCases:
         plan = GraphWiringPlan(
             goal="test",
             nodes=[
-                {"id": "start", "capability": "rag_retriever"},
-                {"id": "gate", "capability": "schema_validator"},
-                {"id": "final", "capability": "structured_output_pydantic"},
+                {"id": "start", "role": "rag_retriever"},
+                {"id": "gate", "role": "schema_validator"},
+                {"id": "final", "role": "structured_output_pydantic"},
             ],
             edges=[
                 {"source": "start", "target": "gate", "condition": "needs_validation"},
@@ -114,7 +114,7 @@ class TestGateEnforcementEdgeCases:
                 {"source": "gate", "target": "final"},
             ],
             entry_point="start",
-            capability_versions={
+            role_versions={
                 "rag_retriever": "1.0.0",
                 "schema_validator": "1.0.0",
                 "structured_output_pydantic": "1.0.0",

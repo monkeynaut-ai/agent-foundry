@@ -2,14 +2,14 @@
 
 import pytest
 
-from agent_foundry.registry.spec import load_capability_spec
+from agent_foundry.registry.spec import load_role_spec
 from archipelago.agents.spec import SpecHandler
 
-from .conftest import PRODUCT_CAPS_DIR
+from .conftest import PRODUCT_ROLES_DIR
 
 
 def _make_spec():
-    return load_capability_spec(PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml")
+    return load_role_spec(PRODUCT_ROLES_DIR / "spec_generate_feature_spec.yaml")
 
 
 def _make_state():

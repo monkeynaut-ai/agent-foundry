@@ -1,4 +1,4 @@
-"""Registry indexer: builds and persists a FAISS index from capability specs and docs."""
+"""Registry indexer: builds and persists a FAISS index from role specs and docs."""
 
 import hashlib
 import json
@@ -8,7 +8,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
-from agent_foundry.registry.registry import CapabilityRegistry
+from agent_foundry.registry.registry import RoleRegistry
 from agent_foundry.retriever.errors import IndexLoadError, RetrieverUnavailableError
 
 FF_RETRIEVER = False
@@ -61,7 +61,7 @@ class RegistryIndexer:
 
     def build(
         self,
-        registry: CapabilityRegistry,
+        registry: RoleRegistry,
         docs_dir: Path | None = None,
     ) -> None:
         """Ingest registry specs and optional docs, build and persist index."""
@@ -133,14 +133,14 @@ class RegistryIndexer:
             raise RetrieverUnavailableError(f"Search failed: {e}") from e
         return results
 
-    def _specs_to_documents(self, registry: CapabilityRegistry) -> list[Document]:
+    def _specs_to_documents(self, registry: RoleRegistry) -> list[Document]:
         docs = []
         for name in sorted(registry.names()):
             spec = registry.get(name)
             if spec is None:
                 continue
             content = (
-                f"Capability: {spec.name}\n"
+                f"Role: {spec.name}\n"
                 f"Description: {spec.description}\n"
                 f"Version: {spec.version}\n"
                 f"Tags: {', '.join(spec.tags)}\n"
@@ -154,7 +154,7 @@ class RegistryIndexer:
                     metadata={
                         "source": f"registry:{spec.name}",
                         "chunk_id": chunk_id,
-                        "type": "capability_spec",
+                        "type": "role_spec",
                     },
                 )
             )

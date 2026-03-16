@@ -2,8 +2,8 @@ name: citation_validator
 description: Validates that all cited evidence IDs exist in retrieved evidence
 version: "1.0.0"
 implementation:
-  module: agent_foundry.capabilities.citation_validator
-  class_name: CitationValidatorCapability
+  module: agent_foundry.roles.citation_validator
+  class_name: CitationValidatorRole
 inputs_schema:
   type: object
   properties:

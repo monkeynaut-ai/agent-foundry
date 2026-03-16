@@ -9,9 +9,9 @@ import pytest
 from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.observability.tracer import ExecutionTracer
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
-from agent_foundry.registry.spec import load_capability_spec
+from agent_foundry.registry.spec import load_role_spec
 
-from .conftest import PRODUCT_CAPS_DIR
+from .conftest import PRODUCT_ROLES_DIR
 
 PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "archipelago_system.json"
 
@@ -128,28 +128,24 @@ class TestEndToEnd:
             assert key in final_state, f"Missing artifact: {key}"
 
     def test_given_valid_input_when_pipeline_runs_then_all_artifacts_validate(self, final_state):
-        strategy_spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "strategy_generate_product_brief.yaml"
-        )
+        strategy_spec = load_role_spec(PRODUCT_ROLES_DIR / "strategy_generate_product_brief.yaml")
         jsonschema.validate(
             {"product_brief": final_state["product_brief"]}, strategy_spec.outputs_schema
         )
 
-        arch_spec = load_capability_spec(
-            PRODUCT_CAPS_DIR / "architecture_generate_feature_arch.yaml"
-        )
+        arch_spec = load_role_spec(PRODUCT_ROLES_DIR / "architecture_generate_feature_arch.yaml")
         jsonschema.validate(
             {"feature_architecture": final_state["feature_architecture"]}, arch_spec.outputs_schema
         )
 
-        spec_spec = load_capability_spec(PRODUCT_CAPS_DIR / "spec_generate_feature_spec.yaml")
+        spec_spec = load_role_spec(PRODUCT_ROLES_DIR / "spec_generate_feature_spec.yaml")
         combined_spec = {
             "feature_spec": final_state["feature_spec"],
             "test_plan": final_state["test_plan"],
         }
         jsonschema.validate(combined_spec, spec_spec.outputs_schema)
 
-        dev_spec = load_capability_spec(PRODUCT_CAPS_DIR / "dev_implement_feature_tdd.yaml")
+        dev_spec = load_role_spec(PRODUCT_ROLES_DIR / "dev_implement_feature_tdd.yaml")
         combined_dev = {
             "code_patch": final_state["code_patch"],
             "test_results": final_state["test_results"],
@@ -158,7 +154,7 @@ class TestEndToEnd:
 
     def test_given_pipeline_with_tracer_when_run_then_6_spans_exported(self, registry, plan):
         tracer = ExecutionTracer()
-        node_caps = {n.id: n.capability for n in plan.nodes}
+        node_caps = {n.id: n.role for n in plan.nodes}
 
         def _make_traced_handler(node_id, original):
             def handler(state):
@@ -183,7 +179,7 @@ class TestEndToEnd:
         self, registry, plan
     ):
         tracer = ExecutionTracer()
-        node_caps = {n.id: n.capability for n in plan.nodes}
+        node_caps = {n.id: n.role for n in plan.nodes}
 
         def _make_traced_handler(node_id, original):
             def handler(state):
@@ -209,7 +205,7 @@ class TestEndToEnd:
         self, registry, plan
     ):
         tracer = ExecutionTracer()
-        node_caps = {n.id: n.capability for n in plan.nodes}
+        node_caps = {n.id: n.role for n in plan.nodes}
 
         def _make_traced_handler(node_id, original):
             def handler(state):

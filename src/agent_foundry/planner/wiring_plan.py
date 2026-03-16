@@ -9,7 +9,7 @@ class NodeDef(BaseModel):
     """A node in the wiring plan."""
 
     id: str
-    capability: str
+    role: str
     config: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -42,7 +42,7 @@ class GraphWiringPlan(BaseModel):
     nodes: list[NodeDef]
     edges: list[EdgeDef]
     entry_point: str
-    capability_versions: dict[str, str] = Field(default_factory=dict)
+    role_versions: dict[str, str] = Field(default_factory=dict)
     tools: list[ToolDef] = Field(default_factory=list)
     breakpoints: list[str] = Field(default_factory=list)
     persistence: PersistenceConfig | None = None

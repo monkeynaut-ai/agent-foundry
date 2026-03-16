@@ -1,6 +1,6 @@
-"""S3.3 — Referential integrity: unknown capabilities, dangling edges, duplicate node ids.
+"""S3.3 — Referential integrity: unknown roles, dangling edges, duplicate node ids.
 
-Tests: unknown capability -> UnknownCapabilityError;
+Tests: unknown role -> UnknownRoleError;
        duplicate ids -> DuplicateNodeIdError;
        dangling edge -> DanglingEdgeError.
 Feature flag: FF_PLAN_VALIDATION (default on).
@@ -14,28 +14,28 @@ from agent_foundry.planner.errors import (
     DanglingEdgeError,
     DuplicateNodeIdError,
     PlanningTimeoutError,
-    UnknownCapabilityError,
+    UnknownRoleError,
 )
 from agent_foundry.planner.validators import validate_plan
 
 from .conftest import make_plan as _make_plan
 
 
-class TestUnknownCapability:
+class TestUnknownRole:
     """Nodes referencing capabilities not in registry are rejected."""
 
-    def test_unknown_capability_raises_error(self, registry):
+    def test_unknown_role_raises_error(self, registry):
         plan = _make_plan(
             nodes=[
-                {"id": "n1", "capability": "totally_fake_capability"},
+                {"id": "n1", "role": "totally_fake_role"},
             ],
             edges=[],
             entry_point="n1",
-            capability_versions={"totally_fake_capability": "1.0.0"},
+            role_versions={"totally_fake_role": "1.0.0"},
         )
-        with pytest.raises(UnknownCapabilityError) as exc_info:
+        with pytest.raises(UnknownRoleError) as exc_info:
             validate_plan(plan, registry)
-        assert "totally_fake_capability" in str(exc_info.value)
+        assert "totally_fake_role" in str(exc_info.value)
 
     def test_valid_capabilities_pass(self, registry):
         plan = _make_plan()
@@ -48,12 +48,12 @@ class TestDuplicateNodeIds:
     def test_duplicate_ids_raises_error(self, registry):
         plan = _make_plan(
             nodes=[
-                {"id": "same_id", "capability": "rag_retriever"},
-                {"id": "same_id", "capability": "schema_validator"},
+                {"id": "same_id", "role": "rag_retriever"},
+                {"id": "same_id", "role": "schema_validator"},
             ],
             edges=[],
             entry_point="same_id",
-            capability_versions={
+            role_versions={
                 "rag_retriever": "1.0.0",
                 "schema_validator": "1.0.0",
             },
@@ -85,11 +85,11 @@ class TestFeatureFlag:
     def test_flag_off_skips_validation(self, registry):
         plan = _make_plan(
             nodes=[
-                {"id": "n1", "capability": "totally_fake"},
+                {"id": "n1", "role": "totally_fake"},
             ],
             edges=[],
             entry_point="n1",
-            capability_versions={"totally_fake": "1.0.0"},
+            role_versions={"totally_fake": "1.0.0"},
         )
         with patch("agent_foundry.planner.validators.FF_PLAN_VALIDATION", False):
             validate_plan(plan, registry)  # Should not raise

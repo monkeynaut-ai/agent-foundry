@@ -165,14 +165,14 @@ class TestDS7ToolCalling:
             1,
             {
                 "id": "tools",
-                "capability": "tool_calling",
+                "role": "tool_calling",
                 "config": {},
             },
         )
         plan_data["edges"][0] = {"source": "retriever", "target": "tools"}
         plan_data["edges"].insert(1, {"source": "tools", "target": "output"})
         plan_data["tools"] = [{"name": "calculator", "args_schema": {"type": "object"}}]
-        plan_data["capability_versions"]["tool_calling"] = "1.0.0"
+        plan_data["role_versions"]["tool_calling"] = "1.0.0"
 
         plan_with_tools = GraphWiringPlan(**plan_data)
         graph = compile_plan(plan_with_tools, registry, handler_registry=DEMO_HANDLERS)

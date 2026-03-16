@@ -2,26 +2,26 @@
 
 _TEMPLATES: dict[str, list[dict]] = {
     "draft_review_revise_loop": [
-        {"id": "draft", "capability": "structured_output_pydantic", "config": {}},
-        {"id": "review", "capability": "schema_validator", "config": {}},
-        {"id": "revise", "capability": "structured_output_pydantic", "config": {"role": "reviser"}},
+        {"id": "draft", "role": "structured_output_pydantic", "config": {}},
+        {"id": "review", "role": "schema_validator", "config": {}},
+        {"id": "revise", "role": "structured_output_pydantic", "config": {"role": "reviser"}},
     ],
     "gather_verify_analyze_recommend": [
-        {"id": "gather", "capability": "rag_retriever", "config": {}},
-        {"id": "verify", "capability": "citation_validator", "config": {}},
+        {"id": "gather", "role": "rag_retriever", "config": {}},
+        {"id": "verify", "role": "citation_validator", "config": {}},
         {
             "id": "analyze",
-            "capability": "structured_output_pydantic",
+            "role": "structured_output_pydantic",
             "config": {"role": "analyzer"},
         },
-        {"id": "recommend", "capability": "evidence_first_contract", "config": {}},
+        {"id": "recommend", "role": "evidence_first_contract", "config": {}},
     ],
     "plan_execute_test_fix_retest": [
-        {"id": "plan", "capability": "structured_output_pydantic", "config": {"role": "planner"}},
-        {"id": "execute", "capability": "tool_calling", "config": {}},
-        {"id": "test", "capability": "schema_validator", "config": {}},
-        {"id": "fix", "capability": "structured_output_pydantic", "config": {"role": "fixer"}},
-        {"id": "retest", "capability": "schema_validator", "config": {"role": "retester"}},
+        {"id": "plan", "role": "structured_output_pydantic", "config": {"role": "planner"}},
+        {"id": "execute", "role": "tool_calling", "config": {}},
+        {"id": "test", "role": "schema_validator", "config": {}},
+        {"id": "fix", "role": "structured_output_pydantic", "config": {"role": "fixer"}},
+        {"id": "retest", "role": "schema_validator", "config": {"role": "retester"}},
     ],
 }
 

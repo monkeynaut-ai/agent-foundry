@@ -826,7 +826,7 @@ class TestRolePromptBuilder:
     def test_given_role_unit_test_writer_when_prompt_built_then_says_write_tests(self):
         from archipelago.docker_worker.models import WorkerInput
 
-        wi = WorkerInput(**{**_valid_worker_input(), "role": "unit_test_writer"})
+        wi = WorkerInput(**{**_valid_worker_input(), "worker_mode": "unit_test_writer"})
         prompt = _build_prompt(wi)
         assert "Write unit tests" in prompt
         assert "Do not write production code" in prompt
@@ -834,7 +834,7 @@ class TestRolePromptBuilder:
     def test_given_role_code_writer_when_prompt_built_then_says_make_tests_pass(self):
         from archipelago.docker_worker.models import WorkerInput
 
-        wi = WorkerInput(**{**_valid_worker_input(), "role": "code_writer"})
+        wi = WorkerInput(**{**_valid_worker_input(), "worker_mode": "code_writer"})
         prompt = _build_prompt(wi)
         assert "make the existing tests pass" in prompt
         assert "Do not modify any test files" in prompt
@@ -957,7 +957,7 @@ class TestConfigInjectionFromState:
         mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
         state = {
             "worker_input": _valid_worker_input(),
-            "role": "unit_test_writer",
+            "worker_mode": "unit_test_writer",
             "acp_hidden_dirs": ["/workspace/src"],
         }
         docker_worker_handler(state)
@@ -974,7 +974,7 @@ class TestConfigInjectionFromState:
         state = {
             "worker_input": _valid_worker_input(),
             "workspace_volume": "archipelago-from-test-writer",
-            "role": "code_writer",
+            "worker_mode": "code_writer",
         }
         docker_worker_handler(state)
         volumes = mock_client.containers.create.call_args.kwargs["volumes"]

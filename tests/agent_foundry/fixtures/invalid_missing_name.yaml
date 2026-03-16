@@ -1,8 +1,8 @@
-description: A capability with no name field
+description: A role with no name field
 version: "1.0.0"
 implementation:
-  module: agent_foundry.capabilities.test
-  class_name: TestCapability
+  module: agent_foundry.roles.test
+  class_name: TestRole
 inputs_schema:
   type: object
   properties: {}

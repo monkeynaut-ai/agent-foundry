@@ -5,16 +5,16 @@ Tests: snippet length <= configured max; metadata present with doc id + offsets.
 
 import pytest
 
-from agent_foundry.registry.registry import CapabilityRegistry
+from agent_foundry.registry.registry import RoleRegistry
 from agent_foundry.retriever.indexer import RegistryIndexer
 from agent_foundry.retriever.retrieval import RetrievalAPI
 
-from .conftest import CAPABILITIES_DIR
+from .conftest import ROLES_DIR
 
 
 @pytest.fixture
 def retrieval_api(tmp_path):
-    registry = CapabilityRegistry.from_directory(CAPABILITIES_DIR)
+    registry = RoleRegistry.from_directory(ROLES_DIR)
     index_dir = tmp_path / "index"
     indexer = RegistryIndexer(index_dir=index_dir)
     indexer.build(registry)

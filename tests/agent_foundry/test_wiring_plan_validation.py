@@ -14,7 +14,7 @@ class TestMissingRequiredFields:
 
     def test_missing_nodes_raises_error(self):
         with pytest.raises(ValidationError) as exc_info:
-            GraphWiringPlan(goal="test", edges=[], entry_point="a", capability_versions={})
+            GraphWiringPlan(goal="test", edges=[], entry_point="a", role_versions={})
         errors = exc_info.value.errors()
         field_names = [e["loc"][0] for e in errors]
         assert "nodes" in field_names
@@ -22,10 +22,10 @@ class TestMissingRequiredFields:
     def test_missing_goal_raises_error(self):
         with pytest.raises(ValidationError) as exc_info:
             GraphWiringPlan(
-                nodes=[{"id": "a", "capability": "test"}],
+                nodes=[{"id": "a", "role": "test"}],
                 edges=[],
                 entry_point="a",
-                capability_versions={},
+                role_versions={},
             )
         errors = exc_info.value.errors()
         field_names = [e["loc"][0] for e in errors]
@@ -35,9 +35,9 @@ class TestMissingRequiredFields:
         with pytest.raises(ValidationError) as exc_info:
             GraphWiringPlan(
                 goal="test",
-                nodes=[{"id": "a", "capability": "test"}],
+                nodes=[{"id": "a", "role": "test"}],
                 edges=[],
-                capability_versions={},
+                role_versions={},
             )
         errors = exc_info.value.errors()
         field_names = [e["loc"][0] for e in errors]
@@ -45,7 +45,7 @@ class TestMissingRequiredFields:
 
     def test_error_message_includes_field_path(self):
         with pytest.raises(ValidationError) as exc_info:
-            GraphWiringPlan(goal="test", edges=[], entry_point="a", capability_versions={})
+            GraphWiringPlan(goal="test", edges=[], entry_point="a", role_versions={})
         msg = str(exc_info.value)
         assert "nodes" in msg
 
@@ -53,18 +53,18 @@ class TestMissingRequiredFields:
         with pytest.raises(ValidationError):
             GraphWiringPlan(
                 goal="test",
-                nodes=[{"capability": "test"}],
+                nodes=[{"role": "test"}],
                 edges=[],
                 entry_point="a",
-                capability_versions={},
+                role_versions={},
             )
 
-    def test_missing_node_capability_raises_error(self):
+    def test_missing_node_role_raises_error(self):
         with pytest.raises(ValidationError):
             GraphWiringPlan(
                 goal="test",
                 nodes=[{"id": "a"}],
                 edges=[],
                 entry_point="a",
-                capability_versions={},
+                role_versions={},
             )

@@ -4,17 +4,17 @@ import time
 
 import pytest
 
-from agent_foundry.registry.errors import CapabilityExecutionError
+from agent_foundry.registry.errors import RoleExecutionError
 from agent_foundry.registry.execution import _execute_with_quality_controls, _execute_with_timeout
 from agent_foundry.registry.spec import (
-    CapabilitySpec,
+    RoleSpec,
     ImplementationPointer,
     QualityControls,
 )
 
 
-def _make_spec(timeout_seconds: int = 30, max_retries: int = 0) -> CapabilitySpec:
-    return CapabilitySpec(
+def _make_spec(timeout_seconds: int = 30, max_retries: int = 0) -> RoleSpec:
+    return RoleSpec(
         name="test_cap",
         description="test",
         version="1.0.0",
@@ -48,19 +48,17 @@ class TestExecuteWithQualityControls:
             raise RuntimeError("permanent")
 
         spec = _make_spec(max_retries=2)
-        with pytest.raises(CapabilityExecutionError) as exc_info:
+        with pytest.raises(RoleExecutionError) as exc_info:
             _execute_with_quality_controls(spec, {}, handler)
         assert exc_info.value.phase == "retry_exhausted"
         assert "3 attempts" in str(exc_info.value)
 
-    def test_given_handler_raises_capability_execution_error_then_re_raises_immediately(self):
+    def test_given_handler_raises_role_execution_error_then_re_raises_immediately(self):
         def handler(inputs):
-            raise CapabilityExecutionError(
-                message="already handled", capability_name="test", phase="timeout"
-            )
+            raise RoleExecutionError(message="already handled", role_name="test", phase="timeout")
 
         spec = _make_spec(max_retries=2)
-        with pytest.raises(CapabilityExecutionError) as exc_info:
+        with pytest.raises(RoleExecutionError) as exc_info:
             _execute_with_quality_controls(spec, {}, handler)
         assert exc_info.value.phase == "timeout"
 
@@ -86,15 +84,15 @@ class TestExecuteWithTimeout:
             time.sleep(5)
             return {}
 
-        with pytest.raises(CapabilityExecutionError) as exc_info:
-            _execute_with_timeout(handler, {}, timeout=1, capability_name="test")
+        with pytest.raises(RoleExecutionError) as exc_info:
+            _execute_with_timeout(handler, {}, timeout=1, role_name="test")
         assert exc_info.value.phase == "timeout"
 
     def test_given_handler_completes_within_timeout_then_returns_result(self):
         def handler(inputs):
             return {"done": True}
 
-        result = _execute_with_timeout(handler, {}, timeout=10, capability_name="test")
+        result = _execute_with_timeout(handler, {}, timeout=10, role_name="test")
         assert result == {"done": True}
 
     def test_given_handler_raises_exception_then_propagates(self):
@@ -102,4 +100,4 @@ class TestExecuteWithTimeout:
             raise ValueError("bad input")
 
         with pytest.raises(ValueError, match="bad input"):
-            _execute_with_timeout(handler, {}, timeout=10, capability_name="test")
+            _execute_with_timeout(handler, {}, timeout=10, role_name="test")
