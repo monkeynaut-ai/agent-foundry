@@ -47,7 +47,7 @@ demo.env = {PYTHONPATH = "src"}
 archipelago.cmd = "python -m archipelago.cli"
 archipelago.env = {PYTHONPATH = "src"}
 docker-base.cmd = "docker build -t acp-cc-worker:latest -f src/agent_foundry/acp/docker/Dockerfile.base ."
-docker-archipelago.cmd = "docker build -t archipelago-cc-worker:latest -f docker/Dockerfile ."
+docker-archipelago.cmd = "docker build -t archipelago-cc-worker:latest -f src/archipelago/docker/Dockerfile ."
 lint-imports.cmd = "lint-imports"
 lint-imports.env = {PYTHONPATH = "src"}
 lint.cmd = "ruff check src/ tests/"

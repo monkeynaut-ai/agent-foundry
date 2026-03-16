@@ -10,17 +10,17 @@
 FROM acp-cc-worker:latest
 
 # Archipelago-specific settings (merges with base settings.json)
-COPY --chown=claude:claude docker/settings.local.json /home/claude/.claude/settings.local.json
+COPY --chown=claude:claude src/archipelago/docker/settings.local.json /home/claude/.claude/settings.local.json
 
 # Archipelago worker instructions and skills
-COPY --chown=claude:claude docker/CLAUDE.md /home/claude/.claude/CLAUDE.md
-COPY --chown=claude:claude docker/skills/lessons-learned/SKILL.md /home/claude/.claude/skills/lessons-learned/SKILL.md
+COPY --chown=claude:claude src/archipelago/docker/CLAUDE.md /home/claude/.claude/CLAUDE.md
+COPY --chown=claude:claude src/archipelago/docker/skills/lessons-learned/SKILL.md /home/claude/.claude/skills/lessons-learned/SKILL.md
 
 # Archipelago marker configuration for the ACP adapter
-COPY --chown=claude:claude docker/marker-config.json /home/claude/marker-config.json
+COPY --chown=claude:claude src/archipelago/docker/marker-config.json /home/claude/marker-config.json
 
 # Product init script — version check, product-specific setup
-COPY --chown=claude:claude docker/product-init.sh /home/claude/product-init.sh
+COPY --chown=claude:claude src/archipelago/docker/product-init.sh /home/claude/product-init.sh
 RUN chmod +x /home/claude/product-init.sh
 
 WORKDIR /workspace
