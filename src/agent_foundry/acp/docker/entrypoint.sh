@@ -41,19 +41,7 @@ if [ -n "$REPO_URL" ] && [ ! -d /workspace/.git ]; then
 fi
 
 # ── Filesystem lockdown ──
-# Applied as root after clone, before dropping to claude user.
-# ACP_HIDDEN_DIRS: comma-separated paths to make completely inaccessible (chmod 000)
-# ACP_READONLY_DIRS: comma-separated paths to make read-only (chmod a-w recursive)
-if [ -n "$ACP_HIDDEN_DIRS" ]; then
-  IFS=',' ; for dir in $ACP_HIDDEN_DIRS; do
-    [ -d "$dir" ] && chmod 000 "$dir"
-  done; unset IFS
-fi
-if [ -n "$ACP_READONLY_DIRS" ]; then
-  IFS=',' ; for dir in $ACP_READONLY_DIRS; do
-    [ -d "$dir" ] && chmod -R a-w "$dir"
-  done; unset IFS
-fi
+. /home/claude/lockdown.sh
 
 # ── Role-specific instructions ──
 # Append role-specific content to CLAUDE.md rather than overwriting,

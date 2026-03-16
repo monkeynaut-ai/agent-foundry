@@ -1,28 +1,29 @@
-"""Tests for ACP base entrypoint structure.
+"""Tests for ACP base entrypoint and lockdown script structure.
 
-Validates that the entrypoint script contains the required sections
-in the correct order for filesystem lockdown and gosu user switching.
+Validates that the entrypoint script sources the lockdown script,
+contains the required sections in the correct order, and that the
+lockdown script handles filesystem restrictions properly.
 """
 
 from pathlib import Path
 
-ENTRYPOINT = Path(__file__).resolve().parents[3] / "src/agent_foundry/acp/docker/entrypoint.sh"
+_DOCKER_DIR = Path(__file__).resolve().parents[3] / "src/agent_foundry/acp/docker"
+ENTRYPOINT = _DOCKER_DIR / "entrypoint.sh"
+LOCKDOWN = _DOCKER_DIR / "lockdown.sh"
 
 
 def _read_entrypoint() -> str:
     return ENTRYPOINT.read_text()
 
 
-class TestFilesystemLockdown:
-    def test_given_entrypoint_when_read_then_contains_acp_hidden_dirs_handling(self):
-        content = _read_entrypoint()
-        assert "ACP_HIDDEN_DIRS" in content
-        assert "chmod 000" in content
+def _read_lockdown() -> str:
+    return LOCKDOWN.read_text()
 
-    def test_given_entrypoint_when_read_then_contains_acp_readonly_dirs_handling(self):
+
+class TestFilesystemLockdown:
+    def test_given_entrypoint_when_read_then_sources_lockdown_script(self):
         content = _read_entrypoint()
-        assert "ACP_READONLY_DIRS" in content
-        assert "chmod -R a-w" in content
+        assert ". /home/claude/lockdown.sh" in content
 
     def test_given_entrypoint_when_read_then_lockdown_after_repo_clone(self):
         content = _read_entrypoint()
@@ -35,6 +36,22 @@ class TestFilesystemLockdown:
         lockdown_pos = content.index("Filesystem lockdown")
         product_init_pos = content.index("Product-specific init hook")
         assert lockdown_pos < product_init_pos
+
+
+class TestLockdownScript:
+    def test_given_lockdown_script_when_read_then_handles_hidden_dirs(self):
+        content = _read_lockdown()
+        assert "ACP_HIDDEN_DIRS" in content
+        assert "chmod 000" in content
+
+    def test_given_lockdown_script_when_read_then_handles_readonly_dirs(self):
+        content = _read_lockdown()
+        assert "ACP_READONLY_DIRS" in content
+        assert "chmod -R a-w" in content
+
+    def test_given_lockdown_script_when_read_then_guards_nonexistent_dirs(self):
+        content = _read_lockdown()
+        assert '[ -d "$dir" ]' in content
 
 
 class TestRoleInstructions:

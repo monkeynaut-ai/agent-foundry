@@ -52,8 +52,9 @@ COPY --chown=claude:claude src/agent_foundry/acp/docker/.bashrc /home/claude/.ba
 # Copy base configuration and entrypoint
 COPY --chown=claude:claude src/agent_foundry/acp/docker/settings.json /home/claude/.claude/settings.json
 COPY --chown=claude:claude src/agent_foundry/acp/docker/claude.json /home/claude/.claude.json
+COPY src/agent_foundry/acp/docker/lockdown.sh /home/claude/lockdown.sh
 COPY src/agent_foundry/acp/docker/entrypoint.sh /home/claude/entrypoint.sh
-RUN chmod +x /home/claude/entrypoint.sh
+RUN chmod +x /home/claude/entrypoint.sh /home/claude/lockdown.sh
 
 # Copy the ACP package so the adapter's imports resolve
 COPY --chown=claude:claude src/agent_foundry/__init__.py /home/claude/lib/agent_foundry/__init__.py
