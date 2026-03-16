@@ -73,6 +73,7 @@ class TestCreateContainer:
         kw = mock_client.containers.create.call_args.kwargs
         assert "user" not in kw  # entrypoint owns user switching via gosu
         assert kw["cap_drop"] == ["ALL"]
+        assert kw["cap_add"] == ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
         assert kw["extra_hosts"] == {"host.docker.internal": "host-gateway"}
 
     def test_given_constraints_when_create_called_then_resource_limits_applied(

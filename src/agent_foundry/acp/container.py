@@ -88,6 +88,7 @@ class ContainerManager:
                 image,
                 detach=True,
                 cap_drop=["ALL"],
+                cap_add=["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
                 read_only=False,
                 tmpfs={"/tmp": "size=256m"},
                 volumes=volumes,
