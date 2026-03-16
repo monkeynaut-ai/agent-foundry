@@ -15,6 +15,7 @@ import docker
 from websockets.sync.server import ServerConnection, serve
 
 from archipelago.docker_worker.container import create_archipelago_container_manager
+from archipelago.docker_worker.env import build_container_env
 from archipelago.docker_worker.models import (
     CommitEvidence,
     PatchInfo,
@@ -208,32 +209,12 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     try:
         # Create and start container with WS URL
         ws_url = f"ws://host.docker.internal:{port}/{session_id}"
-        repo_env: dict[str, str] = {"REPO_REF": worker_input.repo_ref}
-        if worker_input.repo_url and not worker_input.workspace_volume:
-            repo_env["REPO_URL"] = worker_input.repo_url
-
-        lockdown_env: dict[str, str] = {}
-        if worker_input.acp_hidden_dirs:
-            lockdown_env["ACP_HIDDEN_DIRS"] = ",".join(worker_input.acp_hidden_dirs)
-        if worker_input.acp_readonly_dirs:
-            lockdown_env["ACP_READONLY_DIRS"] = ",".join(worker_input.acp_readonly_dirs)
-        if worker_input.role_instructions_path:
-            lockdown_env["ACP_ROLE_INSTRUCTIONS_PATH"] = worker_input.role_instructions_path
-
         volume_name = worker_input.workspace_volume or f"archipelago-{int(time.time())}"
 
         container_handle = container_mgr.create_container(
             workspace_volume=volume_name,
             constraints=worker_input.constraints,
-            extra_env={
-                "ARCHIPELAGO_WS_URL": ws_url,
-                "ARCHIPELAGO_TURN_TIMEOUT": str(worker_input.constraints.turn_timeout_seconds),
-                "ARCHIPELAGO_SKIP_PERMISSIONS": (
-                    "1" if worker_input.constraints.skip_permissions else "0"
-                ),
-                **repo_env,
-                **lockdown_env,
-            },
+            extra_env=build_container_env(worker_input, ws_url),
         )
         container_mgr.start(container_handle)
 
