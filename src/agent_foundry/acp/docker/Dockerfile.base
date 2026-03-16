@@ -35,7 +35,7 @@ ENV PATH="/home/claude/.local/bin:${PATH}"
 RUN claude --version
 
 # Install Python dependencies for the headless adapter
-RUN pip install --no-cache-dir websockets
+RUN pip install --no-cache-dir websockets pydantic
 
 # Install Pyright language server for LSP code intelligence.
 # The first invocation downloads a bundled Node.js — do it at build time
@@ -54,6 +54,14 @@ COPY --chown=claude:claude src/agent_foundry/acp/docker/settings.json /home/clau
 COPY --chown=claude:claude src/agent_foundry/acp/docker/claude.json /home/claude/.claude.json
 COPY src/agent_foundry/acp/docker/entrypoint.sh /home/claude/entrypoint.sh
 RUN chmod +x /home/claude/entrypoint.sh
+
+# Copy the ACP package so the adapter's imports resolve
+COPY --chown=claude:claude src/agent_foundry/__init__.py /home/claude/lib/agent_foundry/__init__.py
+COPY --chown=claude:claude src/agent_foundry/acp/__init__.py /home/claude/lib/agent_foundry/acp/__init__.py
+COPY --chown=claude:claude src/agent_foundry/acp/adapter.py /home/claude/lib/agent_foundry/acp/adapter.py
+COPY --chown=claude:claude src/agent_foundry/acp/protocol.py /home/claude/lib/agent_foundry/acp/protocol.py
+COPY --chown=claude:claude src/agent_foundry/acp/errors.py /home/claude/lib/agent_foundry/acp/errors.py
+ENV PYTHONPATH="/home/claude/lib"
 
 # Copy the ACP Claude Code adapter
 COPY --chown=claude:claude src/agent_foundry/acp/adapters/claude_code.py /home/claude/adapter.py
