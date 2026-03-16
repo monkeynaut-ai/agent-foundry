@@ -71,7 +71,7 @@ class TestCreateContainer:
     def test_given_create_called_then_safety_baseline_enforced(self, manager, mock_client):
         manager.create_container()
         kw = mock_client.containers.create.call_args.kwargs
-        assert kw["user"] == "1000:1000"
+        assert "user" not in kw  # entrypoint owns user switching via gosu
         assert kw["cap_drop"] == ["ALL"]
         assert kw["extra_hosts"] == {"host.docker.internal": "host-gateway"}
 

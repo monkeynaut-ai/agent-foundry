@@ -54,12 +54,12 @@ class TestCreateContainer:
         call_kwargs = mock_client.containers.create.call_args
         assert call_kwargs.kwargs["extra_hosts"] == {"host.docker.internal": "host-gateway"}
 
-    def test_given_valid_config_when_create_called_then_container_uses_non_root_user(
+    def test_given_valid_config_when_create_called_then_no_user_override(
         self, manager, mock_client
     ):
         manager.create_container()
         call_kwargs = mock_client.containers.create.call_args
-        assert call_kwargs.kwargs["user"] == "1000:1000"
+        assert "user" not in call_kwargs.kwargs  # entrypoint owns user switching via gosu
 
     def test_given_valid_config_when_create_called_then_all_capabilities_dropped(
         self, manager, mock_client

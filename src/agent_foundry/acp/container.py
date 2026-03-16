@@ -87,7 +87,6 @@ class ContainerManager:
             container = self._client.containers.create(
                 image,
                 detach=True,
-                user="1000:1000",
                 cap_drop=["ALL"],
                 read_only=False,
                 tmpfs={"/tmp": "size=256m"},
