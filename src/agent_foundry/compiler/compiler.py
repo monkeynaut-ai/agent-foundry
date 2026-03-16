@@ -69,9 +69,12 @@ def compile_plan(
     source_nodes = {e.source for e in plan.edges}
     terminal_nodes = node_ids - source_nodes
 
-    # Add nodes with loop-safe wrappers if needed
+    # Add nodes with config injection and loop-safe wrappers
     for node in plan.nodes:
         handler = _resolve_handler(node.id, node.role, handler_registry, registry)
+
+        # Inject node.config into handler state so handlers can read config fields
+        handler = _make_config_injector(handler, node.config)
 
         # Wrap with max_iterations if configured
         max_iter = node.config.get("max_iterations")
@@ -194,6 +197,18 @@ def _make_passthrough() -> Callable:
         return state
 
     return handler
+
+
+def _make_config_injector(handler: Callable, config: dict[str, Any]) -> Callable:
+    """Wrap a handler to inject node.config fields into state before invocation."""
+    injectable = {k: v for k, v in config.items() if k != "max_iterations"}
+    if not injectable:
+        return handler
+
+    def injected_handler(state: dict[str, Any]) -> dict[str, Any]:
+        return handler({**state, **injectable})
+
+    return injected_handler
 
 
 def _make_iteration_limiter(handler: Callable, max_iterations: int) -> Callable:
