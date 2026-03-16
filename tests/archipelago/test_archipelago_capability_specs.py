@@ -16,10 +16,12 @@ from .conftest import PRODUCT_CAPS_DIR
 
 ARCHIPELAGO_SPEC_NAMES = [
     "architecture_generate_feature_arch",
+    "code_implement_from_tests",
     "coding_implement_feature_from_spec",
     "dev_implement_feature_tdd",
     "spec_generate_feature_spec",
     "strategy_generate_product_brief",
+    "write_unit_tests_from_spec",
 ]
 
 
@@ -151,18 +153,67 @@ class TestDevSpec:
         jsonschema.validate(data, spec.outputs_schema)
 
 
+# ── Unit test writer and code writer specs ──
+
+
+class TestUnitTestWriterSpec:
+    def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "write_unit_tests_from_spec.yaml")
+        assert isinstance(spec, CapabilitySpec)
+        assert spec.name == "write_unit_tests_from_spec"
+        assert spec.version == "1.0.0"
+        assert "archipelago" in spec.tags
+        assert "unit-test" in spec.tags
+
+    def test_given_spec_when_outputs_schema_validates_then_passes(self):
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "write_unit_tests_from_spec.yaml")
+        data = {
+            "result_summary": "Tests written",
+            "workspace_ref": "/workspace",
+            "workspace_volume": "archipelago-123",
+            "patches": [],
+            "evidence": [],
+            "status": "completed",
+        }
+        jsonschema.validate(data, spec.outputs_schema)
+
+
+class TestCodeWriterSpec:
+    def test_given_yaml_file_when_loaded_then_returns_valid_capability_spec(self):
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "code_implement_from_tests.yaml")
+        assert isinstance(spec, CapabilitySpec)
+        assert spec.name == "code_implement_from_tests"
+        assert spec.version == "1.0.0"
+        assert "archipelago" in spec.tags
+
+    def test_given_spec_when_inputs_require_workspace_volume(self):
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "code_implement_from_tests.yaml")
+        assert "workspace_volume" in spec.inputs_schema["required"]
+
+    def test_given_spec_when_outputs_schema_validates_then_passes(self):
+        spec = load_capability_spec(PRODUCT_CAPS_DIR / "code_implement_from_tests.yaml")
+        data = {
+            "result_summary": "Code implemented",
+            "workspace_ref": "/workspace",
+            "patches": [],
+            "evidence": [],
+            "status": "completed",
+        }
+        jsonschema.validate(data, spec.outputs_schema)
+
+
 # ── Commit 3: Registry integration and tag search ──
 
 
 class TestRegistryIntegration:
-    def test_given_all_yaml_specs_when_registry_loaded_then_contains_13_capabilities(
+    def test_given_all_yaml_specs_when_registry_loaded_then_contains_15_capabilities(
         self, registry
     ):
-        assert len(registry) == 13
+        assert len(registry) == 15
 
-    def test_given_registry_when_searched_by_archipelago_tag_then_returns_exactly_4(self, registry):
+    def test_given_registry_when_searched_by_archipelago_tag_then_returns_exactly_7(self, registry):
         results = registry.search(tags=["archipelago"])
-        assert len(results) == 5
+        assert len(results) == 7
 
     def test_given_each_archipelago_spec_when_name_queried_then_found_in_registry(self, registry):
         for name in ARCHIPELAGO_SPEC_NAMES:
