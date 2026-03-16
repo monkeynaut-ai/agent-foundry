@@ -3,11 +3,13 @@
 import contextlib
 import logging
 import queue
+import shutil
 import socket
 import tempfile
 import threading
 import time
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -17,13 +19,11 @@ from websockets.sync.server import ServerConnection, serve
 from archipelago.docker_worker.container import create_archipelago_container_manager
 from archipelago.docker_worker.env import build_container_env
 from archipelago.docker_worker.models import (
-    CommitEvidence,
-    PatchInfo,
     WorkerConstraints,
     WorkerInput,
     WorkerResult,
 )
-from archipelago.docker_worker.progress import parse_progress
+from archipelago.docker_worker.progress import parse_progress, transform_progress_events
 from archipelago.docker_worker.protocol import (
     AgentEventMessage,
     ControlMessage,
@@ -150,6 +150,108 @@ def _send_control(
     ws_server.send(msg.model_dump_json())
 
 
+@dataclass
+class MessageLoopResult:
+    """Outcome of the message processing loop."""
+
+    output_lines: list[str] = field(default_factory=list)
+    session_exit_code: int | None = None
+    update_available: dict[str, Any] | None = None
+    early_return: dict[str, Any] | None = None
+
+
+def _process_messages(
+    ws_server: _HandlerWSServer,
+    session_id: str,
+    deadline: float,
+    auto_approve_low_risk: bool,
+    state: dict[str, Any],
+    workspace_path: str,
+) -> MessageLoopResult:
+    """Process protocol messages from the adapter until completion, breakpoint, or timeout.
+
+    Returns a MessageLoopResult. If early_return is not None, the caller should
+    return it directly as the handler result (contains breakpoint_payload).
+    """
+    result = MessageLoopResult()
+
+    while time.time() < deadline:
+        try:
+            raw = ws_server.message_queue.get(timeout=0.1)
+        except queue.Empty:
+            continue
+
+        # Connection dropped sentinel
+        if raw is None:
+            failed = WorkerResult(
+                result_summary="Adapter connection dropped",
+                workspace_ref=workspace_path,
+                patches=[],
+                evidence=[],
+                status="failed",
+            )
+            result.early_return = {**state, "worker_result": failed.model_dump()}
+            return result
+
+        try:
+            msg = parse_protocol_message(raw)
+        except ProtocolError:
+            logger.warning("Ignoring malformed protocol message")
+            continue
+
+        if isinstance(msg, OutputMessage):
+            result.output_lines.append(msg.text)
+            logger.info("[cc] %s", msg.text)
+
+        elif isinstance(msg, AgentEventMessage):
+            if msg.event_type == "update_available":
+                result.update_available = msg.payload
+            elif msg.event_type == "clarification_requested":
+                payload = msg.payload
+                blocking = payload.get("blocking", True)
+                if blocking:
+                    result.early_return = {
+                        **state,
+                        "breakpoint_payload": {
+                            "type": "clarification",
+                            "question": payload.get("question", ""),
+                            "options": payload.get("options", []),
+                            "default": payload.get("default"),
+                            "blocking": True,
+                        },
+                        "worker_result": None,
+                    }
+                    return result
+            elif msg.event_type == "permission_requested":
+                payload = msg.payload
+                risk_level = payload.get("risk_level", "medium")
+                if risk_level == "low" and auto_approve_low_risk:
+                    _send_input(ws_server, session_id, "yes\n")
+                else:
+                    result.early_return = {
+                        **state,
+                        "breakpoint_payload": {
+                            "type": "permission",
+                            "action": payload.get("action", ""),
+                            "risk_level": risk_level,
+                            "why_needed": payload.get("why_needed", ""),
+                        },
+                        "worker_result": None,
+                    }
+                    return result
+
+        elif isinstance(msg, StatusMessage):
+            if msg.status == "exited":
+                result.session_exit_code = msg.exit_code
+                break
+            elif msg.status == "completed":
+                # Task done — gate check not yet implemented (backlog item)
+                result.session_exit_code = 0
+                break
+
+    return result
+
+
 def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     """Orchestrate a full Docker worker lifecycle.
 
@@ -206,6 +308,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     ws_server.start(port)
 
     container_handle = None
+    temp_dirs: list[Path] = []
     try:
         # Create and start container with WS URL
         ws_url = f"ws://host.docker.internal:{port}/{session_id}"
@@ -223,87 +326,25 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         if not ws_server.connected.wait(timeout=conn_timeout):
             raise TimeoutError(f"Adapter did not connect within {conn_timeout} seconds")
 
-        # Collect output and state
-        output_lines: list[str] = []
-        mutable: dict[str, Any] = {"update_available": None}
-        session_exit_code: int | None = None
-
         # Send the feature spec prompt immediately — headless adapter waits for first input
         _send_input(ws_server, session_id, _build_prompt(worker_input))
 
-        # Message processing loop
+        # Process protocol messages
         deadline = time.time() + worker_input.constraints.timeout_seconds
+        loop_result = _process_messages(
+            ws_server=ws_server,
+            session_id=session_id,
+            deadline=deadline,
+            auto_approve_low_risk=auto_approve_low_risk,
+            state=state,
+            workspace_path=container_handle.workspace_path if container_handle else "",
+        )
 
-        while time.time() < deadline:
-            try:
-                raw = ws_server.message_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
+        if loop_result.early_return is not None:
+            return loop_result.early_return
 
-            # Connection dropped sentinel
-            if raw is None:
-                result = WorkerResult(
-                    result_summary="Adapter connection dropped",
-                    workspace_ref=container_handle.workspace_path if container_handle else "",
-                    patches=[],
-                    evidence=[],
-                    status="failed",
-                )
-                return {**state, "worker_result": result.model_dump()}
-
-            try:
-                msg = parse_protocol_message(raw)
-            except ProtocolError:
-                logger.warning("Ignoring malformed protocol message")
-                continue
-
-            if isinstance(msg, OutputMessage):
-                output_lines.append(msg.text)
-                print(f"[cc] {msg.text}", flush=True)
-
-            elif isinstance(msg, AgentEventMessage):
-                if msg.event_type == "update_available":
-                    mutable["update_available"] = msg.payload
-                elif msg.event_type == "clarification_requested":
-                    payload = msg.payload
-                    blocking = payload.get("blocking", True)
-                    if blocking:
-                        return {
-                            **state,
-                            "breakpoint_payload": {
-                                "type": "clarification",
-                                "question": payload.get("question", ""),
-                                "options": payload.get("options", []),
-                                "default": payload.get("default"),
-                                "blocking": True,
-                            },
-                            "worker_result": None,
-                        }
-                elif msg.event_type == "permission_requested":
-                    payload = msg.payload
-                    risk_level = payload.get("risk_level", "medium")
-                    if risk_level == "low" and auto_approve_low_risk:
-                        _send_input(ws_server, session_id, "yes\n")
-                    else:
-                        return {
-                            **state,
-                            "breakpoint_payload": {
-                                "type": "permission",
-                                "action": payload.get("action", ""),
-                                "risk_level": risk_level,
-                                "why_needed": payload.get("why_needed", ""),
-                            },
-                            "worker_result": None,
-                        }
-
-            elif isinstance(msg, StatusMessage):
-                if msg.status == "exited":
-                    session_exit_code = msg.exit_code
-                    break
-                elif msg.status == "completed":
-                    # Task done — gate check not yet implemented (backlog item)
-                    session_exit_code = 0
-                    break
+        output_lines = loop_result.output_lines
+        session_exit_code = loop_result.session_exit_code
 
         # Determine status
         status: Literal["completed", "failed", "timed_out"]
@@ -317,37 +358,14 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
 
         # Copy progress file from container, then parse locally
         progress_dir = Path(tempfile.mkdtemp(prefix="archipelago-progress-"))
+        temp_dirs.append(progress_dir)
         container_mgr.copy_from_container(
             container_handle,
             f"{container_handle.workspace_path}/progress.jsonl",
             progress_dir / "progress.jsonl",
         )
         events = parse_progress(progress_dir)
-
-        patches = []
-        evidence = []
-        for event in events:
-            if event.type == "pr_completed":
-                patches.append(
-                    PatchInfo(
-                        pr_id=event.pr_id,
-                        branch_name=event.commit_id,
-                        files_changed=event.files_changed,
-                        diff_summary=event.notes,
-                    )
-                )
-            if event.type == "commit_green":
-                evidence.append(
-                    CommitEvidence(
-                        commit_id=event.commit_id,
-                        pr_id=event.pr_id,
-                        test_commands_run=[r.command for r in event.tests_run],
-                        test_output=event.notes,
-                        tests_passed=sum(1 for r in event.tests_run if r.exit_code == 0),
-                        tests_failed=sum(1 for r in event.tests_run if r.exit_code != 0),
-                        all_green=all(r.exit_code == 0 for r in event.tests_run),
-                    )
-                )
+        patches, evidence = transform_progress_events(events)
 
         result = WorkerResult(
             result_summary=f"Worker {status} with {len(output_lines)} output lines",
@@ -358,8 +376,8 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         )
         result_state = {**state, "worker_result": result.model_dump()}
         result_state["workspace_volume"] = volume_name
-        if mutable["update_available"]:
-            result_state["update_available"] = mutable["update_available"]
+        if loop_result.update_available:
+            result_state["update_available"] = loop_result.update_available
         return result_state
 
     except Exception as e:
@@ -367,6 +385,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         if container_handle:
             try:
                 recovery_dir = Path(tempfile.mkdtemp(prefix="archipelago-recovery-"))
+                temp_dirs.append(recovery_dir)
                 persist_workspace_state(
                     workspace_path=None,
                     output_path=recovery_dir,
@@ -387,10 +406,11 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
     finally:
         ws_server.shutdown()
         if container_handle:
-            import contextlib
-
             with contextlib.suppress(Exception):
                 container_mgr.destroy(container_handle)
+        for d in temp_dirs:
+            with contextlib.suppress(Exception):
+                shutil.rmtree(d)
 
 
 class DockerWorkerHandler:
@@ -401,8 +421,3 @@ class DockerWorkerHandler:
 
     def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
         return docker_worker_handler(state)
-
-
-DOCKER_WORKER_HANDLERS: dict[str, Any] = {
-    "coding_implement_feature_from_spec": docker_worker_handler,
-}

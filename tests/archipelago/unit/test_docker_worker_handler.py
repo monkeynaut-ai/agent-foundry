@@ -13,8 +13,10 @@ from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.planner.validators import validate_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from archipelago.docker_worker.handler import (
+    MessageLoopResult,
     _build_prompt,
     _HandlerWSServer,
+    _process_messages,
     docker_worker_handler,
 )
 from archipelago.docker_worker.models import WorkerConstraints, WorkerResult
@@ -981,3 +983,120 @@ class TestConfigInjectionFromState:
         docker_worker_handler(state)
         volumes = mock_client.containers.create.call_args.kwargs["volumes"]
         assert "archipelago-from-test-writer" in volumes
+
+
+class TestProcessMessages:
+    """Tests for _process_messages extracted from docker_worker_handler."""
+
+    def _call(self, messages, *, auto_approve_low_risk=False, deadline_offset=10.0):
+        import time
+
+        ws_server = _preload_ws_server(messages)
+        state = {"worker_input": _valid_worker_input()}
+        return _process_messages(
+            ws_server=ws_server,
+            session_id="test",
+            deadline=time.time() + deadline_offset,
+            auto_approve_low_risk=auto_approve_low_risk,
+            state=state,
+            workspace_path="/workspace",
+        ), ws_server
+
+    def test_given_output_and_exited_when_processed_then_output_collected_and_exit_code_set(self):
+        result, _ = self._call(
+            [
+                _output_msg("line 1"),
+                _output_msg("line 2"),
+                _status_msg("exited", 0),
+            ]
+        )
+        assert result.output_lines == ["line 1", "line 2"]
+        assert result.session_exit_code == 0
+        assert result.early_return is None
+
+    def test_given_blocking_clarification_when_processed_then_early_return_has_breakpoint(self):
+        result, _ = self._call(
+            [
+                _interrupt_msg(
+                    "clarification_requested",
+                    {"question": "Which DB?", "options": ["pg"], "default": "pg", "blocking": True},
+                ),
+            ]
+        )
+        assert result.early_return is not None
+        assert result.early_return["breakpoint_payload"]["type"] == "clarification"
+        assert result.early_return["breakpoint_payload"]["question"] == "Which DB?"
+        assert result.early_return["worker_result"] is None
+
+    def test_given_high_risk_permission_when_processed_then_early_return_has_breakpoint(self):
+        result, _ = self._call(
+            [
+                _interrupt_msg(
+                    "permission_requested",
+                    {"action": "drop table", "risk_level": "high", "why_needed": "migration"},
+                ),
+            ]
+        )
+        assert result.early_return is not None
+        assert result.early_return["breakpoint_payload"]["type"] == "permission"
+        assert result.early_return["breakpoint_payload"]["risk_level"] == "high"
+        assert result.early_return["worker_result"] is None
+
+    def test_given_low_risk_permission_with_auto_approve_when_processed_then_continues(self):
+        result, ws_server = self._call(
+            [
+                _interrupt_msg(
+                    "permission_requested",
+                    {"action": "delete file", "risk_level": "low", "why_needed": "cleanup"},
+                ),
+                _status_msg("exited", 0),
+            ],
+            auto_approve_low_risk=True,
+        )
+        assert result.early_return is None
+        assert result.session_exit_code == 0
+        # Verify "yes\n" was sent
+        send_calls = ws_server.send.call_args_list
+        input_msgs = [
+            json.loads(c[0][0]) for c in send_calls if "yes" in json.loads(c[0][0]).get("text", "")
+        ]
+        assert len(input_msgs) >= 1
+
+    def test_given_update_available_when_processed_then_recorded(self):
+        result, _ = self._call(
+            [
+                _interrupt_msg("update_available", {"installed": "1.0.0", "latest": "1.1.0"}),
+                _status_msg("exited", 0),
+            ]
+        )
+        assert result.early_return is None
+        assert result.update_available == {"installed": "1.0.0", "latest": "1.1.0"}
+
+    def test_given_connection_dropped_when_processed_then_early_return_has_failed_result(self):
+        result, _ = self._call([None])
+        assert result.early_return is not None
+        assert result.early_return["worker_result"]["status"] == "failed"
+        assert (
+            "connection dropped" in result.early_return["worker_result"]["result_summary"].lower()
+        )
+
+    def test_given_deadline_exceeded_when_processed_then_returns_with_no_exit_code(self):
+        result, _ = self._call(
+            [_output_msg("working...")],
+            deadline_offset=0,
+        )
+        assert result.early_return is None
+        assert result.session_exit_code is None
+        assert result.output_lines == []
+
+    def test_given_malformed_message_when_processed_then_skipped(self):
+        result, _ = self._call(
+            [
+                "not valid json at all {{{",
+                _output_msg("after bad msg"),
+                _status_msg("exited", 0),
+            ]
+        )
+        assert result.early_return is None
+        assert result.output_lines == ["after bad msg"]
+        assert result.session_exit_code == 0
