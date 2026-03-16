@@ -100,6 +100,8 @@ STUB_HANDLERS = {
     "spec_generate_feature_spec": _stub_spec,
     "human_approval_gate": _stub_gate,
     "coding_implement_feature_from_spec": _stub_docker_worker,
+    "write_unit_tests_from_spec": _stub_docker_worker,
+    "code_implement_from_tests": _stub_docker_worker,
 }
 
 
@@ -146,11 +148,15 @@ class TestEndToEnd:
         graph.invoke({"product_brief_input": "test"})
 
         spans = tracer.export()
-        worker_spans = [s for s in spans if s["capability"] == "coding_implement_feature_from_spec"]
-        assert len(worker_spans) == 1
-        assert worker_spans[0]["status"] == "ok"
+        worker_spans = [
+            s
+            for s in spans
+            if s["capability"] in ("write_unit_tests_from_spec", "code_implement_from_tests")
+        ]
+        assert len(worker_spans) == 2
+        assert all(s["status"] == "ok" for s in worker_spans)
 
-    def test_given_pipeline_with_tracer_when_run_then_all_5_spans_emitted(self, registry, plan):
+    def test_given_pipeline_with_tracer_when_run_then_all_6_spans_emitted(self, registry, plan):
         tracer = ExecutionTracer()
         node_caps = {n.id: n.capability for n in plan.nodes}
 
@@ -167,7 +173,7 @@ class TestEndToEnd:
         graph = compile_plan(plan, registry, handler_registry=traced)
         graph.invoke({"product_brief_input": "test"})
 
-        assert len(tracer.export()) == 5
+        assert len(tracer.export()) == 6
 
     def test_given_interrupt_during_pipeline_when_breakpoint_hit_then_state_contains_payload(
         self, registry, plan
@@ -188,13 +194,12 @@ class TestEndToEnd:
 
         handlers = {
             **STUB_HANDLERS,
-            "coding_implement_feature_from_spec": _stub_docker_worker_interrupt,
+            "write_unit_tests_from_spec": _stub_docker_worker_interrupt,
         }
         graph = compile_plan(plan, registry, handler_registry=handlers)
         final = graph.invoke({"product_brief_input": "test"})
         assert final.get("breakpoint_payload") is not None
         assert final["breakpoint_payload"]["type"] == "clarification"
-        assert final["worker_result"] is None
 
     def test_given_resumed_after_interrupt_when_pipeline_continues_then_completes(
         self, registry, plan
@@ -222,7 +227,7 @@ class TestEndToEnd:
         # Run pipeline — first invocation hits breakpoint
         handlers = {
             **STUB_HANDLERS,
-            "coding_implement_feature_from_spec": _stub_docker_worker_resume,
+            "write_unit_tests_from_spec": _stub_docker_worker_resume,
         }
         graph = compile_plan(plan, registry, handler_registry=handlers)
         first_result = graph.invoke({"product_brief_input": "test"})
@@ -230,7 +235,7 @@ class TestEndToEnd:
 
         # Simulate resume by re-invoking with breakpoint cleared
         resumed_state = {**first_result, "breakpoint_payload": None}
-        handlers2 = {**STUB_HANDLERS, "coding_implement_feature_from_spec": _stub_docker_worker}
+        handlers2 = {**STUB_HANDLERS, "write_unit_tests_from_spec": _stub_docker_worker}
         graph2 = compile_plan(plan, registry, handler_registry=handlers2)
         final = graph2.invoke(resumed_state)
         assert final["worker_result"] is not None

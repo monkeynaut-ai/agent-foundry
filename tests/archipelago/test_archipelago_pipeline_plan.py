@@ -28,11 +28,11 @@ class TestParsePlan:
     def test_given_pipeline_json_when_parsed_then_goal_is_archipelago_pipeline(self, plan):
         assert plan.goal == "archipelago-pipeline"
 
-    def test_given_pipeline_json_when_parsed_then_has_5_nodes(self, plan):
-        assert len(plan.nodes) == 5
+    def test_given_pipeline_json_when_parsed_then_has_6_nodes(self, plan):
+        assert len(plan.nodes) == 6
 
-    def test_given_pipeline_json_when_parsed_then_has_4_edges(self, plan):
-        assert len(plan.edges) == 4
+    def test_given_pipeline_json_when_parsed_then_has_5_edges(self, plan):
+        assert len(plan.edges) == 5
 
     def test_given_pipeline_json_when_parsed_then_entry_point_is_strategy(self, plan):
         assert plan.entry_point == "strategy"

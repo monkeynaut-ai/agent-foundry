@@ -231,12 +231,14 @@ class TestGateHandler:
 
 
 class TestHandlerRegistry:
-    def test_given_archipelago_handlers_when_all_keys_checked_then_all_2_capabilities_present(
+    def test_given_archipelago_handlers_when_all_keys_checked_then_all_4_capabilities_present(
         self,
     ):
         expected = {
             "dev_implement_feature_tdd",
             "coding_implement_feature_from_spec",
+            "write_unit_tests_from_spec",
+            "code_implement_from_tests",
         }
         assert set(ARCHIPELAGO_HANDLERS.keys()) == expected
 

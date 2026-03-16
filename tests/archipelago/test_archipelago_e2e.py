@@ -91,6 +91,8 @@ STUB_HANDLERS = {
     "spec_generate_feature_spec": _stub_spec,
     "human_approval_gate": _stub_gate,
     "coding_implement_feature_from_spec": _stub_dev_test,
+    "write_unit_tests_from_spec": _stub_dev_test,
+    "code_implement_from_tests": _stub_dev_test,
 }
 
 
@@ -154,7 +156,7 @@ class TestEndToEnd:
         }
         jsonschema.validate(combined_dev, dev_spec.outputs_schema)
 
-    def test_given_pipeline_with_tracer_when_run_then_5_spans_exported(self, registry, plan):
+    def test_given_pipeline_with_tracer_when_run_then_6_spans_exported(self, registry, plan):
         tracer = ExecutionTracer()
         node_caps = {n.id: n.capability for n in plan.nodes}
 
@@ -175,7 +177,7 @@ class TestEndToEnd:
         graph.invoke({"product_brief_input": "Build a test product"})
 
         spans = tracer.export()
-        assert len(spans) == 5
+        assert len(spans) == 6
 
     def test_given_pipeline_with_tracer_when_run_then_all_spans_have_ok_status(
         self, registry, plan

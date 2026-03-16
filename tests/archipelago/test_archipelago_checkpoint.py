@@ -91,6 +91,31 @@ STUB_HANDLERS = {
             },
         },
     ),
+    "write_unit_tests_from_spec": _make_logging_handler(
+        "unit_test_writer",
+        {
+            "worker_result": {
+                "result_summary": "Tests written",
+                "workspace_ref": "/workspace",
+                "patches": [],
+                "evidence": [],
+                "status": "completed",
+            },
+            "workspace_volume": "archipelago-test",
+        },
+    ),
+    "code_implement_from_tests": _make_logging_handler(
+        "code_writer",
+        {
+            "worker_result": {
+                "result_summary": "Code implemented",
+                "workspace_ref": "/workspace",
+                "patches": [],
+                "evidence": [],
+                "status": "completed",
+            },
+        },
+    ),
 }
 
 
@@ -149,12 +174,13 @@ class TestBreakpointPause:
         config = {"configurable": {"thread_id": "pause-1"}}
         graph.invoke({"product_brief_input": "test"}, config)
 
-        # strategy, architecture, spec executed; gate and dev_test did NOT
+        # strategy, architecture, spec executed; gate and downstream did NOT
         assert "strategy" in _execution_log
         assert "architecture" in _execution_log
         assert "spec" in _execution_log
         assert "spec_approval_gate" not in _execution_log
-        assert "dev_test" not in _execution_log
+        assert "unit_test_writer" not in _execution_log
+        assert "code_writer" not in _execution_log
 
     def test_given_paused_execution_when_state_inspected_then_strategy_architecture_spec_artifacts_present(
         self, registry, base_plan_data
@@ -171,7 +197,7 @@ class TestBreakpointPause:
         assert "feature_spec" in result
         assert "test_plan" in result
 
-    def test_given_paused_execution_when_state_inspected_then_dev_test_artifacts_absent(
+    def test_given_paused_execution_when_state_inspected_then_downstream_artifacts_absent(
         self, registry, base_plan_data
     ):
         base_plan_data["persistence"] = {"backend": "memory", "thread_id": "pause-3"}
@@ -181,8 +207,7 @@ class TestBreakpointPause:
         config = {"configurable": {"thread_id": "pause-3"}}
         result = graph.invoke({"product_brief_input": "test"}, config)
 
-        assert "code_patch" not in result
-        assert "test_results" not in result
+        assert "worker_result" not in result
 
 
 # ── Commit 3: Resume tests ──
@@ -203,9 +228,8 @@ class TestCheckpointResume:
         # Resume from checkpoint
         result = graph.invoke(None, config)
 
-        assert "code_patch" in result
-        assert "test_results" in result
-        assert result["test_results"]["all_green"] is True
+        assert "worker_result" in result
+        assert result["worker_result"]["status"] == "completed"
 
     def test_given_paused_execution_when_resumed_then_prior_nodes_not_re_executed(
         self, registry, base_plan_data
@@ -223,12 +247,13 @@ class TestCheckpointResume:
         # Resume
         graph.invoke(None, config)
 
-        # Only gate and dev_test should have run
+        # Only gate and downstream nodes should have run
         assert "strategy" not in _execution_log
         assert "architecture" not in _execution_log
         assert "spec" not in _execution_log
         assert "spec_approval_gate" in _execution_log
-        assert "dev_test" in _execution_log
+        assert "unit_test_writer" in _execution_log
+        assert "code_writer" in _execution_log
 
     def test_given_checkpoint_and_new_graph_from_same_plan_when_loaded_then_resumes_correctly(
         self, registry, base_plan_data
@@ -246,5 +271,5 @@ class TestCheckpointResume:
         _execution_log.clear()
         result = graph1.invoke(None, config)
 
-        assert "code_patch" in result
-        assert "test_results" in result
+        assert "worker_result" in result
+        assert result["worker_result"]["status"] == "completed"
