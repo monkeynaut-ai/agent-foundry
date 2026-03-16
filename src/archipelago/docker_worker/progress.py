@@ -4,7 +4,12 @@ import json
 import logging
 from pathlib import Path
 
-from archipelago.docker_worker.models import ProgressEvent, ResumePoint
+from archipelago.docker_worker.models import (
+    CommitEvidence,
+    PatchInfo,
+    ProgressEvent,
+    ResumePoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,3 +75,41 @@ def get_resume_point(events: list[ProgressEvent]) -> ResumePoint | None:
         commit_id=last_event.commit_id,
         status=last_event.type,
     )
+
+
+def transform_progress_events(
+    events: list[ProgressEvent],
+) -> tuple[list[PatchInfo], list[CommitEvidence]]:
+    """Transform parsed progress events into patch metadata and commit evidence.
+
+    Filters events by type:
+    - pr_completed → PatchInfo
+    - commit_green → CommitEvidence
+    """
+    patches: list[PatchInfo] = []
+    evidence: list[CommitEvidence] = []
+
+    for event in events:
+        if event.type == "pr_completed":
+            patches.append(
+                PatchInfo(
+                    pr_id=event.pr_id,
+                    branch_name=event.commit_id,
+                    files_changed=event.files_changed,
+                    diff_summary=event.notes,
+                )
+            )
+        elif event.type == "commit_green":
+            evidence.append(
+                CommitEvidence(
+                    commit_id=event.commit_id,
+                    pr_id=event.pr_id,
+                    test_commands_run=[r.command for r in event.tests_run],
+                    test_output=event.notes,
+                    tests_passed=sum(1 for r in event.tests_run if r.exit_code == 0),
+                    tests_failed=sum(1 for r in event.tests_run if r.exit_code != 0),
+                    all_green=all(r.exit_code == 0 for r in event.tests_run),
+                )
+            )
+
+    return patches, evidence
