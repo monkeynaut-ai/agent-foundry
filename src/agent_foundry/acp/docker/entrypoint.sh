@@ -34,7 +34,8 @@ if [ -n "$GIT_USER_EMAIL" ]; then
 fi
 
 # ── Repo clone ──
-# Clone into /workspace if REPO_URL is set and workspace is empty
+# Ensure workspace is writable by claude before cloning
+chown claude:claude /workspace
 if [ -n "$REPO_URL" ] && [ ! -d /workspace/.git ]; then
   gosu claude git clone --branch "${REPO_REF:-main}" "$REPO_URL" /workspace
 fi
