@@ -97,7 +97,21 @@ class _HandlerWSServer:
 def _build_prompt(worker_input: WorkerInput) -> str:
     """Format the worker input into a prompt string for Claude Code."""
     spec = worker_input.feature_spec
-    parts = ["Implement the following feature:"]
+    role = worker_input.role
+
+    if role == "unit_test_writer":
+        parts = [
+            "Write unit tests for the following feature specification.",
+            "Do not write production code. Focus on test coverage for the acceptance criteria.",
+        ]
+    elif role == "code_writer":
+        parts = [
+            "Implement production code to make the existing tests pass.",
+            "Do not modify any test files.",
+        ]
+    else:
+        parts = ["Implement the following feature:"]
+
     if title := spec.get("title"):
         parts.append(f"Title: {title}")
     if description := spec.get("description"):
@@ -154,6 +168,18 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
             gates=state.get("gates", []),
         )
 
+    # Merge node config from system JSON (injected into state by the compiler)
+    if role := state.get("role"):
+        worker_input.role = role
+    if acp_hidden_dirs := state.get("acp_hidden_dirs"):
+        worker_input.acp_hidden_dirs = acp_hidden_dirs
+    if acp_readonly_dirs := state.get("acp_readonly_dirs"):
+        worker_input.acp_readonly_dirs = acp_readonly_dirs
+    if role_instructions_path := state.get("role_instructions_path"):
+        worker_input.role_instructions_path = role_instructions_path
+    if workspace_volume := state.get("workspace_volume"):
+        worker_input.workspace_volume = workspace_volume
+
     auto_approve_low_risk = worker_input.constraints.network_policy != "none"
 
     # Initialize Docker
@@ -183,10 +209,21 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         # Create and start container with WS URL
         ws_url = f"ws://host.docker.internal:{port}/{session_id}"
         repo_env: dict[str, str] = {"REPO_REF": worker_input.repo_ref}
-        if worker_input.repo_url:
+        if worker_input.repo_url and not worker_input.workspace_volume:
             repo_env["REPO_URL"] = worker_input.repo_url
+
+        lockdown_env: dict[str, str] = {}
+        if worker_input.acp_hidden_dirs:
+            lockdown_env["ACP_HIDDEN_DIRS"] = ",".join(worker_input.acp_hidden_dirs)
+        if worker_input.acp_readonly_dirs:
+            lockdown_env["ACP_READONLY_DIRS"] = ",".join(worker_input.acp_readonly_dirs)
+        if worker_input.role_instructions_path:
+            lockdown_env["ACP_ROLE_INSTRUCTIONS_PATH"] = worker_input.role_instructions_path
+
+        volume_name = worker_input.workspace_volume or f"archipelago-{int(time.time())}"
+
         container_handle = container_mgr.create_container(
-            workspace_volume=f"archipelago-{int(time.time())}",
+            workspace_volume=volume_name,
             constraints=worker_input.constraints,
             extra_env={
                 "ARCHIPELAGO_WS_URL": ws_url,
@@ -195,6 +232,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
                     "1" if worker_input.constraints.skip_permissions else "0"
                 ),
                 **repo_env,
+                **lockdown_env,
             },
         )
         container_mgr.start(container_handle)
@@ -338,6 +376,7 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
             status=status,
         )
         result_state = {**state, "worker_result": result.model_dump()}
+        result_state["workspace_volume"] = volume_name
         if mutable["update_available"]:
             result_state["update_available"] = mutable["update_available"]
         return result_state

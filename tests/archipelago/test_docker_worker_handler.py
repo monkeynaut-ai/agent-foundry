@@ -13,6 +13,7 @@ from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.planner.validators import validate_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from archipelago.docker_worker.handler import (
+    _build_prompt,
     _HandlerWSServer,
     docker_worker_handler,
 )
@@ -814,6 +815,167 @@ class TestPipelineIntegration:
             "spec_generate_feature_spec": _stub,
             "human_approval_gate": _stub,
             "coding_implement_feature_from_spec": _stub,
+            "write_unit_tests_from_spec": _stub,
+            "code_implement_from_tests": _stub,
         }
         graph = compile_plan(plan, registry, handler_registry=handlers)
         assert graph is not None
+
+
+class TestRolePromptBuilder:
+    def test_given_role_unit_test_writer_when_prompt_built_then_says_write_tests(self):
+        from archipelago.docker_worker.models import WorkerInput
+
+        wi = WorkerInput(**{**_valid_worker_input(), "role": "unit_test_writer"})
+        prompt = _build_prompt(wi)
+        assert "Write unit tests" in prompt
+        assert "Do not write production code" in prompt
+
+    def test_given_role_code_writer_when_prompt_built_then_says_make_tests_pass(self):
+        from archipelago.docker_worker.models import WorkerInput
+
+        wi = WorkerInput(**{**_valid_worker_input(), "role": "code_writer"})
+        prompt = _build_prompt(wi)
+        assert "make the existing tests pass" in prompt
+        assert "Do not modify any test files" in prompt
+
+    def test_given_role_full_when_prompt_built_then_says_implement(self):
+        from archipelago.docker_worker.models import WorkerInput
+
+        wi = WorkerInput(**_valid_worker_input())
+        prompt = _build_prompt(wi)
+        assert "Implement the following feature" in prompt
+
+
+class TestLockdownEnvVars:
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_hidden_dirs_when_called_then_acp_hidden_dirs_env_set(
+        self, mock_docker, mock_ws_cls
+    ):
+        mock_client, _ = _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+        state = {
+            "worker_input": {
+                **_valid_worker_input(),
+                "acp_hidden_dirs": ["/workspace/src"],
+            }
+        }
+        docker_worker_handler(state)
+        env = mock_client.containers.create.call_args.kwargs["environment"]
+        assert env["ACP_HIDDEN_DIRS"] == "/workspace/src"
+
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_readonly_dirs_when_called_then_acp_readonly_dirs_env_set(
+        self, mock_docker, mock_ws_cls
+    ):
+        mock_client, _ = _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+        state = {
+            "worker_input": {
+                **_valid_worker_input(),
+                "acp_readonly_dirs": ["/workspace/tests"],
+            }
+        }
+        docker_worker_handler(state)
+        env = mock_client.containers.create.call_args.kwargs["environment"]
+        assert env["ACP_READONLY_DIRS"] == "/workspace/tests"
+
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_role_instructions_path_when_called_then_env_set(self, mock_docker, mock_ws_cls):
+        mock_client, _ = _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+        state = {
+            "worker_input": {
+                **_valid_worker_input(),
+                "role_instructions_path": "/home/claude/.claude/CLAUDE-unit-test-writer.md",
+            }
+        }
+        docker_worker_handler(state)
+        env = mock_client.containers.create.call_args.kwargs["environment"]
+        assert (
+            env["ACP_ROLE_INSTRUCTIONS_PATH"] == "/home/claude/.claude/CLAUDE-unit-test-writer.md"
+        )
+
+
+class TestWorkspaceVolumeSharing:
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_workspace_volume_when_called_then_volume_reused(self, mock_docker, mock_ws_cls):
+        mock_client, _ = _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+        state = {
+            "worker_input": {
+                **_valid_worker_input(),
+                "workspace_volume": "archipelago-shared-123",
+            }
+        }
+        docker_worker_handler(state)
+        volumes = mock_client.containers.create.call_args.kwargs["volumes"]
+        assert "archipelago-shared-123" in volumes
+
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_workspace_volume_when_called_then_repo_url_not_set(
+        self, mock_docker, mock_ws_cls
+    ):
+        mock_client, _ = _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+        state = {
+            "worker_input": {
+                **_valid_worker_input(),
+                "workspace_volume": "archipelago-shared-123",
+                "repo_url": "https://github.com/org/repo",
+            }
+        }
+        docker_worker_handler(state)
+        env = mock_client.containers.create.call_args.kwargs["environment"]
+        assert "REPO_URL" not in env
+
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_result_when_returned_then_workspace_volume_in_state(
+        self, mock_docker, mock_ws_cls
+    ):
+        _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+        state = {"worker_input": _valid_worker_input()}
+        result_state = docker_worker_handler(state)
+        assert "workspace_volume" in result_state
+        assert result_state["workspace_volume"].startswith("archipelago-")
+
+
+class TestConfigInjectionFromState:
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_state_with_role_when_called_then_worker_input_has_role(
+        self, mock_docker, mock_ws_cls
+    ):
+        mock_client, _ = _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+        state = {
+            "worker_input": _valid_worker_input(),
+            "role": "unit_test_writer",
+            "acp_hidden_dirs": ["/workspace/src"],
+        }
+        docker_worker_handler(state)
+        env = mock_client.containers.create.call_args.kwargs["environment"]
+        assert env["ACP_HIDDEN_DIRS"] == "/workspace/src"
+
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_code_writer_with_workspace_volume_when_called_then_volume_reused(
+        self, mock_docker, mock_ws_cls
+    ):
+        mock_client, _ = _mock_docker_env(mock_docker)
+        mock_ws_cls.return_value = _preload_ws_server([_status_msg("exited", 0)])
+        state = {
+            "worker_input": _valid_worker_input(),
+            "workspace_volume": "archipelago-from-test-writer",
+            "role": "code_writer",
+        }
+        docker_worker_handler(state)
+        volumes = mock_client.containers.create.call_args.kwargs["volumes"]
+        assert "archipelago-from-test-writer" in volumes
