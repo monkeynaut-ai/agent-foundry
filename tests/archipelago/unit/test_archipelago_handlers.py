@@ -23,7 +23,7 @@ from archipelago.models import (
     TestResults,
 )
 
-from .conftest import PRODUCT_ROLES_DIR
+from ..conftest import PRODUCT_ROLES_DIR
 
 
 def _mock_product_brief():

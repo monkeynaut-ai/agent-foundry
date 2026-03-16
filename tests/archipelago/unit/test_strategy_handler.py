@@ -5,7 +5,7 @@ import pytest
 from agent_foundry.registry.spec import RoleSpec, load_role_spec
 from archipelago.agents.strategy import StrategyHandler
 
-from .conftest import PRODUCT_ROLES_DIR
+from ..conftest import PRODUCT_ROLES_DIR
 
 
 def _make_spec() -> RoleSpec:

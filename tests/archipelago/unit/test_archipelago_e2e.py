@@ -11,9 +11,11 @@ from agent_foundry.observability.tracer import ExecutionTracer
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.spec import load_role_spec
 
-from .conftest import PRODUCT_ROLES_DIR
+from ..conftest import PRODUCT_ROLES_DIR
 
-PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "archipelago_system.json"
+PLAN_PATH = (
+    Path(__file__).parent.parent.parent.parent / "src" / "archipelago" / "archipelago_system.json"
+)
 
 
 # ── Stub handlers that produce valid artifacts without LLM calls ──

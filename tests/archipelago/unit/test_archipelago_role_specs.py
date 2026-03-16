@@ -12,7 +12,7 @@ from archipelago.models import (
     TestResults,
 )
 
-from .conftest import PRODUCT_ROLES_DIR
+from ..conftest import PRODUCT_ROLES_DIR
 
 ARCHIPELAGO_SPEC_NAMES = [
     "architecture_generate_feature_arch",

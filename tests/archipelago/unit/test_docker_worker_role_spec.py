@@ -5,7 +5,7 @@ import jsonschema
 from agent_foundry.registry.spec import RoleSpec, load_role_spec
 from archipelago.docker_worker.models import WorkerConstraints, WorkerInput, WorkerResult
 
-from .conftest import PRODUCT_ROLES_DIR
+from ..conftest import PRODUCT_ROLES_DIR
 
 
 class TestCodingSpec:

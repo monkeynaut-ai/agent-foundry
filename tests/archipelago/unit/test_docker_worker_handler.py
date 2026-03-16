@@ -24,7 +24,9 @@ from archipelago.docker_worker.protocol import (
     StatusMessage,
 )
 
-PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "archipelago_system.json"
+PLAN_PATH = (
+    Path(__file__).parent.parent.parent.parent / "src" / "archipelago" / "archipelago_system.json"
+)
 
 
 @pytest.fixture
@@ -309,7 +311,7 @@ class TestDockerWorkerHandler:
     def test_given_entrypoint_when_read_then_contains_archipelago_ws_url_check(self):
         """Entrypoint launches adapter when ARCHIPELAGO_WS_URL is set."""
         entrypoint = (
-            Path(__file__).parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "src"
             / "agent_foundry"
             / "acp"
@@ -387,7 +389,7 @@ class TestDockerWorkerHandler:
 class TestEntrypointProvisioning:
     def test_given_entrypoint_when_read_then_writes_netrc_when_github_token_set(self):
         entrypoint = (
-            Path(__file__).parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "src"
             / "agent_foundry"
             / "acp"
@@ -400,7 +402,7 @@ class TestEntrypointProvisioning:
 
     def test_given_entrypoint_when_read_then_clones_from_repo_url_when_workspace_empty(self):
         entrypoint = (
-            Path(__file__).parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "src"
             / "agent_foundry"
             / "acp"
@@ -414,7 +416,7 @@ class TestEntrypointProvisioning:
 
     def test_given_entrypoint_when_read_then_uses_repo_ref_as_branch(self):
         entrypoint = (
-            Path(__file__).parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "src"
             / "agent_foundry"
             / "acp"
@@ -426,7 +428,7 @@ class TestEntrypointProvisioning:
 
     def test_given_entrypoint_when_read_then_netrc_written_before_clone(self):
         entrypoint = (
-            Path(__file__).parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "src"
             / "agent_foundry"
             / "acp"
@@ -438,7 +440,7 @@ class TestEntrypointProvisioning:
 
     def test_given_entrypoint_when_read_then_passes_turn_timeout_to_adapter(self):
         entrypoint = (
-            Path(__file__).parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "src"
             / "agent_foundry"
             / "acp"
@@ -453,7 +455,7 @@ class TestEntrypointProvisioning:
         self,
     ):
         entrypoint = (
-            Path(__file__).parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "src"
             / "agent_foundry"
             / "acp"

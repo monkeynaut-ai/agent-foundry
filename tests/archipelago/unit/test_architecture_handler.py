@@ -5,7 +5,7 @@ import pytest
 from agent_foundry.registry.spec import load_role_spec
 from archipelago.agents.architecture import ArchitectureHandler
 
-from .conftest import PRODUCT_ROLES_DIR
+from ..conftest import PRODUCT_ROLES_DIR
 
 
 def _make_spec():

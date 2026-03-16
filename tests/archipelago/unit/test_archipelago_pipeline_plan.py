@@ -8,7 +8,9 @@ import pytest
 from agent_foundry.planner.validators import validate_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 
-PLAN_PATH = Path(__file__).parent.parent.parent / "src" / "archipelago" / "archipelago_system.json"
+PLAN_PATH = (
+    Path(__file__).parent.parent.parent.parent / "src" / "archipelago" / "archipelago_system.json"
+)
 
 
 @pytest.fixture

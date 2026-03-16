@@ -31,6 +31,7 @@ pythonpath = ["src"]
 addopts = "-m 'not benchmark'"
 markers = [
     "benchmark: performance benchmark tests (excluded from normal runs)",
+    "integration: integration tests (require Docker, external services)",
 ]
 
 
@@ -48,6 +49,10 @@ archipelago.cmd = "python -m archipelago.cli"
 archipelago.env = {PYTHONPATH = "src"}
 docker-base.cmd = "docker build -t acp-cc-worker:latest -f src/agent_foundry/acp/docker/Dockerfile.base ."
 docker-archipelago.cmd = "docker build -t archipelago-cc-worker:latest -f src/archipelago/docker/Dockerfile ."
+test-unit.cmd = "pytest tests/ -m 'not integration and not benchmark'"
+test-unit.env = {PYTHONPATH = "src"}
+test-integration.cmd = "pytest tests/ -m 'integration'"
+test-integration.env = {PYTHONPATH = "src"}
 lint-imports.cmd = "lint-imports"
 lint-imports.env = {PYTHONPATH = "src"}
 lint.cmd = "ruff check src/ tests/"

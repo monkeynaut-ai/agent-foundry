@@ -5,7 +5,7 @@ from pathlib import Path
 from agent_foundry.registry.spec import load_role_spec
 from archipelago.agents.approval_gate import ApprovalGateHandler
 
-FRAMEWORK_CAPS_DIR = Path(__file__).parent.parent.parent / "src" / "agent_foundry" / "roles"
+FRAMEWORK_CAPS_DIR = Path(__file__).parent.parent.parent.parent / "src" / "agent_foundry" / "roles"
 
 
 def _make_spec():
