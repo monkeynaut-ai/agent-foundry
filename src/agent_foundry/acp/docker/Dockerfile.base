@@ -1,22 +1,28 @@
 # Agent Container Protocol — Base Claude Code Worker Image
 #
-# Provides: Claude Code CLI, websockets, non-root user, entrypoint.
+# Provides: Claude Code CLI, websockets, non-root user, gosu, entrypoint.
 # Products layer on top to add CLAUDE.md, skills, plugins, etc.
+#
+# The entrypoint runs as root to enforce filesystem lockdown (ACP_HIDDEN_DIRS,
+# ACP_READONLY_DIRS), then drops to the claude user via gosu before launching
+# the agent. This follows the same pattern as the official PostgreSQL and
+# Redis Docker images.
 #
 # Build:
 #   docker build -t acp-cc-worker:latest -f src/agent_foundry/acp/docker/Dockerfile.base .
 
 FROM python:3.13
 
-# Install system dependencies
+# Install system dependencies (including gosu for root-to-user drop)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git curl jq bash-completion \
+    && apt-get install -y --no-install-recommends git curl jq bash-completion gosu \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user matching ContainerManager's user="1000:1000"
+# Create non-root user (uid 1000) for agent execution via gosu
 RUN groupadd -g 1000 claude \
     && useradd -m -u 1000 -g claude -s /bin/bash claude
 
+# Switch to claude for build-time installations
 USER claude
 ENV HOME=/home/claude
 WORKDIR /home/claude
@@ -37,13 +43,16 @@ RUN pip install --no-cache-dir websockets
 RUN pip install --no-cache-dir pyright \
     && pyright --version
 
+# Switch back to root for entrypoint setup
+USER root
+
 # Shell configuration — bash completion, git prompt, useful aliases
 COPY --chown=claude:claude src/agent_foundry/acp/docker/.bashrc /home/claude/.bashrc
 
 # Copy base configuration and entrypoint
 COPY --chown=claude:claude src/agent_foundry/acp/docker/settings.json /home/claude/.claude/settings.json
 COPY --chown=claude:claude src/agent_foundry/acp/docker/claude.json /home/claude/.claude.json
-COPY --chown=claude:claude src/agent_foundry/acp/docker/entrypoint.sh /home/claude/entrypoint.sh
+COPY src/agent_foundry/acp/docker/entrypoint.sh /home/claude/entrypoint.sh
 RUN chmod +x /home/claude/entrypoint.sh
 
 # Copy the ACP Claude Code adapter
