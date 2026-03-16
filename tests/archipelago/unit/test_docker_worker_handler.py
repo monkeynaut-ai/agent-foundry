@@ -65,7 +65,7 @@ def _mock_docker_env(mock_docker):
     return helper.client, helper.container
 
 
-def _preload_ws_server(messages: list[str]):
+def _preload_ws_server(messages: list[str], *, send_return=True):
     """Create a mock _HandlerWSServer with pre-loaded messages and pre-set connected."""
     server = MagicMock(spec=_HandlerWSServer)
     q = __import__("queue").Queue()
@@ -74,7 +74,7 @@ def _preload_ws_server(messages: list[str]):
     server.message_queue = q
     server.connected = threading.Event()
     server.connected.set()
-    server.send = MagicMock()
+    server.send = MagicMock(return_value=send_return)
     server.start = MagicMock()
     server.shutdown = MagicMock()
     return server
@@ -112,6 +112,26 @@ def _interrupt_msg(
         raw_line="raw",
         timestamp=1.0,
     ).model_dump_json()
+
+
+class TestHandlerWSServerSend:
+    def test_given_connected_ws_when_send_called_then_returns_true(self):
+        server = _HandlerWSServer()
+        mock_ws = MagicMock()
+        server._ws = mock_ws
+        assert server.send("hello") is True
+        mock_ws.send.assert_called_once_with("hello")
+
+    def test_given_no_ws_connection_when_send_called_then_returns_false(self):
+        server = _HandlerWSServer()
+        assert server.send("hello") is False
+
+    def test_given_ws_send_raises_when_send_called_then_returns_false_and_logs(self):
+        server = _HandlerWSServer()
+        mock_ws = MagicMock()
+        mock_ws.send.side_effect = BrokenPipeError("pipe broken")
+        server._ws = mock_ws
+        assert server.send("hello") is False
 
 
 class TestDockerWorkerHandler:
@@ -707,6 +727,22 @@ class TestHandlerProtocol:
                     assert msg["text"].strip(), "Blank input message sent to adapter"
 
 
+class TestSendFailure:
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_initial_prompt_send_fails_when_handler_called_then_result_is_failed(
+        self, mock_docker, mock_ws_cls
+    ):
+        _mock_docker_env(mock_docker)
+        ws_server = _preload_ws_server([_status_msg("exited", 0)], send_return=False)
+        mock_ws_cls.return_value = ws_server
+
+        state = {"worker_input": _valid_worker_input()}
+        result = docker_worker_handler(state)
+        assert result["worker_result"]["status"] == "failed"
+        assert "send failed" in result["worker_result"]["result_summary"].lower()
+
+
 class TestProtocolEndToEnd:
     """End-to-end test: real _HandlerWSServer, mock WS client simulating adapter, mocked Docker."""
 
@@ -1147,3 +1183,28 @@ class TestProcessMessages:
         assert result.early_return is None
         assert result.output_lines == ["after bad msg"]
         assert result.session_exit_code == 0
+
+    def test_given_auto_approve_send_fails_when_processed_then_early_return_failed(self):
+        import time
+
+        ws_server = _preload_ws_server(
+            [
+                _interrupt_msg(
+                    "permission_requested",
+                    {"action": "delete file", "risk_level": "low", "why_needed": "cleanup"},
+                ),
+            ],
+            send_return=False,
+        )
+        state = {"worker_input": _valid_worker_input()}
+        result = _process_messages(
+            ws_server=ws_server,
+            session_id="test",
+            deadline=time.time() + 10.0,
+            auto_approve_low_risk=True,
+            state=state,
+            workspace_path="/workspace",
+        )
+        assert result.early_return is not None
+        assert result.early_return["worker_result"]["status"] == "failed"
+        assert "send failed" in result.early_return["worker_result"]["result_summary"].lower()

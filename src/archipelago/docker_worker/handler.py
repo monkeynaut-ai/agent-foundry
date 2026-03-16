@@ -74,7 +74,7 @@ class _HandlerWSServer:
                     except TimeoutError:
                         continue
             except Exception:
-                pass
+                logger.debug("WebSocket handler loop ended", exc_info=True)
             finally:
                 self.message_queue.put(None)  # sentinel
 
@@ -82,12 +82,17 @@ class _HandlerWSServer:
         self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._server_thread.start()
 
-    def send(self, message: str) -> None:
+    def send(self, message: str) -> bool:
         with self._lock:
             ws = self._ws
-        if ws:
-            with contextlib.suppress(Exception):
-                ws.send(message)
+        if not ws:
+            return False
+        try:
+            ws.send(message)
+            return True
+        except Exception:
+            logger.debug("WebSocket send failed", exc_info=True)
+            return False
 
     def shutdown(self) -> None:
         if self._server:
@@ -120,10 +125,10 @@ def _build_prompt(worker_input: WorkerInput) -> str:
     return "\n".join(parts)
 
 
-def _send_input(ws_server: _HandlerWSServer, session_id: str, text: str) -> None:
-    """Send an InputMessage through the WebSocket server."""
+def _send_input(ws_server: _HandlerWSServer, session_id: str, text: str) -> bool:
+    """Send an InputMessage through the WebSocket server. Returns True on success."""
     msg = InputMessage(type="input", session_id=session_id, text=text)
-    ws_server.send(msg.model_dump_json())
+    return ws_server.send(msg.model_dump_json())
 
 
 def _send_control(
@@ -218,7 +223,16 @@ def _process_messages(
                 payload = msg.payload
                 risk_level = payload.get("risk_level", "medium")
                 if risk_level == "low" and auto_approve_low_risk:
-                    _send_input(ws_server, session_id, "yes\n")
+                    if not _send_input(ws_server, session_id, "yes\n"):
+                        failed = WorkerResult(
+                            result_summary="Send failed: could not auto-approve permission",
+                            workspace_ref=workspace_path,
+                            patches=[],
+                            evidence=[],
+                            status="failed",
+                        )
+                        result.early_return = {**state, "worker_result": failed.model_dump()}
+                        return result
                 else:
                     result.early_return = {
                         **state,
@@ -321,7 +335,15 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
             raise TimeoutError(f"Adapter did not connect within {conn_timeout} seconds")
 
         # Send the feature spec prompt immediately — headless adapter waits for first input
-        _send_input(ws_server, session_id, _build_prompt(worker_input))
+        if not _send_input(ws_server, session_id, _build_prompt(worker_input)):
+            result = WorkerResult(
+                result_summary="Send failed: could not deliver initial prompt",
+                workspace_ref=container_handle.workspace_path if container_handle else "",
+                patches=[],
+                evidence=[],
+                status="failed",
+            )
+            return {**state, "worker_result": result.model_dump()}
 
         # Process protocol messages
         deadline = time.time() + worker_input.constraints.timeout_seconds
