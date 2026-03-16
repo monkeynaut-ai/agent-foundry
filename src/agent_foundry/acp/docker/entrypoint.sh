@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+# This entrypoint runs as root to enforce filesystem lockdown, then drops
+# to the claude user via gosu before launching the agent.
+
 # ── Authentication ──
 # Require exactly one auth method
 if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -n "$ANTHROPIC_API_KEY" ]; then
@@ -19,32 +22,55 @@ fi
 if [ -n "$GITHUB_TOKEN" ]; then
   printf 'machine github.com\nlogin oauth2\npassword %s\n' "$GITHUB_TOKEN" > /home/claude/.netrc
   chmod 600 /home/claude/.netrc
+  chown claude:claude /home/claude/.netrc
 fi
 
 # ── Git identity ──
 if [ -n "$GIT_USER_NAME" ]; then
-  git config --global user.name "$GIT_USER_NAME"
+  gosu claude git config --global user.name "$GIT_USER_NAME"
 fi
 if [ -n "$GIT_USER_EMAIL" ]; then
-  git config --global user.email "$GIT_USER_EMAIL"
+  gosu claude git config --global user.email "$GIT_USER_EMAIL"
 fi
 
 # ── Repo clone ──
 # Clone into /workspace if REPO_URL is set and workspace is empty
 if [ -n "$REPO_URL" ] && [ ! -d /workspace/.git ]; then
-  git clone --branch "${REPO_REF:-main}" "$REPO_URL" /workspace
+  gosu claude git clone --branch "${REPO_REF:-main}" "$REPO_URL" /workspace
+fi
+
+# ── Filesystem lockdown ──
+# Applied as root after clone, before dropping to claude user.
+# ACP_HIDDEN_DIRS: comma-separated paths to make completely inaccessible (chmod 000)
+# ACP_READONLY_DIRS: comma-separated paths to make read-only (chmod a-w recursive)
+if [ -n "$ACP_HIDDEN_DIRS" ]; then
+  IFS=',' ; for dir in $ACP_HIDDEN_DIRS; do
+    [ -d "$dir" ] && chmod 000 "$dir"
+  done; unset IFS
+fi
+if [ -n "$ACP_READONLY_DIRS" ]; then
+  IFS=',' ; for dir in $ACP_READONLY_DIRS; do
+    [ -d "$dir" ] && chmod -R a-w "$dir"
+  done; unset IFS
+fi
+
+# ── Role-specific instructions ──
+# Append role-specific content to CLAUDE.md rather than overwriting,
+# so base-image and product-image instructions are preserved.
+if [ -n "$ACP_ROLE_INSTRUCTIONS_PATH" ] && [ -f "$ACP_ROLE_INSTRUCTIONS_PATH" ]; then
+  cat "$ACP_ROLE_INSTRUCTIONS_PATH" >> /home/claude/.claude/CLAUDE.md
 fi
 
 # ── LSP plugins ──
 # Install language server plugins baked into the base image.
 # Additional LSP servers will be added here as they're needed.
-claude plugin marketplace add anthropics/claude-plugins-official
-claude plugin install pyright-lsp@claude-plugins-official --scope user
+gosu claude claude plugin marketplace add anthropics/claude-plugins-official
+gosu claude claude plugin install pyright-lsp@claude-plugins-official --scope user
 
 # ── Product-specific init hook ──
 # Source product init script if it exists (products drop this in via Dockerfile)
 if [ -f /home/claude/product-init.sh ]; then
-  . /home/claude/product-init.sh
+  gosu claude sh -c '. /home/claude/product-init.sh'
 fi
 
 # ── Adapter launch ──
@@ -63,13 +89,13 @@ if [ -n "$WS_URL" ]; then
     MARKER_CONFIG_FLAG="--marker-config /home/claude/marker-config.json"
   fi
   export PATH="/home/claude/.local/bin:$PATH"
-  exec python /home/claude/adapter.py --protocol "$WS_URL" \
+  exec gosu claude python /home/claude/adapter.py --protocol "$WS_URL" \
     --timeout "$TURN_TIMEOUT" $SKIP_PERMS_FLAG $MARKER_CONFIG_FLAG
 fi
 
 # ── Interactive/headless fallback ──
 if [ -t 0 ]; then
-  exec /home/claude/.local/bin/claude "$@"
+  exec gosu claude /home/claude/.local/bin/claude "$@"
 else
-  exec /home/claude/.local/bin/claude -p "$@"
+  exec gosu claude /home/claude/.local/bin/claude -p "$@"
 fi
