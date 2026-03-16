@@ -30,9 +30,20 @@ if [ -z "$volume" ]; then
     exit 1
 fi
 
-# Default command: run Flask app via the workspace venv
+# Default command: auto-detect framework and run the app
 if [ $# -eq 0 ]; then
-    set -- sh -c 'FLASK_APP=app.py .venv/bin/flask run --host 0.0.0.0 --port 5000'
+    set -- sh -c '
+        if .venv/bin/python -c "import flask" 2>/dev/null; then
+            echo "Detected Flask"
+            FLASK_APP=app.py .venv/bin/flask run --host 0.0.0.0 --port 5000
+        elif .venv/bin/python -c "import uvicorn" 2>/dev/null; then
+            echo "Detected FastAPI/uvicorn"
+            .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 5000
+        else
+            echo "No Flask or uvicorn found in .venv" >&2
+            exit 1
+        fi
+    '
 fi
 
 echo "Image:  $image"
