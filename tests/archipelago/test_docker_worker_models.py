@@ -128,9 +128,7 @@ class TestWorkerInput:
         inp = WorkerInput(**data)
         assert inp.worker_mode == "unit_test_writer"
         assert inp.acp_hidden_dirs == ["/workspace/src"]
-        assert (
-            inp.role_instructions_path == "/home/claude/.claude/CLAUDE-unit-test-writer.md"
-        )
+        assert inp.role_instructions_path == "/home/claude/.claude/CLAUDE-unit-test-writer.md"
         assert inp.workspace_volume == "archipelago-123"
 
     def test_given_no_role_config_when_instantiated_then_defaults_empty(self):

@@ -43,8 +43,7 @@ def _load_directory_specs(directory: Path) -> dict[str, RoleSpec]:
         if len(paths) > 1:
             raise DuplicateRoleError(
                 message=(
-                    f"Duplicate role name '{name}' found in:"
-                    f" {', '.join(str(p) for p in paths)}"
+                    f"Duplicate role name '{name}' found in: {', '.join(str(p) for p in paths)}"
                 ),
                 role_name=name,
                 file_paths=paths,
