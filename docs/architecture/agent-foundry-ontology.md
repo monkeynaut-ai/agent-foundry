@@ -93,3 +93,28 @@ The "Current" column reflects the codebase as of this writing. A rename from "ca
 | CapabilityStack (ACP) | Role stack | `RoleStack` |
 | capability_versions | role_versions | `GraphWiringPlan.role_versions` |
 | NodeDef.capability | participant's role reference | `NodeDef.role` |
+
+## Platform Evolution
+
+Systems built on Agent Foundry produce reusable components. These push down into the platform, strengthening all systems.
+
+```
+Archipelago builds systems
+        │
+        ▼
+Systems produce reusable components
+        │
+        ▼
+Components push down into Agent Foundry
+        │
+        ▼
+Agent Foundry strengthens all systems
+        │
+        └──────► (repeat)
+```
+
+Examples of components that will migrate from Archipelago into Agent Foundry:
+
+- **Docker worker image**: The Claude Code execution environment (image, entrypoint, capability stack) is currently Archipelago-specific, but any Agent Foundry system that needs an autonomous Claude worker uses the same infrastructure.
+- **Adapter protocol**: The WebSocket-based communication between container and orchestrator is not specific to software development.
+- **WorkerManager**: Container lifecycle, session persistence, and turn-taking are general orchestration concerns.

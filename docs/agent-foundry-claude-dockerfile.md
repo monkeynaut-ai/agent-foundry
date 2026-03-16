@@ -15,16 +15,16 @@
 
 ### 1. No worker CLAUDE.md -- Critical
 
-The adapter protocol spec (`docs/demo-archipelago/adapter_protocol_spec.md:3-22`) explicitly requires a CLAUDE.md with task completion protocol instructions. Without it:
+The adapter protocol spec (`docs/archipelago/adapter_protocol_spec.md:3-22`) explicitly requires a CLAUDE.md with task completion protocol instructions. Without it:
 - Claude Code won't emit `ARCHIPELAGO_TASK_COMPLETE` markers
 - Inside-out completion detection fails entirely
 - Every session requires external `control:complete` to proceed
 
-The Dockerfile copies `settings.json` and `claude.json` but **no CLAUDE.md** at either `/home/claude/.claude/CLAUDE.md` (user-level) or meant to be in `/workspace/.claude/CLAUDE.md` (project-level). Our own notes at `docs/claude-dockerfile-notes.md:103` flag this: "No CLAUDE.md file present."
+The Dockerfile copies `settings.json` and `claude.json` but **no CLAUDE.md** at either `/home/claude/.claude/CLAUDE.md` (user-level) or meant to be in `/workspace/.claude/CLAUDE.md` (project-level). Our own notes at `docs/archipelago/docker-testing-log.md` flag this: "No CLAUDE.md file present."
 
 ### 2. No sandbox dependencies
 
-`docs/claude-dockerfile-notes.md:86-89` identifies that sandbox mode is broken inside the container because `bubblewrap`, `socat`, and `libseccomp-dev` are missing. The `settings.json` sets `"sandbox": {"enabled": true, "enableWeakerNestedSandbox": true}` but the actual dependencies aren't installed. This means sandbox is silently disabled at runtime -- the setting is a lie.
+`docs/archipelago/docker-testing-log.md` identifies that sandbox mode is broken inside the container because `bubblewrap`, `socat`, and `libseccomp-dev` are missing. The `settings.json` sets `"sandbox": {"enabled": true, "enableWeakerNestedSandbox": true}` but the actual dependencies aren't installed. This means sandbox is silently disabled at runtime -- the setting is a lie.
 
 ### 3. No `--max-turns` control
 
@@ -65,7 +65,7 @@ None are configured.
 
 ### 9. No custom agents or skills baked in
 
-`docs/claude-dockerfile-notes.md:93-97` notes "No custom agents" and "No skills installed." The directory structure supports `/home/claude/.claude/agents/` and `/home/claude/.claude/skills/`, but nothing is copied. The `/batch` skill (parallel worktree execution) was identified as "potentially very useful for Archipelago's parallel work pattern."
+`docs/archipelago/docker-testing-log.md` notes "No custom agents" and "No skills installed." The directory structure supports `/home/claude/.claude/agents/` and `/home/claude/.claude/skills/`, but nothing is copied. The `/batch` skill (parallel worktree execution) was identified as "potentially very useful for Archipelago's parallel work pattern."
 
 ### 10. No cost/token tracking
 
