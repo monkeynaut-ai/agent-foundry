@@ -118,6 +118,27 @@ class TestWorkerInput:
         inp = WorkerInput(**data)
         assert inp.repo_url is None
 
+    def test_given_role_config_when_instantiated_then_fields_accessible(self):
+        data = _valid_worker_input()
+        data["role"] = "unit_test_writer"
+        data["acp_hidden_dirs"] = ["/workspace/src"]
+        data["acp_readonly_dirs"] = []
+        data["role_instructions_path"] = "/home/claude/.claude/CLAUDE-unit-test-writer.md"
+        data["workspace_volume"] = "archipelago-123"
+        inp = WorkerInput(**data)
+        assert inp.role == "unit_test_writer"
+        assert inp.acp_hidden_dirs == ["/workspace/src"]
+        assert inp.role_instructions_path == "/home/claude/.claude/CLAUDE-unit-test-writer.md"
+        assert inp.workspace_volume == "archipelago-123"
+
+    def test_given_no_role_config_when_instantiated_then_defaults_empty(self):
+        inp = WorkerInput(**_valid_worker_input())
+        assert inp.role == "full"
+        assert inp.acp_hidden_dirs == []
+        assert inp.acp_readonly_dirs == []
+        assert inp.role_instructions_path is None
+        assert inp.workspace_volume is None
+
 
 class TestWorkerConstraints:
     def test_given_no_args_when_instantiated_then_defaults_applied(self):

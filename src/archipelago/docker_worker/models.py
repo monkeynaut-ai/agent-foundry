@@ -21,7 +21,7 @@ class WorkerConstraints(BaseModel):
 
 
 class WorkerInput(BaseModel):
-    """Typed input for the coding.implement_feature_from_spec capability."""
+    """Typed input for docker worker capabilities."""
 
     repo_ref: str
     repo_url: str | None = None
@@ -29,6 +29,11 @@ class WorkerInput(BaseModel):
     constraints: WorkerConstraints
     test_commands: list[str]
     gates: list[str] = Field(default_factory=list)
+    role: str = "full"
+    acp_hidden_dirs: list[str] = Field(default_factory=list)
+    acp_readonly_dirs: list[str] = Field(default_factory=list)
+    role_instructions_path: str | None = None
+    workspace_volume: str | None = None
 
 
 class PatchInfo(BaseModel):
