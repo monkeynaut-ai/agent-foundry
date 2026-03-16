@@ -14,6 +14,7 @@ COPY --chown=claude:claude src/archipelago/docker/settings.local.json /home/clau
 
 # Archipelago worker instructions and skills
 COPY --chown=claude:claude src/archipelago/docker/CLAUDE.md /home/claude/.claude/CLAUDE.md
+COPY --chown=claude:claude src/archipelago/docker/CLAUDE-unit-test-writer.md /home/claude/.claude/CLAUDE-unit-test-writer.md
 COPY --chown=claude:claude src/archipelago/docker/skills/lessons-learned/SKILL.md /home/claude/.claude/skills/lessons-learned/SKILL.md
 
 # Archipelago marker configuration for the ACP adapter
