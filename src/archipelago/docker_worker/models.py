@@ -34,6 +34,7 @@ class WorkerInput(BaseModel):
     acp_readonly_dirs: list[str] = Field(default_factory=list)
     role_instructions_path: str | None = None
     workspace_volume: str | None = None
+    prompt_preamble: list[str] = Field(default_factory=list)
 
 
 class PatchInfo(BaseModel):

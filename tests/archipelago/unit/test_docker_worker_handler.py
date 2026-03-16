@@ -827,28 +827,48 @@ class TestPipelineIntegration:
 
 
 class TestRolePromptBuilder:
-    def test_given_role_unit_test_writer_when_prompt_built_then_says_write_tests(self):
+    def test_given_prompt_preamble_when_prompt_built_then_uses_preamble(self):
         from archipelago.docker_worker.models import WorkerInput
 
-        wi = WorkerInput(**{**_valid_worker_input(), "worker_mode": "unit_test_writer"})
+        wi = WorkerInput(
+            **{
+                **_valid_worker_input(),
+                "prompt_preamble": [
+                    "Write unit tests for the following feature specification.",
+                    "Do not write production code.",
+                ],
+            }
+        )
         prompt = _build_prompt(wi)
         assert "Write unit tests" in prompt
         assert "Do not write production code" in prompt
 
-    def test_given_role_code_writer_when_prompt_built_then_says_make_tests_pass(self):
-        from archipelago.docker_worker.models import WorkerInput
-
-        wi = WorkerInput(**{**_valid_worker_input(), "worker_mode": "code_writer"})
-        prompt = _build_prompt(wi)
-        assert "make the existing tests pass" in prompt
-        assert "Do not modify any test files" in prompt
-
-    def test_given_role_full_when_prompt_built_then_says_implement(self):
+    def test_given_no_preamble_when_prompt_built_then_uses_fallback(self):
         from archipelago.docker_worker.models import WorkerInput
 
         wi = WorkerInput(**_valid_worker_input())
         prompt = _build_prompt(wi)
         assert "Implement the following feature" in prompt
+
+    def test_given_preamble_when_prompt_built_then_spec_fields_appended(self):
+        from archipelago.docker_worker.models import WorkerInput
+
+        wi = WorkerInput(
+            **{
+                **_valid_worker_input(),
+                "prompt_preamble": ["Custom preamble."],
+                "feature_spec": {
+                    "title": "My Feature",
+                    "description": "Does things",
+                    "requirements": ["req1", "req2"],
+                },
+            }
+        )
+        prompt = _build_prompt(wi)
+        assert "Custom preamble." in prompt
+        assert "Title: My Feature" in prompt
+        assert "Description: Does things" in prompt
+        assert "  - req1" in prompt
 
 
 class TestLockdownEnvVars:
@@ -983,6 +1003,33 @@ class TestConfigInjectionFromState:
         docker_worker_handler(state)
         volumes = mock_client.containers.create.call_args.kwargs["volumes"]
         assert "archipelago-from-test-writer" in volumes
+
+    @patch("archipelago.docker_worker.handler._HandlerWSServer")
+    @patch("archipelago.docker_worker.handler.docker")
+    def test_given_prompt_preamble_in_state_when_called_then_prompt_uses_preamble(
+        self, mock_docker, mock_ws_cls
+    ):
+        _mock_docker_env(mock_docker)
+        ws_server = _preload_ws_server([_status_msg("exited", 0)])
+        mock_ws_cls.return_value = ws_server
+
+        state = {
+            "worker_input": _valid_worker_input(),
+            "prompt_preamble": ["Custom role instruction.", "Do not touch config files."],
+        }
+        docker_worker_handler(state)
+
+        # Verify the prompt sent to the adapter contains the preamble
+        input_msgs = []
+        for c in ws_server.send.call_args_list:
+            with contextlib.suppress(Exception):
+                msg = json.loads(c[0][0])
+                if msg.get("type") == "input":
+                    input_msgs.append(msg)
+
+        assert len(input_msgs) == 1
+        assert "Custom role instruction." in input_msgs[0]["text"]
+        assert "Do not touch config files." in input_msgs[0]["text"]
 
 
 class TestProcessMessages:

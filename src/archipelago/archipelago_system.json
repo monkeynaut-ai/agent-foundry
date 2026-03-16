@@ -8,11 +8,19 @@
     {"id": "unit_test_writer", "role": "write_unit_tests_from_spec", "config": {
       "worker_mode": "unit_test_writer",
       "acp_hidden_dirs": ["/workspace/src"],
-      "role_instructions_path": "/home/claude/.claude/CLAUDE-unit-test-writer.md"
+      "role_instructions_path": "/home/claude/.claude/CLAUDE-unit-test-writer.md",
+      "prompt_preamble": [
+        "Write unit tests for the following feature specification.",
+        "Do not write production code. Focus on test coverage for the acceptance criteria."
+      ]
     }},
     {"id": "code_writer", "role": "code_implement_from_tests", "config": {
       "worker_mode": "code_writer",
-      "acp_readonly_dirs": ["/workspace/tests"]
+      "acp_readonly_dirs": ["/workspace/tests"],
+      "prompt_preamble": [
+        "Implement production code to make the existing tests pass.",
+        "Do not modify any test files."
+      ]
     }}
   ],
   "edges": [

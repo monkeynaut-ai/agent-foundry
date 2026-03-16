@@ -98,20 +98,12 @@ class _HandlerWSServer:
 def _build_prompt(worker_input: WorkerInput) -> str:
     """Format the worker input into a prompt string for Claude Code."""
     spec = worker_input.feature_spec
-    role = worker_input.worker_mode
 
-    if role == "unit_test_writer":
-        parts = [
-            "Write unit tests for the following feature specification.",
-            "Do not write production code. Focus on test coverage for the acceptance criteria.",
-        ]
-    elif role == "code_writer":
-        parts = [
-            "Implement production code to make the existing tests pass.",
-            "Do not modify any test files.",
-        ]
-    else:
-        parts = ["Implement the following feature:"]
+    parts = (
+        list(worker_input.prompt_preamble)
+        if worker_input.prompt_preamble
+        else ["Implement the following feature:"]
+    )
 
     if title := spec.get("title"):
         parts.append(f"Title: {title}")
@@ -282,6 +274,8 @@ def docker_worker_handler(state: dict[str, Any]) -> dict[str, Any]:
         worker_input.role_instructions_path = role_instructions_path
     if workspace_volume := state.get("workspace_volume"):
         worker_input.workspace_volume = workspace_volume
+    if prompt_preamble := state.get("prompt_preamble"):
+        worker_input.prompt_preamble = prompt_preamble
 
     auto_approve_low_risk = worker_input.constraints.network_policy != "none"
 
