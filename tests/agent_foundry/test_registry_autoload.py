@@ -14,6 +14,27 @@ from agent_foundry.registry.spec import RoleSpec
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+_MINIMAL_SPEC_TEMPLATE = """\
+name: {name}
+description: Test product spec
+version: "1.0.0"
+implementation:
+  module: fake.module
+  class_name: FakeHandler
+inputs_schema:
+  type: object
+  properties:
+    input:
+      type: string
+  required:
+    - input
+outputs_schema:
+  type: object
+  properties:
+    output:
+      type: string
+"""
+
 
 class TestWithBuiltins:
     """RoleRegistry.with_builtins() loads framework specs automatically."""
@@ -58,16 +79,14 @@ class TestWithProductSpecs:
         """Create a temp directory with product-specific specs."""
         d = tmp_path / "capabilities"
         d.mkdir()
-        # Copy Archipelago specs as product specs
-        repo_caps = Path(__file__).parents[2] / "src" / "archipelago" / "roles"
         for name in [
-            "strategy_generate_product_brief.yaml",
-            "architecture_generate_feature_arch.yaml",
-            "spec_generate_feature_spec.yaml",
-            "dev_implement_feature_tdd.yaml",
-            "coding_implement_feature_from_spec.yaml",
+            "strategy_generate_product_brief",
+            "architecture_generate_feature_arch",
+            "spec_generate_feature_spec",
+            "dev_implement_feature_tdd",
+            "coding_implement_feature_from_spec",
         ]:
-            shutil.copy(repo_caps / name, d / name)
+            (d / f"{name}.yaml").write_text(_MINIMAL_SPEC_TEMPLATE.format(name=name))
         return d
 
     def test_given_product_dir_with_5_specs_when_len_checked_then_returns_13(self, product_dir):

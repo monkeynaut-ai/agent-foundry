@@ -1,3 +1,7 @@
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
 [project]
 name = "agent-foundry"
 version = "0.1.0"
@@ -16,7 +20,7 @@ dependencies = [
     "websockets>=16.0",
     "langgraph>=1.1.2",
 ]
-requires-python = "==3.13.*"
+requires-python = "==3.14.*"
 readme = "README.md"
 license = {text = "MIT"}
 
@@ -33,18 +37,15 @@ markers = [
 
 
 [tool.pdm]
-distribution = false
+distribution = true
 
 [tool.pdm.build]
-includes = ["src/agent_foundry/capabilities/*.yaml"]
+package-dir = "src"
 
 [tool.pdm.scripts]
 demo.cmd = "python -m agent_foundry.demo.cli"
 demo.env = {PYTHONPATH = "src"}
-archipelago.cmd = "python -m archipelago.cli"
-archipelago.env = {PYTHONPATH = "src"}
 docker-base.cmd = "docker build -t acp-cc-worker:latest -f src/agent_foundry/acp/docker/Dockerfile.base ."
-docker-archipelago.cmd = "docker build -t archipelago-cc-worker:latest -f src/archipelago/docker/Dockerfile ."
 test-unit.cmd = "pytest tests/ -m 'not integration and not benchmark'"
 test-unit.env = {PYTHONPATH = "src"}
 test-integration.cmd = "pytest tests/ -m 'integration'"
@@ -67,7 +68,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 100
 src = ["src"]
 
@@ -90,7 +91,7 @@ select = [
 quote-style = "double"
 
 [tool.pyright]
-pythonVersion = "3.13"
+pythonVersion = "3.14"
 pythonPlatform = "Linux"
 venvPath = "."
 venv = ".venv"
@@ -99,14 +100,4 @@ include = ["src"]
 typeCheckingMode = "basic"
 reportMissingImports = "warning"
 reportMissingTypeStubs = false
-ignore = ["src/archipelago/handlers.py"]
-
-[tool.importlinter]
-root_packages = ["agent_foundry", "archipelago"]
-include_external_packages = false
-
-[[tool.importlinter.contracts]]
-name = "Agent Foundry must not import from Archipelago"
-type = "forbidden"
-source_modules = ["agent_foundry"]
-forbidden_modules = ["archipelago"]
+ignore = []
