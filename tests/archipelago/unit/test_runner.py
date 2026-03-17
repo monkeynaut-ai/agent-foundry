@@ -6,21 +6,21 @@ from archipelago.runner import run_archipelago, run_dev_test
 
 
 class TestRunArchipelago:
-    @patch("archipelago.runner.compile_plan")
+    @patch("archipelago.runner.run_plan")
     @patch("archipelago.runner.load_archipelago_plan")
-    def test_given_valid_input_when_called_then_invokes_graph_with_correct_state(
-        self, mock_load_plan, mock_compile
+    def test_given_valid_input_when_called_then_invokes_run_plan_with_correct_state(
+        self, mock_load_plan, mock_run_plan
     ):
         mock_plan = MagicMock()
         mock_load_plan.return_value = mock_plan
 
-        mock_graph = MagicMock()
-        mock_graph.invoke.return_value = {"product_brief": {"name": "Test"}}
-        mock_compile.return_value = mock_graph
+        mock_run_plan.return_value = {"product_brief": {"name": "Test"}}
 
         result = run_archipelago("Build a test app")
 
-        mock_graph.invoke.assert_called_once_with({"product_brief_input": "Build a test app"})
+        mock_run_plan.assert_called_once()
+        call_kwargs = mock_run_plan.call_args
+        assert call_kwargs.kwargs["initial_state"] == {"product_brief_input": "Build a test app"}
         assert result == {"product_brief": {"name": "Test"}}
 
 

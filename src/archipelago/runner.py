@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agent_foundry.compiler.compiler import compile_plan
+from agent_foundry.compiler.compiler import run_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.registry import RoleRegistry
 from archipelago.docker_worker.handler import docker_worker_handler
@@ -41,10 +41,10 @@ def run_archipelago(
     if plan is None:
         plan = load_archipelago_plan()
 
-    graph = compile_plan(plan, registry, handler_registry=ARCHIPELAGO_HANDLERS)
-
     initial_state = {"product_brief_input": product_brief_input}
-    return graph.invoke(initial_state)
+    return run_plan(
+        plan, registry, handler_registry=ARCHIPELAGO_HANDLERS, initial_state=initial_state
+    )
 
 
 def run_dev_test(dev_test_input: dict[str, Any]) -> dict[str, Any]:

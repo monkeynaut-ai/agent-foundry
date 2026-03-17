@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agent_foundry.compiler.compiler import compile_plan
+from agent_foundry.compiler.compiler import run_plan
 from agent_foundry.observability.gates import (
     citation_validator_gate,
     evidence_first_gate,
@@ -160,12 +160,10 @@ def run_demo(
     if plan is None:
         plan = load_demo_plan()
 
-    graph = compile_plan(plan, registry, handler_registry=DEMO_HANDLERS)
-
     initial_state = {
         "question": question,
         "domain": domain,
         "constraints": constraints or [],
     }
 
-    return graph.invoke(initial_state)
+    return run_plan(plan, registry, handler_registry=DEMO_HANDLERS, initial_state=initial_state)

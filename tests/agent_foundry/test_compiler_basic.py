@@ -6,7 +6,7 @@ Feature flag: FF_COMPILER (default off until S5.2).
 
 from typing import Any
 
-from agent_foundry.compiler.compiler import compile_plan
+from agent_foundry.compiler.compiler import compile_plan, run_plan
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 
 
@@ -78,3 +78,20 @@ class TestCompileAndRun:
         graph = compile_plan(plan, registry, handler_registry=HANDLER_REGISTRY)
         result = graph.invoke({"input": "hello"})
         assert result["input"] == "hello"
+
+
+class TestRunPlan:
+    """run_plan compiles and executes in one step."""
+
+    def test_given_two_node_plan_when_run_plan_called_then_returns_final_state(self, registry):
+        plan = _two_node_plan()
+        result = run_plan(
+            plan, registry, handler_registry=HANDLER_REGISTRY, initial_state={"input": "test"}
+        )
+        assert result.get("retrieved") is True
+        assert result.get("validated") is True
+
+    def test_given_run_plan_when_no_initial_state_then_uses_empty_dict(self, registry):
+        plan = _one_node_plan()
+        result = run_plan(plan, registry, handler_registry=HANDLER_REGISTRY)
+        assert result.get("validated") is True

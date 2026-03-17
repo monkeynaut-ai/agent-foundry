@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from agent_foundry.compiler.compiler import compile_plan
+from agent_foundry.compiler.compiler import run_plan
 from agent_foundry.demo.runner import (
     DEMO_HANDLERS,
     RECOMMENDATION_SCHEMA,
@@ -175,8 +175,12 @@ class TestDS7ToolCalling:
         plan_data["role_versions"]["tool_calling"] = "1.0.0"
 
         plan_with_tools = GraphWiringPlan(**plan_data)
-        graph = compile_plan(plan_with_tools, registry, handler_registry=DEMO_HANDLERS)
-        result = graph.invoke({"question": "Calculate 2+2", "domain": "math", "constraints": []})
+        result = run_plan(
+            plan_with_tools,
+            registry,
+            handler_registry=DEMO_HANDLERS,
+            initial_state={"question": "Calculate 2+2", "domain": "math", "constraints": []},
+        )
         assert result.get("tool_result") is not None
         assert result["tool_result"]["result"] == 4
 

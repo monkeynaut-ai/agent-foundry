@@ -140,6 +140,31 @@ def compile_plan(
     return graph.compile(**compile_kwargs)
 
 
+def run_plan(
+    plan: GraphWiringPlan,
+    registry: RoleRegistry,
+    handler_registry: dict[str, Any] | None = None,
+    initial_state: dict[str, Any] | None = None,
+    enforce_gates: bool = False,
+) -> dict[str, Any]:
+    """Compile and execute a wiring plan in one step.
+
+    Args:
+        plan: The graph wiring plan.
+        registry: The role registry.
+        handler_registry: Optional mapping of role names to handler functions.
+        initial_state: The initial state dict to pass to the graph.
+        enforce_gates: Whether to enforce eval gates on all paths.
+
+    Returns:
+        The final state dict after execution.
+    """
+    graph = compile_plan(
+        plan, registry, handler_registry=handler_registry, enforce_gates=enforce_gates
+    )
+    return graph.invoke(initial_state or {})
+
+
 def _resolve_handler(
     node_id: str,
     role_name: str,
