@@ -11,7 +11,7 @@
 
 #### 21. Implement gate check after `status: completed`
 
-When the handler receives `status: completed`, it currently breaks the loop and returns `completed` unconditionally. The intended two-stage protocol: gate node validates the work; if rejected, resume the same Claude session (`--resume SESSION_ID`) with feedback; if accepted, send `control: terminate`. Requires the handler to run gate logic before returning, and to send either a new `InputMessage` (resume) or a `control: terminate`. Depends on [WorkerManager](#9-design-and-implement-the-workermanager-service) for session-ID persistence across node transitions.
+When the handler receives `status: completed`, it currently breaks the loop and returns `completed` unconditionally. The intended two-stage protocol: gate node validates the work; if rejected, resume the same Claude session (`--resume SESSION_ID`) with feedback; if accepted, send `control: terminate`. Requires the handler to run gate logic before returning, and to send either a new `InputMessage` (resume) or a `control: terminate`. Depends on [[#9. Design and implement the WorkerManager service|WorkerManager]] for session-ID persistence across node transitions.
 
 #### 8. Raise default `mem_limit_mb` to 2048
 
@@ -52,7 +52,7 @@ Archipelago workers will write tests autonomously. Test quality is the single bi
 
 #### 11. Investigate: probing/clarifying question node for the dev node
 
-The dev node needs a way to ask probing and clarifying questions and receive answers during autonomous operation. Investigate a general-purpose "consult" node that the dev node can call when it needs input — for test design, architecture decisions, ambiguous requirements, etc. This may overlap with or subsume the [test-designer node](#10-design-the-test-designer-node). Determine whether these are the same node (a general consultant) or distinct (test-designer as a specialist).
+The dev node needs a way to ask probing and clarifying questions and receive answers during autonomous operation. Investigate a general-purpose "consult" node that the dev node can call when it needs input — for test design, architecture decisions, ambiguous requirements, etc. This may overlap with or subsume the [[#10. Design the test-designer node|test-designer node]]. Determine whether these are the same node (a general consultant) or distinct (test-designer as a specialist).
 
 #### 12. Design concurrent repo access between nodes in the same graph instance
 
@@ -70,11 +70,11 @@ Currently capability specs define input/output JSON schemas that are validated o
 
 #### 28. Support node-driven routing (Command-style)
 
-Currently edges are defined statically in the system JSON. LangGraph recommends `Command` objects where nodes decide routing based on their results. Static edges work for linear pipelines but will break down for conditional flows like gate rejection → resume loops. The compiler already supports conditional edges, but the design should shift toward nodes declaring their own routing. This is a prerequisite for the [gate check](#21-implement-gate-check-after-status-completed) and [test-designer dialogue](#10-design-the-test-designer-node). See [Design question: revision loop routing abstraction](#33-design-question-revision-loop-routing-abstraction) for the open design question on declaration format.
+Currently edges are defined statically in the system JSON. LangGraph recommends `Command` objects where nodes decide routing based on their results. Static edges work for linear pipelines but will break down for conditional flows like gate rejection → resume loops. The compiler already supports conditional edges, but the design should shift toward nodes declaring their own routing. This is a prerequisite for the [[#21. Implement gate check after `status: completed`|gate check]] and [[#10. Design the test-designer node|test-designer dialogue]]. See [[#33. Design question: revision loop routing abstraction|Design question: revision loop routing abstraction]] for the open design question on declaration format.
 
 #### 33. Design question: revision loop routing abstraction
 
-Should routing targets be declared in **node config** (a `routes` map, e.g. `{"accept": "next_stage", "revise": "spec_author", "escalate": "escalation", "halt": "__end__"}`) or as **conditional edges** in the wiring plan (e.g. `{"source": "gate", "target": "spec_author", "condition": "decision:revise"}`)? Goal: keep Archipelago agnostic of LangGraph while enabling the Gate Controller to route accept/revise/escalate/halt decisions. The compiler translates whichever declaration into LangGraph `Command(goto=...)` under the hood. Related: [Support node-driven routing (Command-style)](#28-support-node-driven-routing-command-style).
+Should routing targets be declared in **node config** (a `routes` map, e.g. `{"accept": "next_stage", "revise": "spec_author", "escalate": "escalation", "halt": "__end__"}`) or as **conditional edges** in the wiring plan (e.g. `{"source": "gate", "target": "spec_author", "condition": "decision:revise"}`)? Goal: keep Archipelago agnostic of LangGraph while enabling the Gate Controller to route accept/revise/escalate/halt decisions. The compiler translates whichever declaration into LangGraph `Command(goto=...)` under the hood. Related: [[#28. Support node-driven routing (Command-style)|Support node-driven routing (Command-style)]].
 
 #### 29. Add operation-type awareness to node execution
 
@@ -132,7 +132,7 @@ Bake platform defaults into `/home/claude/.claude/CLAUDE.md` (worker role, proto
 
 ## Completed
 
-1. **Create worker CLAUDE.md** — `docker/CLAUDE.md` baked into image at `/home/claude/.claude/CLAUDE.md`. Covers role, task completion marker, interrupt markers, working style. Skipped progress.jsonl instructions (see [15. Investigate progress.jsonl approach](#15-investigate-progressjsonl-approach)).
+1. **Create worker CLAUDE.md** — `docker/CLAUDE.md` baked into image at `/home/claude/.claude/CLAUDE.md`. Covers role, task completion marker, interrupt markers, working style. Skipped progress.jsonl instructions (see [[#15. Investigate progress.jsonl approach|15. Investigate progress.jsonl approach]]).
 2. **Replace stale adapter in image** — Dockerfile now copies `src/archipelago/docker_worker/headless_adapter.py` (build context must be project root: `docker build -f docker/Dockerfile .`). Entrypoint updated: removed `stty -icrnl` (PTY-only dead code), adapter invoked without initial prompt. `_map_event_to_protocol` extended to detect `ARCHIPELAGO_NEED_CLARIFICATION` and `ARCHIPELAGO_NEED_PERMISSION` markers and emit `interrupt` messages. `initial_prompt` made optional in `run_headless_adapter`. 20 new tests in `tests/archipelago/test_headless_adapter.py`.
 3. **Remove PTY trust confirmation thread from handler** — Deleted `_confirm_trust_and_prompt()` and all `TRUST_*` constants. Handler now sends feature spec as the first and only input message immediately after adapter connects. Also added pre-commit hooks (ruff format + lint) and a PostToolUse Claude hook for in-session auto-formatting.
 4. **Fix repo provisioning** — Clone moved from `container.py` exec_run to `entrypoint.sh`, driven by `REPO_URL`/`REPO_REF`/`GITHUB_TOKEN` env vars. `.netrc` written at startup for credential persistence. `HOME` removed from env allowlist (host HOME broke `.netrc` lookup); `ENV HOME=/home/claude` added to Dockerfile. Shared workspace volume skips clone if `.git` already present.
