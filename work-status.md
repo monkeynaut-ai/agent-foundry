@@ -70,7 +70,11 @@ Currently capability specs define input/output JSON schemas that are validated o
 
 #### 28. Support node-driven routing (Command-style)
 
-Currently edges are defined statically in the system JSON. LangGraph recommends `Command` objects where nodes decide routing based on their results. Static edges work for linear pipelines but will break down for conditional flows like gate rejection → resume loops. The compiler already supports conditional edges, but the design should shift toward nodes declaring their own routing. This is a prerequisite for the [gate check](#21-implement-gate-check-after-status-completed) and [test-designer dialogue](#10-design-the-test-designer-node).
+Currently edges are defined statically in the system JSON. LangGraph recommends `Command` objects where nodes decide routing based on their results. Static edges work for linear pipelines but will break down for conditional flows like gate rejection → resume loops. The compiler already supports conditional edges, but the design should shift toward nodes declaring their own routing. This is a prerequisite for the [gate check](#21-implement-gate-check-after-status-completed) and [test-designer dialogue](#10-design-the-test-designer-node). See [Design question: revision loop routing abstraction](#33-design-question-revision-loop-routing-abstraction) for the open design question on declaration format.
+
+#### 33. Design question: revision loop routing abstraction
+
+Should routing targets be declared in **node config** (a `routes` map, e.g. `{"accept": "next_stage", "revise": "spec_author", "escalate": "escalation", "halt": "__end__"}`) or as **conditional edges** in the wiring plan (e.g. `{"source": "gate", "target": "spec_author", "condition": "decision:revise"}`)? Goal: keep Archipelago agnostic of LangGraph while enabling the Gate Controller to route accept/revise/escalate/halt decisions. The compiler translates whichever declaration into LangGraph `Command(goto=...)` under the hood. Related: [Support node-driven routing (Command-style)](#28-support-node-driven-routing-command-style).
 
 #### 29. Add operation-type awareness to node execution
 
@@ -141,4 +145,4 @@ Bake platform defaults into `/home/claude/.claude/CLAUDE.md` (worker role, proto
 31. **Move implementation pointer from role spec to participant declaration** — Cancelled. The motivating scenario (same role, different implementations) doesn't hold up in practice — differences that drive a different implementation almost always mean the contract is different, making them different roles.
 
 ---
-next item number: 33
+next item number: 34
