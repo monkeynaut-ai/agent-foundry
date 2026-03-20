@@ -137,3 +137,100 @@ class TestLoopTermination:
             ],
         )
         validate_plan(plan, registry)
+
+
+# --- S3.7: Subgraph Node Validation ---
+
+
+def _subgraph_plan_data(**overrides) -> dict:
+    """Build a valid subgraph plan dict."""
+    defaults = {
+        "goal": "kernel",
+        "nodes": [
+            {"id": "inner1", "role": "rag_retriever"},
+        ],
+        "edges": [],
+        "entry_point": "inner1",
+        "role_versions": {"rag_retriever": "1.0.0"},
+    }
+    defaults.update(overrides)
+    return defaults
+
+
+class TestSubgraphValidation:
+    """Plans with subgraph nodes are validated recursively."""
+
+    def test_given_valid_subgraph_node_when_validated_then_passes(self, registry):
+        plan = _make_plan(
+            nodes=[
+                {"id": "n1", "role": "rag_retriever"},
+                {
+                    "id": "n2",
+                    "subgraph": _subgraph_plan_data(),
+                    "state_mapping": {"input": {}, "output": {}},
+                },
+            ],
+            edges=[{"source": "n1", "target": "n2"}],
+            role_versions={"rag_retriever": "1.0.0"},
+        )
+        validate_plan(plan, registry)
+
+    def test_given_subgraph_with_unknown_role_when_validated_then_fails(self, registry):
+        plan = _make_plan(
+            nodes=[
+                {"id": "n1", "role": "rag_retriever"},
+                {
+                    "id": "n2",
+                    "subgraph": _subgraph_plan_data(
+                        nodes=[{"id": "bad", "role": "nonexistent_role"}],
+                        entry_point="bad",
+                        role_versions={"nonexistent_role": "1.0.0"},
+                    ),
+                    "state_mapping": {"input": {}, "output": {}},
+                },
+            ],
+            edges=[{"source": "n1", "target": "n2"}],
+            role_versions={"rag_retriever": "1.0.0"},
+        )
+        from agent_foundry.planner.errors import UnknownRoleError
+
+        with pytest.raises(UnknownRoleError, match="nonexistent_role"):
+            validate_plan(plan, registry)
+
+    def test_given_subgraph_with_dangling_edge_when_validated_then_fails(self, registry):
+        plan = _make_plan(
+            nodes=[
+                {"id": "n1", "role": "rag_retriever"},
+                {
+                    "id": "n2",
+                    "subgraph": _subgraph_plan_data(
+                        edges=[{"source": "inner1", "target": "ghost"}],
+                    ),
+                    "state_mapping": {"input": {}, "output": {}},
+                },
+            ],
+            edges=[{"source": "n1", "target": "n2"}],
+            role_versions={"rag_retriever": "1.0.0"},
+        )
+        from agent_foundry.planner.errors import DanglingEdgeError
+
+        with pytest.raises(DanglingEdgeError, match="ghost"):
+            validate_plan(plan, registry)
+
+    def test_given_subgraph_node_when_role_versions_checked_then_subgraph_skipped(
+        self, registry
+    ):
+        """Subgraph nodes don't need entries in the parent's role_versions."""
+        plan = _make_plan(
+            nodes=[
+                {"id": "n1", "role": "rag_retriever"},
+                {
+                    "id": "n2",
+                    "subgraph": _subgraph_plan_data(),
+                    "state_mapping": {"input": {}, "output": {}},
+                },
+            ],
+            edges=[{"source": "n1", "target": "n2"}],
+            role_versions={"rag_retriever": "1.0.0"},
+        )
+        validate_plan(plan, registry)

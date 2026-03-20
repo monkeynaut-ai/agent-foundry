@@ -10,7 +10,7 @@ from agent_foundry.compiler.errors import (
     RoleInstantiationError,
     PlanCompilationError,
 )
-from agent_foundry.planner.wiring_plan import GraphWiringPlan
+from agent_foundry.planner.wiring_plan import GraphWiringPlan, StateMappingDef
 from agent_foundry.registry.errors import RoleImportError
 from agent_foundry.registry.execution import execute_role
 from agent_foundry.registry.imports import resolve_handler_callable
@@ -71,7 +71,15 @@ def compile_plan(
 
     # Add nodes with config injection and loop-safe wrappers
     for node in plan.nodes:
-        handler = _resolve_handler(node.id, node.role, handler_registry, registry)
+        if node.subgraph is not None:
+            compiled_sub = compile_plan(
+                node.subgraph, registry, handler_registry=handler_registry
+            )
+            assert node.state_mapping is not None  # enforced by NodeDef validator
+            handler = _make_subgraph_handler(compiled_sub, node.state_mapping)
+        else:
+            assert node.role is not None  # enforced by NodeDef validator
+            handler = _resolve_handler(node.id, node.role, handler_registry, registry)
 
         # Inject node.config into handler state so handlers can read config fields
         handler = _make_config_injector(handler, node.config)
@@ -220,6 +228,32 @@ def _make_validated_handler(
 def _make_passthrough() -> Callable:
     def handler(state: dict[str, Any]) -> dict[str, Any]:
         return state
+
+    return handler
+
+
+def _make_subgraph_handler(
+    compiled_subgraph: Any,
+    state_mapping: StateMappingDef,
+) -> Callable:
+    """Create a handler that invokes a compiled subgraph with state mapping."""
+
+    def handler(state: dict[str, Any]) -> dict[str, Any]:
+        # Map parent state -> subgraph input
+        sub_input = {
+            sub_key: state[parent_key]
+            for parent_key, sub_key in state_mapping.input.items()
+            if parent_key in state
+        }
+        # Invoke subgraph (isolated state, fresh each call)
+        sub_output = compiled_subgraph.invoke(sub_input)
+        # Map subgraph output -> parent state updates
+        updates = {
+            parent_key: sub_output[sub_key]
+            for sub_key, parent_key in state_mapping.output.items()
+            if sub_key in sub_output
+        }
+        return {**state, **updates}
 
     return handler
 

@@ -43,6 +43,10 @@ def _check_duplicate_node_ids(plan: GraphWiringPlan) -> None:
 
 def _check_unknown_roles(plan: GraphWiringPlan, registry: RoleRegistry) -> None:
     for node in plan.nodes:
+        if node.subgraph is not None:
+            validate_plan(node.subgraph, registry)
+            continue
+        assert node.role is not None  # enforced by NodeDef validator
         if registry.get(node.role) is None:
             raise UnknownRoleError(
                 message=f"Unknown role '{node.role}' in node '{node.id}'",
@@ -67,7 +71,9 @@ def _check_dangling_edges(plan: GraphWiringPlan) -> None:
 
 
 def _check_tool_calling_contract(plan: GraphWiringPlan) -> None:
-    has_tool_calling = any(n.role == "tool_calling" for n in plan.nodes)
+    has_tool_calling = any(
+        n.role == "tool_calling" for n in plan.nodes if n.role is not None
+    )
     if not has_tool_calling:
         return
 
@@ -90,6 +96,8 @@ def _check_breakpoints(plan: GraphWiringPlan) -> None:
 
 def _check_role_versions_coverage(plan: GraphWiringPlan) -> None:
     for node in plan.nodes:
+        if node.subgraph is not None:
+            continue
         if node.role not in plan.role_versions:
             raise PlanValidationError(
                 f"Missing version entry for role '{node.role}' used by node '{node.id}'"

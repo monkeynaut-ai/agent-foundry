@@ -1,16 +1,47 @@
 """GraphWiringPlan Pydantic models — machine-compilable plan schema."""
 
+from __future__ import annotations
+
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class StateMappingDef(BaseModel):
+    """Maps state keys between parent and subgraph boundaries."""
+
+    input: dict[str, str] = Field(default_factory=dict)
+    output: dict[str, str] = Field(default_factory=dict)
 
 
 class NodeDef(BaseModel):
-    """A node in the wiring plan."""
+    """A node in the wiring plan.
+
+    A node must have either a ``role`` (referencing a registered role) or a
+    ``subgraph`` (an inline sub-plan), but not both.
+    """
 
     id: str
-    role: str
+    role: str | None = None
+    subgraph: GraphWiringPlan | None = None
+    state_mapping: StateMappingDef | None = None
     config: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _role_xor_subgraph(self) -> NodeDef:
+        if self.role is not None and self.subgraph is not None:
+            raise ValueError(
+                f"Node '{self.id}': 'role' and 'subgraph' are mutually exclusive"
+            )
+        if self.role is None and self.subgraph is None:
+            raise ValueError(
+                f"Node '{self.id}': must have either 'role' or 'subgraph'"
+            )
+        if self.subgraph is not None and self.state_mapping is None:
+            raise ValueError(
+                f"Node '{self.id}': 'state_mapping' is required when 'subgraph' is set"
+            )
+        return self
 
 
 class EdgeDef(BaseModel):
@@ -46,3 +77,7 @@ class GraphWiringPlan(BaseModel):
     tools: list[ToolDef] = Field(default_factory=list)
     breakpoints: list[str] = Field(default_factory=list)
     persistence: PersistenceConfig | None = None
+
+
+# Resolve forward references for the recursive NodeDef -> GraphWiringPlan relationship.
+NodeDef.model_rebuild()
