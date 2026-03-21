@@ -42,7 +42,7 @@ def _one_node_plan(role_name="test_cap") -> GraphWiringPlan:
     )
 
 
-def _explicit_handler(state: dict[str, Any]) -> dict[str, Any]:
+def _explicit_handler(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
     return {**state, "explicit": True}
 
 

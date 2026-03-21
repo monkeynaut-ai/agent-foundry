@@ -37,11 +37,11 @@ def _two_node_plan() -> GraphWiringPlan:
 
 
 # Node handler registry for tests
-def _stub_schema_validator(state: dict[str, Any]) -> dict[str, Any]:
+def _stub_schema_validator(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
     return {**state, "validated": True}
 
 
-def _stub_rag_retriever(state: dict[str, Any]) -> dict[str, Any]:
+def _stub_rag_retriever(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
     return {**state, "retrieved": True}
 
 

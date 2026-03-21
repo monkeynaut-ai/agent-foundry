@@ -45,17 +45,17 @@ def _make_spec(
     )
 
 
-def _echo_handler(inputs: dict[str, Any]) -> dict[str, Any]:
+def _echo_handler(inputs: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Simple handler that wraps input query into result."""
     return {"result": inputs.get("query", "")}
 
 
-def _bad_output_handler(inputs: dict[str, Any]) -> dict[str, Any]:
+def _bad_output_handler(inputs: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Handler that returns output missing required fields."""
     return {"wrong_field": "oops"}
 
 
-def _non_string_output_handler(inputs: dict[str, Any]) -> dict[str, Any]:
+def _non_string_output_handler(inputs: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Handler that returns wrong type for result."""
     return {"result": 12345}
 

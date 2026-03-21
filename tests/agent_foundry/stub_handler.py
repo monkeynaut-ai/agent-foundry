@@ -5,10 +5,10 @@ class StubHandler:
     def __init__(self, spec):
         self.spec = spec
 
-    def __call__(self, state):
+    def __call__(self, state, node_config=None):
         return {**state, "handled": True}
 
-    def custom_method(self, state):
+    def custom_method(self, state, node_config=None):
         return {**state, "custom": True}
 
 

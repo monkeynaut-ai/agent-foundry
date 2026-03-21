@@ -16,7 +16,8 @@ FF_RETRY_TIMEOUTS = False
 def execute_role(
     spec: RoleSpec,
     inputs: dict[str, Any],
-    handler: Callable[[dict[str, Any]], dict[str, Any]],
+    handler: Callable,
+    node_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute a role handler with optional schema enforcement and quality controls.
 
@@ -24,6 +25,7 @@ def execute_role(
         spec: The role specification with input/output schemas.
         inputs: The input data to pass to the handler.
         handler: The callable that performs the role logic.
+        node_config: Static per-node configuration from the wiring plan.
 
     Returns:
         The handler's output dict.
@@ -31,13 +33,16 @@ def execute_role(
     Raises:
         RoleExecutionError: If validation, timeout, or retry exhaustion fails.
     """
+    if node_config is None:
+        node_config = {}
+
     if FF_SCHEMA_ENFORCEMENT:
         _validate_schema(inputs, spec.inputs_schema, spec.name, "input_validation")
 
     if FF_RETRY_TIMEOUTS:
-        result = _execute_with_quality_controls(spec, inputs, handler)
+        result = _execute_with_quality_controls(spec, inputs, handler, node_config)
     else:
-        result = handler(inputs)
+        result = handler(inputs, node_config)
 
     if FF_SCHEMA_ENFORCEMENT:
         _validate_schema(result, spec.outputs_schema, spec.name, "output_validation")
@@ -48,7 +53,8 @@ def execute_role(
 def _execute_with_quality_controls(
     spec: RoleSpec,
     inputs: dict[str, Any],
-    handler: Callable[[dict[str, Any]], dict[str, Any]],
+    handler: Callable,
+    node_config: dict[str, Any],
 ) -> dict[str, Any]:
     max_attempts = 1 + spec.quality_controls.max_retries
     timeout = spec.quality_controls.timeout_seconds
@@ -56,7 +62,7 @@ def _execute_with_quality_controls(
 
     for attempt in range(max_attempts):
         try:
-            return _execute_with_timeout(handler, inputs, timeout, spec.name)
+            return _execute_with_timeout(handler, inputs, node_config, timeout, spec.name)
         except RoleExecutionError:
             raise
         except Exception as e:
@@ -72,13 +78,14 @@ def _execute_with_quality_controls(
 
 
 def _execute_with_timeout(
-    handler: Callable[[dict[str, Any]], dict[str, Any]],
+    handler: Callable,
     inputs: dict[str, Any],
+    node_config: dict[str, Any],
     timeout: int,
     role_name: str,
 ) -> dict[str, Any]:
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(handler, inputs)
+        future = executor.submit(handler, inputs, node_config)
         try:
             return future.result(timeout=timeout)
         except concurrent.futures.TimeoutError as err:

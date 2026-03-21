@@ -81,8 +81,8 @@ def compile_plan(
             assert node.role is not None  # enforced by NodeDef validator
             handler = _resolve_handler(node.id, node.role, handler_registry, registry)
 
-        # Inject node.config into handler state so handlers can read config fields
-        handler = _make_config_injector(handler, node.config)
+        # Pass node.config as separate parameter (not merged into state)
+        handler = _make_config_provider(handler, node.config)
 
         # Wrap with max_iterations if configured
         max_iter = node.config.get("max_iterations")
@@ -219,14 +219,14 @@ def _make_validated_handler(
 ) -> Callable:
     """Wrap a handler with execute_role for schema enforcement."""
 
-    def validated_handler(state: dict[str, Any]) -> dict[str, Any]:
-        return execute_role(spec, state, handler)
+    def validated_handler(state: dict[str, Any], node_config: dict[str, Any]) -> dict[str, Any]:
+        return execute_role(spec, state, handler, node_config)
 
     return validated_handler
 
 
 def _make_passthrough() -> Callable:
-    def handler(state: dict[str, Any]) -> dict[str, Any]:
+    def handler(state: dict[str, Any], node_config: dict[str, Any]) -> dict[str, Any]:
         return state
 
     return handler
@@ -238,7 +238,7 @@ def _make_subgraph_handler(
 ) -> Callable:
     """Create a handler that invokes a compiled subgraph with state mapping."""
 
-    def handler(state: dict[str, Any]) -> dict[str, Any]:
+    def handler(state: dict[str, Any], node_config: dict[str, Any]) -> dict[str, Any]:
         # Map parent state -> subgraph input
         sub_input = {
             sub_key: state[parent_key]
@@ -258,16 +258,14 @@ def _make_subgraph_handler(
     return handler
 
 
-def _make_config_injector(handler: Callable, config: dict[str, Any]) -> Callable:
-    """Wrap a handler to inject node.config fields into state before invocation."""
-    injectable = {k: v for k, v in config.items() if k != "max_iterations"}
-    if not injectable:
-        return handler
+def _make_config_provider(handler: Callable, config: dict[str, Any]) -> Callable:
+    """Wrap a handler to pass node.config as a separate parameter, not in state."""
+    node_config = {k: v for k, v in config.items() if k != "max_iterations"}
 
-    def injected_handler(state: dict[str, Any]) -> dict[str, Any]:
-        return handler({**state, **injectable})
+    def wrapped(state: dict[str, Any]) -> dict[str, Any]:
+        return handler(state, node_config)
 
-    return injected_handler
+    return wrapped
 
 
 def _make_iteration_limiter(handler: Callable, max_iterations: int) -> Callable:

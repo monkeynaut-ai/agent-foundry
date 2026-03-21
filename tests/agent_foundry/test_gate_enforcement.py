@@ -10,10 +10,10 @@ from agent_foundry.compiler.errors import PlanCompilationError
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 
 HANDLERS = {
-    "rag_retriever": lambda s: {**s, "retrieved": True},
-    "schema_validator": lambda s: {**s, "validated": True},
-    "structured_output_pydantic": lambda s: {**s, "structured": True},
-    "citation_validator": lambda s: {**s, "citations_checked": True},
+    "rag_retriever": lambda s, c=None: {**s, "retrieved": True},
+    "schema_validator": lambda s, c=None: {**s, "validated": True},
+    "structured_output_pydantic": lambda s, c=None: {**s, "structured": True},
+    "citation_validator": lambda s, c=None: {**s, "citations_checked": True},
 }
 
 EVAL_GATE_ROLES = {

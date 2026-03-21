@@ -22,23 +22,23 @@ from agent_foundry.compiler.errors import (
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 
 
-def _stub_handler(state: dict[str, Any]) -> dict[str, Any]:
+def _stub_handler(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
     return {**state, "processed": True}
 
 
-def _bad_factory(state: dict[str, Any]) -> dict[str, Any]:
+def _bad_factory(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
     raise RuntimeError("Factory exploded")
 
 
 HANDLERS = {
-    "rag_retriever": lambda s: {**s, "retrieved": True},
-    "schema_validator": lambda s: {**s, "validated": True},
-    "structured_output_pydantic": lambda s: {**s, "structured": True},
-    "citation_validator": lambda s: {**s, "citations_checked": True},
-    "uncertainty_completeness_validator": lambda s: {**s, "uncertainty_checked": True},
-    "evidence_first_contract": lambda s: {**s, "evidence_checked": True},
-    "tool_calling": lambda s: {**s, "tools_called": True},
-    "human_approval_gate": lambda s: {**s, "approved": True},
+    "rag_retriever": lambda s, c=None: {**s, "retrieved": True},
+    "schema_validator": lambda s, c=None: {**s, "validated": True},
+    "structured_output_pydantic": lambda s, c=None: {**s, "structured": True},
+    "citation_validator": lambda s, c=None: {**s, "citations_checked": True},
+    "uncertainty_completeness_validator": lambda s, c=None: {**s, "uncertainty_checked": True},
+    "evidence_first_contract": lambda s, c=None: {**s, "evidence_checked": True},
+    "tool_calling": lambda s, c=None: {**s, "tools_called": True},
+    "human_approval_gate": lambda s, c=None: {**s, "approved": True},
 }
 
 
@@ -113,7 +113,7 @@ class TestLoopSafety:
     def test_max_iterations_stops_loop(self, registry):
         counter = {"count": 0}
 
-        def counting_handler(state):
+        def counting_handler(state, node_config=None):
             counter["count"] += 1
             return {**state, "count": counter["count"]}
 
@@ -179,7 +179,7 @@ class TestRuntimeSchemaFailures:
     """Invalid node output blocks downstream."""
 
     def test_schema_failure_blocks_downstream(self, registry):
-        def bad_output_handler(state):
+        def bad_output_handler(state, node_config=None):
             return {**state, "bad_field": "oops"}
 
         plan = GraphWiringPlan(
@@ -241,7 +241,7 @@ class TestSubgraphCompilation:
         """Inner loop exhaustion does not affect parent graph."""
         inner_counter = {"count": 0}
 
-        def inner_handler(state):
+        def inner_handler(state, node_config=None):
             inner_counter["count"] += 1
             return {**state, "inner_done": inner_counter["count"] >= 2, "inner_count": inner_counter["count"]}
 
@@ -338,7 +338,7 @@ class TestNestedLoopIntegration:
         each invoking a kernel subgraph that loops until acceptance criteria met."""
         kernel_call_counts: list[int] = []
 
-        def dispatcher_handler(state):
+        def dispatcher_handler(state, node_config=None):
             items = state.get("items", [])
             index = state.get("current_index", 0)
             if index >= len(items):
@@ -350,7 +350,7 @@ class TestNestedLoopIntegration:
                 "has_more": True,
             }
 
-        def kernel_worker(state):
+        def kernel_worker(state, node_config=None):
             """Simulates a kernel that needs 2 iterations per item."""
             iteration = state.get("kernel_iteration", 0) + 1
             passing = iteration >= 2
@@ -361,7 +361,7 @@ class TestNestedLoopIntegration:
                 "kernel_result": f"done-{state.get('current_item', '?')}",
             }
 
-        def kernel_evaluator(state):
+        def kernel_evaluator(state, node_config=None):
             kernel_call_counts.append(state.get("kernel_iteration", 0))
             return state
 
