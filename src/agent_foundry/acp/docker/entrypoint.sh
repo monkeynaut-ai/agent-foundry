@@ -49,6 +49,9 @@ fi
 if [ -n "$ACP_ROLE_INSTRUCTIONS_PATH" ] && [ -f "$ACP_ROLE_INSTRUCTIONS_PATH" ]; then
   cat "$ACP_ROLE_INSTRUCTIONS_PATH" >> /home/claude/.claude/CLAUDE.md
 fi
+echo "=== CLAUDE.md after role append ===" >&2
+cat /home/claude/.claude/CLAUDE.md >&2
+echo "=== end CLAUDE.md ===" >&2
 
 # ── LSP plugins ──
 # Install language server plugins baked into the base image.
