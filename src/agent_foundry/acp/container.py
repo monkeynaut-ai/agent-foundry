@@ -115,7 +115,7 @@ class ContainerManager:
             handle._container.start()
             handle._container.reload()
             handle.status = "running"
-        except ContainerCreationError, ContainerLifecycleError:
+        except (ContainerCreationError, ContainerLifecycleError):
             raise
         except Exception as e:
             raise ContainerLifecycleError(str(e), container_id=handle.container_id) from e
