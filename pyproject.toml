@@ -43,6 +43,7 @@ distribution = true
 package-dir = "src"
 
 [tool.pdm.scripts]
+post_install.cmd = "pre-commit install"
 demo.cmd = "python -m agent_foundry.demo.cli"
 demo.env = {PYTHONPATH = "src"}
 docker-base.cmd = "docker build -t acp-cc-worker:latest -f src/agent_foundry/acp/docker/Dockerfile.base ."
