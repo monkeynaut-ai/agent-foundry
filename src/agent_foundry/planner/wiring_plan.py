@@ -30,13 +30,9 @@ class NodeDef(BaseModel):
     @model_validator(mode="after")
     def _role_xor_subgraph(self) -> NodeDef:
         if self.role is not None and self.subgraph is not None:
-            raise ValueError(
-                f"Node '{self.id}': 'role' and 'subgraph' are mutually exclusive"
-            )
+            raise ValueError(f"Node '{self.id}': 'role' and 'subgraph' are mutually exclusive")
         if self.role is None and self.subgraph is None:
-            raise ValueError(
-                f"Node '{self.id}': must have either 'role' or 'subgraph'"
-            )
+            raise ValueError(f"Node '{self.id}': must have either 'role' or 'subgraph'")
         if self.subgraph is not None and self.state_mapping is None:
             raise ValueError(
                 f"Node '{self.id}': 'state_mapping' is required when 'subgraph' is set"

@@ -32,7 +32,9 @@ def _make_spec(timeout_seconds: int = 30, max_retries: int = 0) -> RoleSpec:
     )
 
 
-def _slow_handler(inputs: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _slow_handler(
+    inputs: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     time.sleep(5)
     return {}
 
@@ -40,7 +42,9 @@ def _slow_handler(inputs: dict[str, Any], node_config: dict[str, Any] | None = N
 def _make_flaky_handler(fail_until: int):
     counter = {"n": 0}
 
-    def handler(inputs: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+    def handler(
+        inputs: dict[str, Any], node_config: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         counter["n"] += 1
         if counter["n"] < fail_until:
             raise RuntimeError("Transient failure")
@@ -49,11 +53,15 @@ def _make_flaky_handler(fail_until: int):
     return handler
 
 
-def _always_failing_handler(inputs: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _always_failing_handler(
+    inputs: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     raise RuntimeError("Permanent failure")
 
 
-def _ok_handler(inputs: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _ok_handler(
+    inputs: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     return {}
 
 

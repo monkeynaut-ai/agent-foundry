@@ -71,9 +71,7 @@ def _check_dangling_edges(plan: GraphWiringPlan) -> None:
 
 
 def _check_tool_calling_contract(plan: GraphWiringPlan) -> None:
-    has_tool_calling = any(
-        n.role == "tool_calling" for n in plan.nodes if n.role is not None
-    )
+    has_tool_calling = any(n.role == "tool_calling" for n in plan.nodes if n.role is not None)
     if not has_tool_calling:
         return
 

@@ -217,9 +217,7 @@ class TestSubgraphValidation:
         with pytest.raises(DanglingEdgeError, match="ghost"):
             validate_plan(plan, registry)
 
-    def test_given_subgraph_node_when_role_versions_checked_then_subgraph_skipped(
-        self, registry
-    ):
+    def test_given_subgraph_node_when_role_versions_checked_then_subgraph_skipped(self, registry):
         """Subgraph nodes don't need entries in the parent's role_versions."""
         plan = _make_plan(
             nodes=[

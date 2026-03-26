@@ -35,7 +35,9 @@ RECOMMENDATION_SCHEMA = {
 }
 
 
-def _retriever_handler(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _retriever_handler(
+    state: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Stub retriever that returns canned evidence."""
     query = state.get("question", "")
     evidence = [
@@ -45,7 +47,9 @@ def _retriever_handler(state: dict[str, Any], node_config: dict[str, Any] | None
     return {**state, "retrieved_evidence": evidence}
 
 
-def _structured_output_handler(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _structured_output_handler(
+    state: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Stub structured output that produces a recommendation."""
     evidence = state.get("retrieved_evidence", [])
     evidence_ids = [e["id"] for e in evidence]
@@ -63,7 +67,9 @@ def _structured_output_handler(state: dict[str, Any], node_config: dict[str, Any
     }
 
 
-def _schema_gate_handler(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _schema_gate_handler(
+    state: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Schema validator gate node."""
     rec = state.get("recommendation", {})
     result = schema_validator_gate(rec, RECOMMENDATION_SCHEMA)
@@ -72,7 +78,9 @@ def _schema_gate_handler(state: dict[str, Any], node_config: dict[str, Any] | No
     return {**state, "schema_valid": True}
 
 
-def _citation_gate_handler(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _citation_gate_handler(
+    state: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Citation validator gate node."""
     rec = state.get("recommendation", {})
     evidence = state.get("retrieved_evidence", [])
@@ -85,7 +93,9 @@ def _citation_gate_handler(state: dict[str, Any], node_config: dict[str, Any] | 
     return {**state, "citations_valid": True}
 
 
-def _uncertainty_gate_handler(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _uncertainty_gate_handler(
+    state: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Uncertainty completeness gate node."""
     rec = state.get("recommendation", {})
     result = uncertainty_completeness_gate(
@@ -96,7 +106,9 @@ def _uncertainty_gate_handler(state: dict[str, Any], node_config: dict[str, Any]
     return {**state, "uncertainty_valid": True}
 
 
-def _evidence_gate_handler(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _evidence_gate_handler(
+    state: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Evidence-first contract gate node."""
     evidence = state.get("retrieved_evidence", [])
     rec = state.get("recommendation", {})
@@ -109,7 +121,9 @@ def _evidence_gate_handler(state: dict[str, Any], node_config: dict[str, Any] | 
     return {**state, "evidence_valid": True, "outcome": result["outcome"]}
 
 
-def _tool_calling_handler(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _tool_calling_handler(
+    state: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Stub tool calling that executes a calculator."""
     question = state.get("question", "")
     if "calculate" in question.lower() or "math" in question.lower():

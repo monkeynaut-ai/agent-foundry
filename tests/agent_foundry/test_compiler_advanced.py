@@ -22,11 +22,15 @@ from agent_foundry.compiler.errors import (
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 
 
-def _stub_handler(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _stub_handler(
+    state: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     return {**state, "processed": True}
 
 
-def _bad_factory(state: dict[str, Any], node_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def _bad_factory(
+    state: dict[str, Any], node_config: dict[str, Any] | None = None
+) -> dict[str, Any]:
     raise RuntimeError("Factory exploded")
 
 
@@ -243,7 +247,11 @@ class TestSubgraphCompilation:
 
         def inner_handler(state, node_config=None):
             inner_counter["count"] += 1
-            return {**state, "inner_done": inner_counter["count"] >= 2, "inner_count": inner_counter["count"]}
+            return {
+                **state,
+                "inner_done": inner_counter["count"] >= 2,
+                "inner_count": inner_counter["count"],
+            }
 
         plan = GraphWiringPlan(
             goal="test",
@@ -417,10 +425,12 @@ class TestNestedLoopIntegration:
         )
 
         graph = compile_plan(plan, registry, handler_registry=handlers)
-        result = graph.invoke({
-            "items": ["slice_a", "slice_b", "slice_c"],
-            "current_index": 0,
-        })
+        result = graph.invoke(
+            {
+                "items": ["slice_a", "slice_b", "slice_c"],
+                "current_index": 0,
+            }
+        )
 
         # All 3 items dispatched
         assert result["current_index"] == 3

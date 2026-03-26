@@ -72,9 +72,7 @@ def compile_plan(
     # Add nodes with config injection and loop-safe wrappers
     for node in plan.nodes:
         if node.subgraph is not None:
-            compiled_sub = compile_plan(
-                node.subgraph, registry, handler_registry=handler_registry
-            )
+            compiled_sub = compile_plan(node.subgraph, registry, handler_registry=handler_registry)
             assert node.state_mapping is not None  # enforced by NodeDef validator
             handler = _make_subgraph_handler(compiled_sub, node.state_mapping)
         else:
