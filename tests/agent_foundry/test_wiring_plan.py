@@ -150,7 +150,7 @@ class TestSubgraphNodeDef:
             NodeDef(id="empty")
 
     def test_given_subgraph_without_state_mapping_when_parsed_then_validation_error(self):
-        with pytest.raises(ValidationError, match="state_mapping.*required"):
+        with pytest.raises(ValidationError, match=r"state_mapping.*required"):
             NodeDef(
                 id="no_mapping",
                 subgraph=GraphWiringPlan(**_minimal_subgraph_plan()),

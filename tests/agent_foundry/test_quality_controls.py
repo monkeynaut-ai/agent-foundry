@@ -13,9 +13,9 @@ import pytest
 from agent_foundry.registry.errors import RoleExecutionError
 from agent_foundry.registry.execution import execute_role
 from agent_foundry.registry.spec import (
-    RoleSpec,
     ImplementationPointer,
     QualityControls,
+    RoleSpec,
 )
 
 

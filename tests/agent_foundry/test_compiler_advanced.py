@@ -14,10 +14,10 @@ from typing import Any
 
 import pytest
 
-from agent_foundry.compiler.compiler import compile_plan, run_plan
+from agent_foundry.compiler.compiler import compile_plan
 from agent_foundry.compiler.errors import (
-    RoleInstantiationError,
     PlanCompilationError,
+    RoleInstantiationError,
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 

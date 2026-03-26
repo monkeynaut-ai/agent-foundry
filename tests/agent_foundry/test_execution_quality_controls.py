@@ -7,9 +7,9 @@ import pytest
 from agent_foundry.registry.errors import RoleExecutionError
 from agent_foundry.registry.execution import _execute_with_quality_controls, _execute_with_timeout
 from agent_foundry.registry.spec import (
-    RoleSpec,
     ImplementationPointer,
     QualityControls,
+    RoleSpec,
 )
 
 

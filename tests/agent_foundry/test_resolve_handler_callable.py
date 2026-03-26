@@ -6,7 +6,7 @@ import pytest
 
 from agent_foundry.registry.errors import RoleImportError
 from agent_foundry.registry.imports import resolve_handler_callable
-from agent_foundry.registry.spec import RoleSpec, ImplementationPointer
+from agent_foundry.registry.spec import ImplementationPointer, RoleSpec
 
 
 def _make_spec(module, class_name, method="__call__"):

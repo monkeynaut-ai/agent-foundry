@@ -59,12 +59,12 @@ class RoleRegistry:
         self._specs = specs
 
     @classmethod
-    def with_builtins(cls) -> "RoleRegistry":
+    def with_builtins(cls) -> RoleRegistry:
         """Create a registry pre-loaded with Agent Foundry's built-in specs."""
         return cls(_load_builtin_specs())
 
     @classmethod
-    def with_product_specs(cls, product_specs_dir: Path) -> "RoleRegistry":
+    def with_product_specs(cls, product_specs_dir: Path) -> RoleRegistry:
         """Create a registry with builtins + product-specific specs.
 
         Args:
@@ -92,7 +92,7 @@ class RoleRegistry:
         return cls({**builtin_specs, **product_specs})
 
     @classmethod
-    def from_directory(cls, directory: Path) -> "RoleRegistry":
+    def from_directory(cls, directory: Path) -> RoleRegistry:
         """Load specs from a single directory (no auto-loading of builtins)."""
         return cls(_load_directory_specs(directory))
 

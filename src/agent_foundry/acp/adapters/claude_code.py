@@ -95,7 +95,7 @@ class ClaudeCodeAdapter(AdapterBase):
                 if payload_group is not None:
                     try:
                         payload = json.loads(match.group(payload_group))
-                    except json.JSONDecodeError, IndexError:
+                    except (json.JSONDecodeError, IndexError):
                         continue  # Malformed payload — skip this marker
                 return event_type, payload
         return None
@@ -366,9 +366,8 @@ class ClaudeCodeAdapter(AdapterBase):
 
                 try:
                     msg = json.loads(raw)
-                except json.JSONDecodeError, ValueError:
+                except (json.JSONDecodeError, ValueError):
                     continue
-
                 msg_type = msg.get("type")
                 if msg_type == "input":
                     text = msg.get("text", "").strip()

@@ -5,7 +5,7 @@ import pytest
 from agent_foundry.compiler.compiler import _resolve_handler
 from agent_foundry.compiler.errors import RoleInstantiationError
 from agent_foundry.registry.registry import RoleRegistry
-from agent_foundry.registry.spec import RoleSpec, ImplementationPointer
+from agent_foundry.registry.spec import ImplementationPointer, RoleSpec
 
 
 def _make_spec(

@@ -1,16 +1,14 @@
 repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.14
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
   - repo: local
     hooks:
-      - id: ruff-format
-        name: ruff format
-        entry: pdm run format
+      - id: py-compile
+        name: py_compile
+        entry: python -m py_compile
         language: system
         types: [python]
-        pass_filenames: false
-
-      - id: ruff-lint
-        name: ruff lint
-        entry: pdm run lint
-        language: system
-        types: [python]
-        pass_filenames: false

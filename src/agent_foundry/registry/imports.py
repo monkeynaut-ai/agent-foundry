@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent_foundry.registry.errors import RoleImportError
-from agent_foundry.registry.spec import RoleSpec, ImplementationPointer
+from agent_foundry.registry.spec import ImplementationPointer, RoleSpec
 
 FF_CAPABILITY_IMPORTS = True
 

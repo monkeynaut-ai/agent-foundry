@@ -10,8 +10,8 @@ from agent_foundry.compiler.errors import RoleInstantiationError
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
 from agent_foundry.registry.registry import RoleRegistry
 from agent_foundry.registry.spec import (
-    RoleSpec,
     ImplementationPointer,
+    RoleSpec,
 )
 
 

@@ -52,7 +52,7 @@ test-integration.cmd = "pytest tests/ -m 'integration'"
 test-integration.env = {PYTHONPATH = "src"}
 lint-imports.cmd = "lint-imports"
 lint-imports.env = {PYTHONPATH = "src"}
-lint.cmd = "ruff check src/ tests/"
+lint.cmd = "ruff check --fix src/ tests/"
 lint.env = {PYTHONPATH = "src"}
 format.cmd = "ruff format src/ tests/"
 format.env = {PYTHONPATH = "src"}
