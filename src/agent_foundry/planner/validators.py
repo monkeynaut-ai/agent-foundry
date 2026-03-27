@@ -161,8 +161,6 @@ def _check_loop_termination(plan: GraphWiringPlan) -> None:
 
 def _check_node_io_against_state_schema(plan: GraphWiringPlan) -> None:
     """Verify that node I/O keys are declared in the plan's state_schema."""
-    if plan.state_schema is None:
-        return
     if plan.state_schema.get("additionalProperties") is True:
         return
     allowed_keys = set(plan.state_schema.get("properties", {}).keys())
@@ -172,37 +170,31 @@ def _check_node_io_against_state_schema(plan: GraphWiringPlan) -> None:
             _check_node_io_against_state_schema(node.subgraph)
             continue
 
-        if node.inputs_schema is not None:
-            input_keys = set(node.inputs_schema.get("properties", {}).keys())
-            undeclared = input_keys - allowed_keys
-            if undeclared:
-                raise SchemaContractError(
-                    message=(
-                        f"Node '{node.id}' declares input keys {undeclared} "
-                        f"not found in state_schema"
-                    ),
-                    node_id=node.id,
-                    undeclared_keys=undeclared,
-                )
+        input_keys = set(node.inputs_schema.get("properties", {}).keys())
+        undeclared = input_keys - allowed_keys
+        if undeclared:
+            raise SchemaContractError(
+                message=(
+                    f"Node '{node.id}' declares input keys {undeclared} not found in state_schema"
+                ),
+                node_id=node.id,
+                undeclared_keys=undeclared,
+            )
 
-        if node.outputs_schema is not None:
-            output_keys = set(node.outputs_schema.get("properties", {}).keys())
-            undeclared = output_keys - allowed_keys
-            if undeclared:
-                raise SchemaContractError(
-                    message=(
-                        f"Node '{node.id}' declares output keys {undeclared} "
-                        f"not found in state_schema"
-                    ),
-                    node_id=node.id,
-                    undeclared_keys=undeclared,
-                )
+        output_keys = set(node.outputs_schema.get("properties", {}).keys())
+        undeclared = output_keys - allowed_keys
+        if undeclared:
+            raise SchemaContractError(
+                message=(
+                    f"Node '{node.id}' declares output keys {undeclared} not found in state_schema"
+                ),
+                node_id=node.id,
+                undeclared_keys=undeclared,
+            )
 
 
 def _check_state_mapping_alignment(plan: GraphWiringPlan) -> None:
     """Verify that state_mapping keys align with parent and subgraph schemas."""
-    if plan.state_schema is None:
-        return
     if plan.state_schema.get("additionalProperties") is True:
         return
     parent_keys = set(plan.state_schema.get("properties", {}).keys())

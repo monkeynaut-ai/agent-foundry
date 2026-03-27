@@ -22,6 +22,10 @@ def _plan_with_node_io(
     inputs_schema: dict | None = None,
     outputs_schema: dict | None = None,
 ) -> GraphWiringPlan:
+    if inputs_schema is None:
+        inputs_schema = {}
+    if outputs_schema is None:
+        outputs_schema = {}
     return GraphWiringPlan(
         goal="test",
         nodes=[
@@ -61,7 +65,7 @@ class TestNodeOutputAgainstStateSchema:
     def test_given_no_outputs_schema_when_validated_then_passes(self, registry):
         plan = _plan_with_node_io(
             state_schema=_state_schema("result"),
-            outputs_schema=None,
+            outputs_schema={},
         )
         validate_plan(plan, registry)
 
