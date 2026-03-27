@@ -2,7 +2,7 @@
 
 from langgraph.graph import END
 
-from agent_foundry.compiler.compiler import _make_router
+from agent_foundry.compiler.compiler import _LoopSignal, _make_router
 
 
 class TestMakeRouter:
@@ -18,10 +18,23 @@ class TestMakeRouter:
         result = router({})
         assert result == "default"
 
-    def test_given_state_has_loop_exhausted_then_returns_end(self):
-        router = _make_router({"cond_a": "target_a"}, "default", "src")
-        result = router({"_loop_exhausted": True})
+    def test_given_loop_signal_exhausted_then_returns_end(self):
+        signal = _LoopSignal()
+        signal.exhausted = True
+        router = _make_router({"cond_a": "target_a"}, "default", "src", loop_signal=signal)
+        result = router({"cond_a": True})
         assert result == END
+
+    def test_given_loop_signal_not_exhausted_then_routes_normally(self):
+        signal = _LoopSignal()
+        router = _make_router({"cond_a": "target_a"}, "default", "src", loop_signal=signal)
+        result = router({"cond_a": True})
+        assert result == "target_a"
+
+    def test_given_no_loop_signal_then_routes_normally(self):
+        router = _make_router({"cond_a": "target_a"}, "default", "src")
+        result = router({"cond_a": True})
+        assert result == "target_a"
 
     def test_given_multiple_conditions_true_then_deterministic_first_sorted(self):
         router = _make_router({"b_cond": "target_b", "a_cond": "target_a"}, "default", "src")

@@ -304,8 +304,8 @@ class TestSubgraphCompilation:
         # Subgraph looped, parent continued to 'after' node
         assert result.get("citations_checked") is True
         assert result.get("result_count") is not None
-        # _loop_exhausted from subgraph must NOT leak to parent
-        assert result.get("_loop_exhausted") is not True
+        # _loop_exhausted is no longer written to state (uses _LoopSignal)
+        assert "_loop_exhausted" not in result
 
     def test_given_subgraph_when_invoked_then_internal_state_does_not_leak(self, registry):
         """Subgraph internal state keys don't appear in parent state."""

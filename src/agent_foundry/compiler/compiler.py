@@ -36,6 +36,13 @@ def _build_state_type(state_schema: dict[str, Any]) -> type:
     return TypedDict("GraphState", annotations, total=False)  # type: ignore[call-overload]
 
 
+class _LoopSignal:
+    """Shared signal between iteration limiter and router closures."""
+
+    def __init__(self) -> None:
+        self.exhausted = False
+
+
 EVAL_GATE_ROLES = {
     "schema_validator",
     "citation_validator",
@@ -88,6 +95,7 @@ def compile_plan(
     terminal_nodes = node_ids - source_nodes
 
     # Add nodes with config injection and loop-safe wrappers
+    loop_signals: dict[str, _LoopSignal] = {}
     for node in plan.nodes:
         if node.subgraph is not None:
             compiled_sub = compile_plan(node.subgraph, registry, handler_registry=handler_registry)
@@ -107,7 +115,9 @@ def compile_plan(
         # Wrap with max_iterations if configured
         max_iter = node.config.get("max_iterations")
         if max_iter is not None:
-            handler = _make_iteration_limiter(handler, max_iter)
+            signal = _LoopSignal()
+            loop_signals[node.id] = signal
+            handler = _make_iteration_limiter(handler, max_iter, signal)
 
         graph.add_node(node.id, handler)
 
@@ -140,7 +150,7 @@ def compile_plan(
                 if e.source == e.target:
                     route_map[e.condition] = e.target
 
-            router = _make_router(route_map, default_target, source_id)
+            router = _make_router(route_map, default_target, source_id, loop_signals.get(source_id))
             all_targets = {v for v in route_map.values()}
             all_targets.add(default_target)
             graph.add_conditional_edges(source_id, router, list(all_targets))
@@ -309,24 +319,30 @@ def _make_state_enforcer(handler: Callable, state_schema: dict[str, Any], node_i
     return enforced
 
 
-def _make_iteration_limiter(handler: Callable, max_iterations: int) -> Callable:
+def _make_iteration_limiter(
+    handler: Callable, max_iterations: int, signal: _LoopSignal
+) -> Callable:
     counter = {"count": 0}
 
     def limited_handler(state: dict[str, Any]) -> dict[str, Any]:
         counter["count"] += 1
         result = handler(state)
         if counter["count"] >= max_iterations:
-            # Signal to stop looping
-            result["_loop_exhausted"] = True
+            signal.exhausted = True
         return result
 
     return limited_handler
 
 
-def _make_router(route_map: dict[str, str], default_target: str, source_id: str) -> Callable:
+def _make_router(
+    route_map: dict[str, str],
+    default_target: str,
+    source_id: str,
+    loop_signal: _LoopSignal | None = None,
+) -> Callable:
     def router(state: dict[str, Any]) -> str:
-        # Check if loop is exhausted
-        if state.get("_loop_exhausted"):
+        # Check if loop is exhausted via closure signal
+        if loop_signal is not None and loop_signal.exhausted:
             logger.info("loop_exhausted", extra={"node": source_id})
             return END
 
