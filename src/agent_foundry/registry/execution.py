@@ -36,7 +36,7 @@ def execute_role(
     if node_config is None:
         node_config = {}
 
-    if FF_SCHEMA_ENFORCEMENT:
+    if FF_SCHEMA_ENFORCEMENT and spec.inputs_schema is not None:
         _validate_schema(inputs, spec.inputs_schema, spec.name, "input_validation")
 
     if FF_RETRY_TIMEOUTS:
@@ -44,7 +44,7 @@ def execute_role(
     else:
         result = handler(inputs, node_config)
 
-    if FF_SCHEMA_ENFORCEMENT:
+    if FF_SCHEMA_ENFORCEMENT and spec.outputs_schema is not None:
         _validate_schema(result, spec.outputs_schema, spec.name, "output_validation")
 
     return result

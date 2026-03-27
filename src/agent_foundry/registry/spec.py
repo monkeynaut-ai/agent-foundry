@@ -1,11 +1,12 @@
 """Role spec schema and file loader."""
 
 import json
+import warnings
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from agent_foundry.registry.errors import (
     RoleSpecParseError,
@@ -35,10 +36,21 @@ class RoleSpec(BaseModel):
     description: str
     version: str
     implementation: ImplementationPointer
-    inputs_schema: dict[str, Any]
-    outputs_schema: dict[str, Any]
+    inputs_schema: dict[str, Any] | None = None
+    outputs_schema: dict[str, Any] | None = None
     tags: list[str] = Field(default_factory=list)
     quality_controls: QualityControls = Field(default_factory=QualityControls)
+
+    @model_validator(mode="after")
+    def _warn_deprecated_schemas(self) -> RoleSpec:
+        if self.inputs_schema is not None or self.outputs_schema is not None:
+            warnings.warn(
+                f"RoleSpec '{self.name}': inputs_schema and outputs_schema on role specs "
+                "are deprecated. Move data contracts to NodeDef in the system specification.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return self
 
 
 def load_role_spec(path: Path) -> RoleSpec:
