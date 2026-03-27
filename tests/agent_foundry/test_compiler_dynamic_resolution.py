@@ -38,6 +38,7 @@ def _one_node_plan(role_name="test_cap") -> GraphWiringPlan:
         nodes=[{"id": "n1", "role": role_name, "config": {}}],
         edges=[],
         entry_point="n1",
+        state_schema={"type": "object", "properties": {}, "additionalProperties": True},
         role_versions={role_name: "1.0.0"},
     )
 

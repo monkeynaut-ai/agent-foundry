@@ -16,6 +16,7 @@ def _one_node_plan() -> GraphWiringPlan:
         nodes=[{"id": "n1", "role": "schema_validator", "config": {}}],
         edges=[],
         entry_point="n1",
+        state_schema={"type": "object", "properties": {}, "additionalProperties": True},
         role_versions={"schema_validator": "1.0.0"},
     )
 
@@ -29,6 +30,7 @@ def _two_node_plan() -> GraphWiringPlan:
         ],
         edges=[{"source": "n1", "target": "n2"}],
         entry_point="n1",
+        state_schema={"type": "object", "properties": {}, "additionalProperties": True},
         role_versions={
             "rag_retriever": "1.0.0",
             "schema_validator": "1.0.0",

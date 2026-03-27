@@ -163,6 +163,8 @@ def _check_node_io_against_state_schema(plan: GraphWiringPlan) -> None:
     """Verify that node I/O keys are declared in the plan's state_schema."""
     if plan.state_schema is None:
         return
+    if plan.state_schema.get("additionalProperties") is True:
+        return
     allowed_keys = set(plan.state_schema.get("properties", {}).keys())
 
     for node in plan.nodes:
@@ -200,6 +202,8 @@ def _check_node_io_against_state_schema(plan: GraphWiringPlan) -> None:
 def _check_state_mapping_alignment(plan: GraphWiringPlan) -> None:
     """Verify that state_mapping keys align with parent and subgraph schemas."""
     if plan.state_schema is None:
+        return
+    if plan.state_schema.get("additionalProperties") is True:
         return
     parent_keys = set(plan.state_schema.get("properties", {}).keys())
 

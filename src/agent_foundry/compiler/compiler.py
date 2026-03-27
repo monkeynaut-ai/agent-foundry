@@ -84,11 +84,13 @@ def compile_plan(
     if enforce_gates:
         _check_eval_gates_on_paths(plan)
 
-    if plan.state_schema is not None:
+    if plan.state_schema.get("additionalProperties") is True and not plan.state_schema.get(
+        "properties"
+    ):
+        graph = StateGraph(dict)  # type: ignore[type-var]
+    else:
         state_type = _build_state_type(plan.state_schema)
         graph = StateGraph(state_type)
-    else:
-        graph = StateGraph(dict)  # type: ignore[type-var]
 
     # Determine graph topology
     source_nodes = {e.source for e in plan.edges}
@@ -109,8 +111,7 @@ def compile_plan(
         handler = _make_config_provider(handler, node.config)
 
         # Enforce state schema: reject undeclared keys at runtime
-        if plan.state_schema is not None:
-            handler = _make_state_enforcer(handler, plan.state_schema, node.id)
+        handler = _make_state_enforcer(handler, plan.state_schema, node.id)
 
         # Wrap with max_iterations if configured
         max_iter = node.config.get("max_iterations")
@@ -300,6 +301,8 @@ def _make_config_provider(handler: Callable, config: dict[str, Any]) -> Callable
 
 def _make_state_enforcer(handler: Callable, state_schema: dict[str, Any], node_id: str) -> Callable:
     """Wrap a handler to reject undeclared keys in its return value."""
+    if state_schema.get("additionalProperties") is True:
+        return handler
     allowed_keys = set(state_schema.get("properties", {}).keys())
 
     def enforced(state: dict[str, Any]) -> dict[str, Any]:

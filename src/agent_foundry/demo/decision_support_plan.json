@@ -16,6 +16,7 @@
     {"source": "uncertainty_gate", "target": "evidence_gate"}
   ],
   "entry_point": "retriever",
+  "state_schema": {"type": "object", "properties": {}, "additionalProperties": true},
   "role_versions": {
     "rag_retriever": "1.0.0",
     "structured_output_pydantic": "1.0.0",

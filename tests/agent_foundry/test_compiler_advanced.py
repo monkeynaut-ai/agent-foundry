@@ -58,6 +58,7 @@ class TestCompileErrors:
             nodes=[{"id": "n1", "role": "schema_validator"}],
             edges=[],
             entry_point="nonexistent",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={"schema_validator": "1.0.0"},
         )
         with pytest.raises(PlanCompilationError):
@@ -69,6 +70,7 @@ class TestCompileErrors:
             nodes=[{"id": "n1", "role": "schema_validator"}],
             edges=[],
             entry_point="n1",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={"schema_validator": "1.0.0"},
         )
         bad_handlers = {"schema_validator": "not_a_callable"}
@@ -96,6 +98,7 @@ class TestConditionalEdges:
                 {"source": "start", "target": "branch_b"},
             ],
             entry_point="start",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={
                 "rag_retriever": "1.0.0",
                 "schema_validator": "1.0.0",
@@ -130,6 +133,7 @@ class TestLoopSafety:
                 {"source": "loop_node", "target": "loop_node", "condition": "should_continue"},
             ],
             entry_point="loop_node",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={"rag_retriever": "1.0.0"},
         )
         handlers = {"rag_retriever": counting_handler}
@@ -194,6 +198,7 @@ class TestRuntimeSchemaFailures:
             ],
             edges=[{"source": "n1", "target": "n2"}],
             entry_point="n1",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={
                 "rag_retriever": "1.0.0",
                 "schema_validator": "1.0.0",
@@ -225,6 +230,11 @@ class TestSubgraphCompilation:
                         "nodes": [{"id": "inner_node", "role": "schema_validator"}],
                         "edges": [],
                         "entry_point": "inner_node",
+                        "state_schema": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": True,
+                        },
                         "role_versions": {"schema_validator": "1.0.0"},
                     },
                     "state_mapping": {
@@ -235,6 +245,7 @@ class TestSubgraphCompilation:
             ],
             edges=[{"source": "start", "target": "sub"}],
             entry_point="start",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={"rag_retriever": "1.0.0"},
         )
         graph = compile_plan(plan, registry, handler_registry=HANDLERS)
@@ -276,6 +287,11 @@ class TestSubgraphCompilation:
                             },
                         ],
                         "entry_point": "looper",
+                        "state_schema": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": True,
+                        },
                         "role_versions": {"schema_validator": "1.0.0"},
                     },
                     "state_mapping": {
@@ -290,6 +306,7 @@ class TestSubgraphCompilation:
                 {"source": "sub", "target": "after"},
             ],
             entry_point="start",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={
                 "rag_retriever": "1.0.0",
                 "citation_validator": "1.0.0",
@@ -319,6 +336,11 @@ class TestSubgraphCompilation:
                         "nodes": [{"id": "inner", "role": "schema_validator"}],
                         "edges": [],
                         "entry_point": "inner",
+                        "state_schema": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": True,
+                        },
                         "role_versions": {"schema_validator": "1.0.0"},
                     },
                     "state_mapping": {
@@ -329,6 +351,7 @@ class TestSubgraphCompilation:
             ],
             edges=[],
             entry_point="sub",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={},
         )
         graph = compile_plan(plan, registry, handler_registry=HANDLERS)
@@ -405,6 +428,11 @@ class TestNestedLoopIntegration:
                             },
                         ],
                         "entry_point": "worker",
+                        "state_schema": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": True,
+                        },
                         "role_versions": {
                             "schema_validator": "1.0.0",
                             "citation_validator": "1.0.0",
@@ -421,6 +449,7 @@ class TestNestedLoopIntegration:
                 {"source": "kernel", "target": "dispatcher"},
             ],
             entry_point="dispatcher",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={"rag_retriever": "1.0.0"},
         )
 

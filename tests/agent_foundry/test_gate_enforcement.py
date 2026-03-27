@@ -36,6 +36,7 @@ class TestGateEnforcement:
             ],
             edges=[{"source": "n1", "target": "n2"}],
             entry_point="n1",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={
                 "rag_retriever": "1.0.0",
                 "structured_output_pydantic": "1.0.0",
@@ -54,6 +55,7 @@ class TestGateEnforcementEdgeCases:
             nodes=[{"id": "n1", "role": "rag_retriever"}],
             edges=[],
             entry_point="n1",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={"rag_retriever": "1.0.0"},
         )
         with pytest.raises(PlanCompilationError, match="eval gate"):
@@ -68,6 +70,7 @@ class TestGateEnforcementEdgeCases:
             ],
             edges=[{"source": "n1", "target": "gate"}],
             entry_point="n1",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={
                 "rag_retriever": "1.0.0",
                 "schema_validator": "1.0.0",
@@ -89,6 +92,7 @@ class TestGateEnforcementEdgeCases:
                 {"source": "gate", "target": "n2"},
             ],
             entry_point="n1",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={
                 "rag_retriever": "1.0.0",
                 "schema_validator": "1.0.0",
@@ -114,6 +118,7 @@ class TestGateEnforcementEdgeCases:
                 {"source": "gate", "target": "final"},
             ],
             entry_point="start",
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             role_versions={
                 "rag_retriever": "1.0.0",
                 "schema_validator": "1.0.0",

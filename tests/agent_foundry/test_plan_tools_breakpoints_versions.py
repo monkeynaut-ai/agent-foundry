@@ -151,6 +151,7 @@ def _subgraph_plan_data(**overrides) -> dict:
         ],
         "edges": [],
         "entry_point": "inner1",
+        "state_schema": {"type": "object", "properties": {}, "additionalProperties": True},
         "role_versions": {"rag_retriever": "1.0.0"},
     }
     defaults.update(overrides)

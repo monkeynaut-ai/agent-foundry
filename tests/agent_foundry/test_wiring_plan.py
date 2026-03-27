@@ -32,6 +32,7 @@ def _minimal_plan() -> dict:
             {"source": "retriever", "target": "output"},
         ],
         "entry_point": "retriever",
+        "state_schema": {"type": "object", "properties": {}, "additionalProperties": True},
         "role_versions": {
             "rag_retriever": "1.0.0",
             "structured_output_pydantic": "1.0.0",
@@ -91,7 +92,6 @@ class TestOptionalFields:
         assert plan.tools == []
         assert plan.breakpoints == []
         assert plan.persistence is None
-        assert plan.state_schema is None
 
     def test_plan_with_state_schema(self):
         data = _minimal_plan()
@@ -137,6 +137,7 @@ def _minimal_subgraph_plan() -> dict:
         ],
         "edges": [],
         "entry_point": "worker",
+        "state_schema": {"type": "object", "properties": {}, "additionalProperties": True},
         "role_versions": {"test_role": "1.0.0"},
     }
 

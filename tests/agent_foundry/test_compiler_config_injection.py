@@ -17,6 +17,7 @@ def _make_plan_with_config(config: dict[str, Any]) -> GraphWiringPlan:
         nodes=[{"id": "n1", "role": "test_role", "config": config}],
         edges=[],
         entry_point="n1",
+        state_schema={"type": "object", "properties": {}, "additionalProperties": True},
         role_versions={"test_role": "1.0.0"},
     )
 

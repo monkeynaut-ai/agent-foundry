@@ -85,12 +85,12 @@ class TestNodeInputAgainstStateSchema:
             validate_plan(plan, registry)
 
 
-class TestNoStateSchemaSkipsValidation:
-    """Without state_schema, node I/O validation is skipped."""
+class TestPermissiveStateSchemaSkipsValidation:
+    """With a permissive state_schema (additionalProperties: true), node I/O validation is skipped."""
 
-    def test_given_no_state_schema_when_validated_then_passes(self, registry):
+    def test_given_permissive_state_schema_when_validated_then_passes(self, registry):
         plan = _plan_with_node_io(
-            state_schema=None,
+            state_schema={"type": "object", "properties": {}, "additionalProperties": True},
             outputs_schema=_state_schema("anything"),
         )
         validate_plan(plan, registry)

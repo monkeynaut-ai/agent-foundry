@@ -14,7 +14,13 @@ class TestMissingRequiredFields:
 
     def test_missing_nodes_raises_error(self):
         with pytest.raises(ValidationError) as exc_info:
-            GraphWiringPlan(goal="test", edges=[], entry_point="a", role_versions={})
+            GraphWiringPlan(
+                goal="test",
+                edges=[],
+                entry_point="a",
+                state_schema={"type": "object", "properties": {}, "additionalProperties": True},
+                role_versions={},
+            )
         errors = exc_info.value.errors()
         field_names = [e["loc"][0] for e in errors]
         assert "nodes" in field_names
@@ -25,6 +31,7 @@ class TestMissingRequiredFields:
                 nodes=[{"id": "a", "role": "test"}],
                 edges=[],
                 entry_point="a",
+                state_schema={"type": "object", "properties": {}, "additionalProperties": True},
                 role_versions={},
             )
         errors = exc_info.value.errors()
@@ -37,6 +44,7 @@ class TestMissingRequiredFields:
                 goal="test",
                 nodes=[{"id": "a", "role": "test"}],
                 edges=[],
+                state_schema={"type": "object", "properties": {}, "additionalProperties": True},
                 role_versions={},
             )
         errors = exc_info.value.errors()
@@ -45,7 +53,13 @@ class TestMissingRequiredFields:
 
     def test_error_message_includes_field_path(self):
         with pytest.raises(ValidationError) as exc_info:
-            GraphWiringPlan(goal="test", edges=[], entry_point="a", role_versions={})
+            GraphWiringPlan(
+                goal="test",
+                edges=[],
+                entry_point="a",
+                state_schema={"type": "object", "properties": {}, "additionalProperties": True},
+                role_versions={},
+            )
         msg = str(exc_info.value)
         assert "nodes" in msg
 
@@ -56,6 +70,7 @@ class TestMissingRequiredFields:
                 nodes=[{"role": "test"}],
                 edges=[],
                 entry_point="a",
+                state_schema={"type": "object", "properties": {}, "additionalProperties": True},
                 role_versions={},
             )
 
@@ -66,5 +81,6 @@ class TestMissingRequiredFields:
                 nodes=[{"id": "a"}],
                 edges=[],
                 entry_point="a",
+                state_schema={"type": "object", "properties": {}, "additionalProperties": True},
                 role_versions={},
             )

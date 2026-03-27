@@ -35,13 +35,20 @@ def _state_schema() -> dict[str, Any]:
     }
 
 
+_PERMISSIVE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": True,
+}
+
+
 def _plan(state_schema: dict[str, Any] | None = None) -> GraphWiringPlan:
     return GraphWiringPlan(
         goal="test",
         nodes=[{"id": "n1", "role": "test_role", "config": {}}],
         edges=[],
         entry_point="n1",
-        state_schema=state_schema,
+        state_schema=state_schema if state_schema is not None else _PERMISSIVE_SCHEMA,
     )
 
 

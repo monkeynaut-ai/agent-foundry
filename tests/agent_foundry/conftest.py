@@ -25,6 +25,7 @@ def make_plan(**overrides) -> GraphWiringPlan:
         ],
         "edges": [{"source": "n1", "target": "n2"}],
         "entry_point": "n1",
+        "state_schema": {"type": "object", "properties": {}, "additionalProperties": True},
         "role_versions": {
             "rag_retriever": "1.0.0",
             "schema_validator": "1.0.0",
