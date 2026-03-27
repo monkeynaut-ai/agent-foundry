@@ -26,6 +26,8 @@ class NodeDef(BaseModel):
     subgraph: GraphWiringPlan | None = None
     state_mapping: StateMappingDef | None = None
     config: dict[str, Any] = Field(default_factory=dict)
+    inputs_schema: dict[str, Any] | None = None
+    outputs_schema: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def _role_xor_subgraph(self) -> NodeDef:

@@ -4,6 +4,7 @@ from agent_foundry.planner.errors import (
     DanglingEdgeError,
     DuplicateNodeIdError,
     PlanValidationError,
+    SchemaContractError,
     UnknownRoleError,
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan
@@ -28,6 +29,8 @@ def validate_plan(plan: GraphWiringPlan, registry: RoleRegistry) -> None:
     _check_breakpoints(plan)
     _check_role_versions_coverage(plan)
     _check_loop_termination(plan)
+    _check_node_io_against_state_schema(plan)
+    _check_state_mapping_alignment(plan)
 
 
 def _check_duplicate_node_ids(plan: GraphWiringPlan) -> None:
@@ -154,3 +157,105 @@ def _check_loop_termination(plan: GraphWiringPlan) -> None:
             f"cycle detected involving node '{cycle_nodes[0]}'"
             " without termination condition or max_iterations"
         )
+
+
+def _check_node_io_against_state_schema(plan: GraphWiringPlan) -> None:
+    """Verify that node I/O keys are declared in the plan's state_schema."""
+    if plan.state_schema is None:
+        return
+    allowed_keys = set(plan.state_schema.get("properties", {}).keys())
+
+    for node in plan.nodes:
+        if node.subgraph is not None:
+            _check_node_io_against_state_schema(node.subgraph)
+            continue
+
+        if node.inputs_schema is not None:
+            input_keys = set(node.inputs_schema.get("properties", {}).keys())
+            undeclared = input_keys - allowed_keys
+            if undeclared:
+                raise SchemaContractError(
+                    message=(
+                        f"Node '{node.id}' declares input keys {undeclared} "
+                        f"not found in state_schema"
+                    ),
+                    node_id=node.id,
+                    undeclared_keys=undeclared,
+                )
+
+        if node.outputs_schema is not None:
+            output_keys = set(node.outputs_schema.get("properties", {}).keys())
+            undeclared = output_keys - allowed_keys
+            if undeclared:
+                raise SchemaContractError(
+                    message=(
+                        f"Node '{node.id}' declares output keys {undeclared} "
+                        f"not found in state_schema"
+                    ),
+                    node_id=node.id,
+                    undeclared_keys=undeclared,
+                )
+
+
+def _check_state_mapping_alignment(plan: GraphWiringPlan) -> None:
+    """Verify that state_mapping keys align with parent and subgraph schemas."""
+    if plan.state_schema is None:
+        return
+    parent_keys = set(plan.state_schema.get("properties", {}).keys())
+
+    for node in plan.nodes:
+        if node.subgraph is None or node.state_mapping is None:
+            continue
+
+        # Parent-side input keys must be in parent schema
+        for parent_key in node.state_mapping.input:
+            if parent_key not in parent_keys:
+                raise SchemaContractError(
+                    message=(
+                        f"Node '{node.id}' state_mapping input references parent key "
+                        f"'{parent_key}' not found in parent state_schema"
+                    ),
+                    node_id=node.id,
+                    undeclared_keys={parent_key},
+                )
+
+        # Subgraph-side input values must be in subgraph schema (if declared)
+        if node.subgraph.state_schema is not None:
+            sub_keys = set(node.subgraph.state_schema.get("properties", {}).keys())
+
+            for sub_key in node.state_mapping.input.values():
+                if sub_key not in sub_keys:
+                    raise SchemaContractError(
+                        message=(
+                            f"Node '{node.id}' state_mapping input maps to subgraph key "
+                            f"'{sub_key}' not found in subgraph state_schema"
+                        ),
+                        node_id=node.id,
+                        undeclared_keys={sub_key},
+                    )
+
+            for sub_key in node.state_mapping.output:
+                if sub_key not in sub_keys:
+                    raise SchemaContractError(
+                        message=(
+                            f"Node '{node.id}' state_mapping output references subgraph key "
+                            f"'{sub_key}' not found in subgraph state_schema"
+                        ),
+                        node_id=node.id,
+                        undeclared_keys={sub_key},
+                    )
+
+        # Parent-side output values must be in parent schema
+        for parent_key in node.state_mapping.output.values():
+            if parent_key not in parent_keys:
+                raise SchemaContractError(
+                    message=(
+                        f"Node '{node.id}' state_mapping output maps to parent key "
+                        f"'{parent_key}' not found in parent state_schema"
+                    ),
+                    node_id=node.id,
+                    undeclared_keys={parent_key},
+                )
+
+        # Recurse into subgraph
+        _check_state_mapping_alignment(node.subgraph)

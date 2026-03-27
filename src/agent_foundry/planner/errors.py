@@ -33,6 +33,15 @@ class PlanValidationError(Exception):
         super().__init__(message)
 
 
+class SchemaContractError(PlanValidationError):
+    """Raised when a node's declared I/O keys violate the state_schema contract."""
+
+    def __init__(self, message: str, node_id: str, undeclared_keys: set[str]):
+        self.node_id = node_id
+        self.undeclared_keys = undeclared_keys
+        super().__init__(message)
+
+
 class PlanningInsufficientContextError(Exception):
     """Raised when planner has insufficient context (no snippets in strict mode)."""
 
