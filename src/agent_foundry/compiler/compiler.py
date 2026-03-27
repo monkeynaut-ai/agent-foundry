@@ -9,6 +9,7 @@ from langgraph.graph import END, StateGraph
 from agent_foundry.compiler.errors import (
     PlanCompilationError,
     RoleInstantiationError,
+    StateSchemaViolationError,
 )
 from agent_foundry.planner.wiring_plan import GraphWiringPlan, StateMappingDef
 from agent_foundry.registry.errors import RoleImportError
@@ -98,6 +99,10 @@ def compile_plan(
 
         # Pass node.config as separate parameter (not merged into state)
         handler = _make_config_provider(handler, node.config)
+
+        # Enforce state schema: reject undeclared keys at runtime
+        if plan.state_schema is not None:
+            handler = _make_state_enforcer(handler, plan.state_schema, node.id)
 
         # Wrap with max_iterations if configured
         max_iter = node.config.get("max_iterations")
@@ -281,6 +286,27 @@ def _make_config_provider(handler: Callable, config: dict[str, Any]) -> Callable
         return handler(state, node_config)
 
     return wrapped
+
+
+def _make_state_enforcer(handler: Callable, state_schema: dict[str, Any], node_id: str) -> Callable:
+    """Wrap a handler to reject undeclared keys in its return value."""
+    allowed_keys = set(state_schema.get("properties", {}).keys())
+
+    def enforced(state: dict[str, Any]) -> dict[str, Any]:
+        result = handler(state)
+        undeclared = set(result.keys()) - allowed_keys
+        if undeclared:
+            raise StateSchemaViolationError(
+                message=(
+                    f"Node '{node_id}' returned undeclared keys: {undeclared}. "
+                    f"Allowed keys: {allowed_keys}"
+                ),
+                node_id=node_id,
+                undeclared_keys=undeclared,
+            )
+        return result
+
+    return enforced
 
 
 def _make_iteration_limiter(handler: Callable, max_iterations: int) -> Callable:
