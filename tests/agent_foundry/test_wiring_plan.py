@@ -91,6 +91,28 @@ class TestOptionalFields:
         assert plan.tools == []
         assert plan.breakpoints == []
         assert plan.persistence is None
+        assert plan.state_schema is None
+
+    def test_plan_with_state_schema(self):
+        data = _minimal_plan()
+        data["state_schema"] = {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+        }
+        plan = GraphWiringPlan(**data)
+        assert plan.state_schema["properties"]["result"]["type"] == "string"
+
+    def test_plan_with_state_schema_round_trips(self):
+        data = _minimal_plan()
+        data["state_schema"] = {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+            "additionalProperties": False,
+        }
+        plan = GraphWiringPlan(**data)
+        json_str = plan.model_dump_json()
+        reconstructed = GraphWiringPlan.model_validate_json(json_str)
+        assert reconstructed.state_schema == plan.state_schema
 
     def test_plan_with_tools(self):
         data = _minimal_plan()

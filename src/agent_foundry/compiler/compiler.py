@@ -22,6 +22,19 @@ logger = logging.getLogger(__name__)
 FF_COMPILER = False
 
 
+def _build_state_type(state_schema: dict[str, Any]) -> type:
+    """Convert a JSON Schema into a TypedDict for use with LangGraph StateGraph.
+
+    Uses total=False because LangGraph nodes return partial state updates
+    (only the keys they changed), not the full state.
+    """
+    from typing import TypedDict
+
+    properties = state_schema.get("properties", {})
+    annotations = {key: Any for key in properties}
+    return TypedDict("GraphState", annotations, total=False)  # type: ignore[call-overload]
+
+
 EVAL_GATE_ROLES = {
     "schema_validator",
     "citation_validator",
@@ -63,7 +76,11 @@ def compile_plan(
     if enforce_gates:
         _check_eval_gates_on_paths(plan)
 
-    graph = StateGraph(dict)  # type: ignore[type-var]
+    if plan.state_schema is not None:
+        state_type = _build_state_type(plan.state_schema)
+        graph = StateGraph(state_type)
+    else:
+        graph = StateGraph(dict)  # type: ignore[type-var]
 
     # Determine graph topology
     source_nodes = {e.source for e in plan.edges}

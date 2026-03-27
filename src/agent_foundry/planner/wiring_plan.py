@@ -69,6 +69,7 @@ class GraphWiringPlan(BaseModel):
     nodes: list[NodeDef]
     edges: list[EdgeDef]
     entry_point: str
+    state_schema: dict[str, Any] | None = None
     role_versions: dict[str, str] = Field(default_factory=dict)
     tools: list[ToolDef] = Field(default_factory=list)
     breakpoints: list[str] = Field(default_factory=list)
