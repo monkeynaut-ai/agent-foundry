@@ -87,3 +87,45 @@ def resolve_handler_callable(
         )
 
     return handler  # type: ignore[return-value]
+
+
+def resolve_typed_handler(
+    pointer: ImplementationPointer,
+    spec: RoleSpec,
+    node_config: dict[str, Any],
+) -> Any | None:
+    """Import class, instantiate with spec and node_config, return the instance.
+
+    Unlike :func:`resolve_handler_callable` which returns a bound method,
+    this returns the instance itself so the connector can inspect its
+    ``__call__`` signature.  Static configuration from the wiring plan
+    (``NodeDef.config``) is passed to the constructor.
+
+    Args:
+        pointer: The implementation pointer with module and class_name.
+        spec: The role spec, passed to the handler constructor as ``spec``.
+        node_config: Static per-node config from the wiring plan, splatted
+            into the constructor.
+
+    Returns:
+        The agent instance, or None if FF_CAPABILITY_IMPORTS is off.
+
+    Raises:
+        RoleImportError: If import or instantiation fails.
+    """
+    cls = import_role_class(pointer)
+    if cls is None:
+        return None
+
+    # Filter out max_iterations — it's a compiler concern, not agent config
+    config = {k: v for k, v in node_config.items() if k != "max_iterations"}
+
+    try:
+        instance = cls(spec=spec, **config)
+    except Exception as e:
+        raise RoleImportError(
+            message=f"Cannot instantiate '{pointer.class_name}' from '{pointer.module}': {e}",
+            pointer=pointer,
+        ) from e
+
+    return instance

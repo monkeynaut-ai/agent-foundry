@@ -24,8 +24,11 @@ def _make_spec(
 class TestResolveHandler:
     def test_given_role_in_handler_registry_then_returns_that_handler(self):
         handler = lambda state, node_config=None: state  # noqa: E731
-        result = _resolve_handler("n1", "test_cap", {"test_cap": handler}, RoleRegistry(specs={}))
+        result, is_typed = _resolve_handler(
+            "n1", "test_cap", {"test_cap": handler}, RoleRegistry(specs={})
+        )
         assert result is handler
+        assert is_typed is False
 
     def test_given_non_callable_in_handler_registry_then_raises_instantiation_error(self):
         with pytest.raises(RoleInstantiationError) as exc_info:
@@ -37,9 +40,10 @@ class TestResolveHandler:
     ):
         spec = _make_spec("test_cap")
         registry = RoleRegistry(specs={"test_cap": spec})
-        handler = _resolve_handler("n1", "test_cap", {}, registry)
+        handler, is_typed = _resolve_handler("n1", "test_cap", {}, registry)
         # Should return a validated handler wrapper (callable)
         assert callable(handler)
+        assert is_typed is False
         result = handler({"input": "hello"}, {})
         assert result["handled"] is True
 
@@ -53,7 +57,8 @@ class TestResolveHandler:
         assert exc_info.value.role == "test_cap"
 
     def test_given_role_nowhere_then_returns_passthrough_handler(self):
-        handler = _resolve_handler("n1", "unknown_cap", {}, RoleRegistry(specs={}))
+        handler, is_typed = _resolve_handler("n1", "unknown_cap", {}, RoleRegistry(specs={}))
         assert callable(handler)
+        assert is_typed is False
         result = handler({"key": "value"}, {})
         assert result == {"key": "value"}

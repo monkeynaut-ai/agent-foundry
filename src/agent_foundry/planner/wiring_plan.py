@@ -28,6 +28,14 @@ class NodeDef(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     inputs_schema: dict[str, Any] = Field(default_factory=dict)
     outputs_schema: dict[str, Any] = Field(default_factory=dict)
+    inputs: list[str] = Field(
+        default_factory=list,
+        description="Type names declaring what the agent consumes",
+    )
+    outputs: list[str] = Field(
+        default_factory=list,
+        description="Type names declaring what the agent produces",
+    )
 
     @model_validator(mode="after")
     def _role_xor_subgraph(self) -> NodeDef:

@@ -6,6 +6,8 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
+from agent_foundry.agents.connector import make_typed_connector
+from agent_foundry.agents.protocol import is_typed_agent
 from agent_foundry.compiler.errors import (
     PlanCompilationError,
     RoleInstantiationError,
@@ -14,7 +16,7 @@ from agent_foundry.compiler.errors import (
 from agent_foundry.planner.wiring_plan import GraphWiringPlan, StateMappingDef
 from agent_foundry.registry.errors import RoleImportError
 from agent_foundry.registry.execution import execute_role
-from agent_foundry.registry.imports import resolve_handler_callable
+from agent_foundry.registry.imports import resolve_handler_callable, resolve_typed_handler
 from agent_foundry.registry.registry import RoleRegistry
 from agent_foundry.registry.spec import RoleSpec
 
@@ -103,12 +105,16 @@ def compile_plan(
             compiled_sub = compile_plan(node.subgraph, registry, handler_registry=handler_registry)
             assert node.state_mapping is not None  # enforced by NodeDef validator
             handler = _make_subgraph_handler(compiled_sub, node.state_mapping)
+            is_typed = False
         else:
             assert node.role is not None  # enforced by NodeDef validator
-            handler = _resolve_handler(node.id, node.role, handler_registry, registry)
+            handler, is_typed = _resolve_handler(
+                node.id, node.role, handler_registry, registry, node_config=node.config
+            )
 
-        # Pass node.config as separate parameter (not merged into state)
-        handler = _make_config_provider(handler, node.config)
+        if not is_typed:
+            # Legacy path: pass node.config as separate parameter (not merged into state)
+            handler = _make_config_provider(handler, node.config)
 
         # Enforce state schema: reject undeclared keys at runtime
         handler = _make_state_enforcer(handler, plan.state_schema, node.id)
@@ -209,7 +215,15 @@ def _resolve_handler(
     role_name: str,
     handler_registry: dict[str, Any],
     registry: RoleRegistry,
-) -> Callable:
+    node_config: dict[str, Any] | None = None,
+) -> tuple[Callable, bool]:
+    """Resolve a handler for a node.
+
+    Returns:
+        A tuple of (handler, is_typed).  When *is_typed* is True the handler
+        is already wrapped by the connector and should NOT be passed through
+        ``_make_config_provider`` (config was injected at construction time).
+    """
     # 1. Explicit handler_registry takes priority (backwards compat)
     handler = handler_registry.get(role_name)
     if handler is not None:
@@ -219,11 +233,25 @@ def _resolve_handler(
                 node_id=node_id,
                 role=role_name,
             )
-        return handler
+        # Check if the explicit handler is a typed agent
+        if is_typed_agent(handler):
+            return make_typed_connector(handler), True
+        return handler, False
 
     # 2. Fall back to dynamic resolution from registry spec
     spec = registry.get(role_name)
     if spec is not None:
+        # Try typed handler first (constructor injection)
+        if node_config is not None:
+            try:
+                instance = resolve_typed_handler(spec.implementation, spec, node_config)
+            except RoleImportError:
+                instance = None
+
+            if instance is not None and is_typed_agent(instance):
+                return make_typed_connector(instance), True
+
+        # Fall back to legacy dict-based resolution
         try:
             resolved = resolve_handler_callable(spec.implementation, spec)
         except RoleImportError as e:
@@ -234,14 +262,14 @@ def _resolve_handler(
             ) from e
 
         if resolved is not None:
-            return _make_validated_handler(resolved, spec)
+            return _make_validated_handler(resolved, spec), False
 
     # 3. No handler found anywhere: passthrough
     logger.warning(
         "no_handler_found",
         extra={"node": node_id, "role": role_name},
     )
-    return _make_passthrough()
+    return _make_passthrough(), False
 
 
 def _make_validated_handler(
