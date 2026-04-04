@@ -3,44 +3,29 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-
-def _is_basemodel_subclass(v: Any) -> bool:
-    return isinstance(v, type) and issubclass(v, BaseModel)
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class Primitive(BaseModel):
+class Primitive[I: BaseModel, O: BaseModel](BaseModel):
     """Base class for all plan primitives.
 
-    Every primitive has a typed input boundary and a typed output boundary.
-    Input/output are Pydantic BaseModel subclasses that define the state
+    Every primitive is parameterized with input (I) and output (O) state
+    types.  These are Pydantic BaseModel subclasses that define the state
     keys the primitive reads from and writes back to its parent scope.
+    Type information is accessible at runtime via ``get_type_args()``.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    input: type[BaseModel]
-    output: type[BaseModel]
 
-    @model_validator(mode="after")
-    def _validate_type_fields(self) -> Primitive:
-        if not _is_basemodel_subclass(self.input):
-            raise ValueError(f"Primitive: 'input' must be a BaseModel subclass, got {self.input}")
-        if not _is_basemodel_subclass(self.output):
-            raise ValueError(f"Primitive: 'output' must be a BaseModel subclass, got {self.output}")
-        return self
-
-
-class Sequence(Primitive):
+class Sequence[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Execute steps in order, passing state between them."""
 
     steps: list[Primitive] = Field(min_length=1)
 
 
-class Loop(Primitive):
+class Loop[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Iterate over a collection in state, executing body per item.
 
     The ``over`` callable extracts the collection from the input state.
@@ -48,13 +33,13 @@ class Loop(Primitive):
     during iteration.
     """
 
-    over: Callable
+    over: Callable[[I], list]
     item_key: str = Field(min_length=1)
     body: Primitive
     max_iterations: int = Field(default=100, ge=1)
 
 
-class Retry(Primitive):
+class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Execute body, evaluate condition, repeat up to max_attempts times.
 
     The ``until`` callable checks a condition on the state — when it returns
@@ -63,12 +48,12 @@ class Retry(Primitive):
     """
 
     max_attempts: int = Field(ge=1)
-    until: Callable
+    until: Callable[[I], bool]
     body: Primitive
     on_exhausted: str
 
 
-class Conditional(Primitive):
+class Conditional[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Branch based on a state condition.
 
     The ``condition`` callable evaluates the state and returns a boolean.
@@ -76,12 +61,12 @@ class Conditional(Primitive):
     provided, it executes.  Otherwise, the primitive is a no-op.
     """
 
-    condition: Callable
+    condition: Callable[[I], bool]
     then_branch: Primitive
     else_branch: Primitive | None = None
 
 
-class Gate(Primitive):
+class Gate[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Block execution until external input is received.
 
     The ``condition`` callable determines whether the gate activates.
@@ -90,12 +75,12 @@ class Gate(Primitive):
     the interaction method (e.g. "human_stdin").
     """
 
-    condition: Callable
+    condition: Callable[[I], bool]
     interaction: str = Field(min_length=1)
     prompt_key: str = Field(min_length=1)
 
 
-class Action(Primitive):
+class Action[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """A deterministic, non-AI step.
 
     Wraps a plain function that transforms input state to output state
@@ -103,7 +88,19 @@ class Action(Primitive):
     PR submission, file generation.
     """
 
-    function: Callable
+    function: Callable[[I], O]
+
+
+def get_type_args(prim: Primitive) -> tuple[type[BaseModel], type[BaseModel]]:
+    """Extract (input_type, output_type) from a parameterized primitive.
+
+    Raises TypeError if the primitive was not parameterized.
+    """
+    metadata = type(prim).__pydantic_generic_metadata__
+    args = metadata["args"]
+    if not args:
+        raise TypeError("Primitive must be parameterized: use Primitive[InputType, OutputType]")
+    return args[0], args[1]
 
 
 # Resolve forward references for recursive primitive nesting.

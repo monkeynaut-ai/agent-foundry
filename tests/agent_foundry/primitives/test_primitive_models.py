@@ -13,6 +13,7 @@ from agent_foundry.primitives.models import (
     Primitive,
     Retry,
     Sequence,
+    get_type_args,
 )
 
 
@@ -24,29 +25,24 @@ class StubOutput(BaseModel):
     result: str
 
 
+# ======================================================================
+# Primitive Base
+# ======================================================================
+
+
 class TestPrimitiveBase:
-    """Primitive base model enforces input and output."""
+    """Primitive base model is parameterized with input/output types."""
 
-    def test_given_valid_fields_when_created_then_succeeds(self):
-        p = Primitive(input=StubInput, output=StubOutput)
-        assert p.input is StubInput
-        assert p.output is StubOutput
+    def test_given_type_params_when_created_then_succeeds(self):
+        p = Primitive[StubInput, StubOutput]()
+        input_type, output_type = get_type_args(p)
+        assert input_type is StubInput
+        assert output_type is StubOutput
 
-    def test_given_missing_input_when_created_then_raises(self):
-        with pytest.raises(ValidationError):
-            Primitive(output=StubOutput)
-
-    def test_given_missing_output_when_created_then_raises(self):
-        with pytest.raises(ValidationError):
-            Primitive(input=StubInput)
-
-    def test_given_non_basemodel_input_when_created_then_raises(self):
-        with pytest.raises(ValidationError):
-            Primitive(input=str, output=StubOutput)
-
-    def test_given_non_basemodel_output_when_created_then_raises(self):
-        with pytest.raises(ValidationError):
-            Primitive(input=StubInput, output=str)
+    def test_get_type_args_on_unparameterized_raises(self):
+        p = Primitive()
+        with pytest.raises(TypeError, match="must be parameterized"):
+            get_type_args(p)
 
 
 # -- Fixture models for Loop tests --
@@ -125,37 +121,32 @@ class TestSequence:
     """Sequence primitive executes steps in order."""
 
     def test_given_valid_steps_when_created_then_succeeds(self):
-        inner = Primitive(input=StubInput, output=StubOutput)
-        seq = Sequence(
-            input=StubInput,
-            output=StubOutput,
-            steps=[inner],
-        )
+        inner = Primitive[StubInput, StubOutput]()
+        seq = Sequence[StubInput, StubOutput](steps=[inner])
         assert len(seq.steps) == 1
         assert isinstance(seq.steps[0], Primitive)
 
     def test_given_multiple_steps_when_created_then_succeeds(self):
-        a = Primitive(input=StubInput, output=StubOutput)
-        b = Primitive(input=StubInput, output=StubOutput)
-        c = Primitive(input=StubInput, output=StubOutput)
-        seq = Sequence(
-            input=StubInput,
-            output=StubOutput,
-            steps=[a, b, c],
-        )
+        a = Primitive[StubInput, StubOutput]()
+        b = Primitive[StubInput, StubOutput]()
+        c = Primitive[StubInput, StubOutput]()
+        seq = Sequence[StubInput, StubOutput](steps=[a, b, c])
         assert len(seq.steps) == 3
 
     def test_given_empty_steps_when_created_then_raises(self):
         with pytest.raises(ValidationError):
-            Sequence(
-                input=StubInput,
-                output=StubOutput,
-                steps=[],
-            )
+            Sequence[StubInput, StubOutput](steps=[])
 
     def test_given_no_steps_when_created_then_raises(self):
         with pytest.raises(ValidationError):
-            Sequence(input=StubInput, output=StubOutput)
+            Sequence[StubInput, StubOutput]()
+
+    def test_type_args_preserved(self):
+        inner = Primitive[StubInput, StubOutput]()
+        seq = Sequence[StubInput, StubOutput](steps=[inner])
+        input_type, output_type = get_type_args(seq)
+        assert input_type is StubInput
+        assert output_type is StubOutput
 
 
 # ======================================================================
@@ -167,10 +158,8 @@ class TestLoop:
     """Loop primitive iterates over a collection in state."""
 
     def test_given_valid_config_when_created_then_succeeds(self):
-        body = Primitive(input=StubInput, output=StubOutput)
-        loop = Loop(
-            input=LoopInput,
-            output=LoopOutput,
+        body = Primitive[StubInput, StubOutput]()
+        loop = Loop[LoopInput, LoopOutput](
             over=lambda state: state.change_sets,
             item_key="current_change_set",
             body=body,
@@ -179,10 +168,8 @@ class TestLoop:
         assert loop.max_iterations == 100
 
     def test_given_custom_max_iterations_when_created_then_stored(self):
-        body = Primitive(input=StubInput, output=StubOutput)
-        loop = Loop(
-            input=LoopInput,
-            output=LoopOutput,
+        body = Primitive[StubInput, StubOutput]()
+        loop = Loop[LoopInput, LoopOutput](
             over=lambda state: state.change_sets,
             item_key="current_change_set",
             body=body,
@@ -191,11 +178,9 @@ class TestLoop:
         assert loop.max_iterations == 50
 
     def test_given_zero_max_iterations_when_created_then_raises(self):
-        body = Primitive(input=StubInput, output=StubOutput)
+        body = Primitive[StubInput, StubOutput]()
         with pytest.raises(ValidationError):
-            Loop(
-                input=LoopInput,
-                output=LoopOutput,
+            Loop[LoopInput, LoopOutput](
                 over=lambda state: state.change_sets,
                 item_key="current_change_set",
                 body=body,
@@ -203,31 +188,25 @@ class TestLoop:
             )
 
     def test_given_empty_item_key_when_created_then_raises(self):
-        body = Primitive(input=StubInput, output=StubOutput)
+        body = Primitive[StubInput, StubOutput]()
         with pytest.raises(ValidationError):
-            Loop(
-                input=LoopInput,
-                output=LoopOutput,
+            Loop[LoopInput, LoopOutput](
                 over=lambda state: state.change_sets,
                 item_key="",
                 body=body,
             )
 
     def test_given_missing_over_when_created_then_raises(self):
-        body = Primitive(input=StubInput, output=StubOutput)
+        body = Primitive[StubInput, StubOutput]()
         with pytest.raises(ValidationError):
-            Loop(
-                input=LoopInput,
-                output=LoopOutput,
+            Loop[LoopInput, LoopOutput](
                 item_key="item",
                 body=body,
             )
 
     def test_over_callable_is_invocable(self):
-        body = Primitive(input=StubInput, output=StubOutput)
-        loop = Loop(
-            input=LoopInput,
-            output=LoopOutput,
+        body = Primitive[StubInput, StubOutput]()
+        loop = Loop[LoopInput, LoopOutput](
             over=lambda state: state.change_sets,
             item_key="current_change_set",
             body=body,
@@ -247,10 +226,8 @@ class TestRetry:
     """Retry primitive repeats body until condition met or exhausted."""
 
     def test_given_valid_config_when_created_then_succeeds(self):
-        body = Primitive(input=StubInput, output=StubOutput)
-        retry = Retry(
-            input=RetryInput,
-            output=RetryOutput,
+        body = Primitive[StubInput, StubOutput]()
+        retry = Retry[RetryInput, RetryOutput](
             max_attempts=2,
             until=lambda state: state.no_must_fix,
             body=body,
@@ -260,10 +237,8 @@ class TestRetry:
         assert retry.on_exhausted == "escalate"
 
     def test_until_callable_is_invocable(self):
-        body = Primitive(input=StubInput, output=StubOutput)
-        retry = Retry(
-            input=RetryInput,
-            output=RetryOutput,
+        body = Primitive[StubInput, StubOutput]()
+        retry = Retry[RetryInput, RetryOutput](
             max_attempts=2,
             until=lambda state: state.no_must_fix,
             body=body,
@@ -273,11 +248,9 @@ class TestRetry:
         assert retry.until(state) is True
 
     def test_given_zero_max_attempts_when_created_then_raises(self):
-        body = Primitive(input=StubInput, output=StubOutput)
+        body = Primitive[StubInput, StubOutput]()
         with pytest.raises(ValidationError):
-            Retry(
-                input=RetryInput,
-                output=RetryOutput,
+            Retry[RetryInput, RetryOutput](
                 max_attempts=0,
                 until=lambda state: state.no_must_fix,
                 body=body,
@@ -285,11 +258,9 @@ class TestRetry:
             )
 
     def test_given_missing_on_exhausted_when_created_then_raises(self):
-        body = Primitive(input=StubInput, output=StubOutput)
+        body = Primitive[StubInput, StubOutput]()
         with pytest.raises(ValidationError):
-            Retry(
-                input=RetryInput,
-                output=RetryOutput,
+            Retry[RetryInput, RetryOutput](
                 max_attempts=2,
                 until=lambda state: state.no_must_fix,
                 body=body,
@@ -305,11 +276,9 @@ class TestConditional:
     """Conditional primitive branches based on state."""
 
     def test_given_both_branches_when_created_then_succeeds(self):
-        then = Primitive(input=StubInput, output=StubOutput)
-        else_ = Primitive(input=StubInput, output=StubOutput)
-        cond = Conditional(
-            input=CondInput,
-            output=CondOutput,
+        then = Primitive[StubInput, StubOutput]()
+        else_ = Primitive[StubInput, StubOutput]()
+        cond = Conditional[CondInput, CondOutput](
             condition=lambda state: state.has_findings,
             then_branch=then,
             else_branch=else_,
@@ -318,20 +287,16 @@ class TestConditional:
         assert isinstance(cond.else_branch, Primitive)
 
     def test_given_no_else_branch_when_created_then_none(self):
-        then = Primitive(input=StubInput, output=StubOutput)
-        cond = Conditional(
-            input=CondInput,
-            output=CondOutput,
+        then = Primitive[StubInput, StubOutput]()
+        cond = Conditional[CondInput, CondOutput](
             condition=lambda state: state.has_findings,
             then_branch=then,
         )
         assert cond.else_branch is None
 
     def test_condition_callable_is_invocable(self):
-        then = Primitive(input=StubInput, output=StubOutput)
-        cond = Conditional(
-            input=CondInput,
-            output=CondOutput,
+        then = Primitive[StubInput, StubOutput]()
+        cond = Conditional[CondInput, CondOutput](
             condition=lambda state: state.has_findings,
             then_branch=then,
         )
@@ -340,18 +305,14 @@ class TestConditional:
 
     def test_given_missing_then_branch_when_created_then_raises(self):
         with pytest.raises(ValidationError):
-            Conditional(
-                input=CondInput,
-                output=CondOutput,
+            Conditional[CondInput, CondOutput](
                 condition=lambda state: state.has_findings,
             )
 
     def test_given_missing_condition_when_created_then_raises(self):
-        then = Primitive(input=StubInput, output=StubOutput)
+        then = Primitive[StubInput, StubOutput]()
         with pytest.raises(ValidationError):
-            Conditional(
-                input=CondInput,
-                output=CondOutput,
+            Conditional[CondInput, CondOutput](
                 then_branch=then,
             )
 
@@ -365,9 +326,7 @@ class TestGate:
     """Gate primitive blocks execution until external input."""
 
     def test_given_valid_config_when_created_then_succeeds(self):
-        gate = Gate(
-            input=GateInput,
-            output=GateOutput,
+        gate = Gate[GateInput, GateOutput](
             condition=lambda state: state.must_fix_remain,
             interaction="human_stdin",
             prompt_key="escalation_context",
@@ -376,9 +335,7 @@ class TestGate:
         assert gate.prompt_key == "escalation_context"
 
     def test_condition_callable_is_invocable(self):
-        gate = Gate(
-            input=GateInput,
-            output=GateOutput,
+        gate = Gate[GateInput, GateOutput](
             condition=lambda state: state.must_fix_remain,
             interaction="human_stdin",
             prompt_key="escalation_context",
@@ -387,9 +344,7 @@ class TestGate:
         assert gate.condition(state) is True
 
     def test_given_false_condition_gate_is_skippable(self):
-        gate = Gate(
-            input=GateInput,
-            output=GateOutput,
+        gate = Gate[GateInput, GateOutput](
             condition=lambda state: state.must_fix_remain,
             interaction="human_stdin",
             prompt_key="escalation_context",
@@ -399,27 +354,21 @@ class TestGate:
 
     def test_given_missing_interaction_when_created_then_raises(self):
         with pytest.raises(ValidationError):
-            Gate(
-                input=GateInput,
-                output=GateOutput,
+            Gate[GateInput, GateOutput](
                 condition=lambda state: state.must_fix_remain,
                 prompt_key="escalation_context",
             )
 
     def test_given_missing_prompt_key_when_created_then_raises(self):
         with pytest.raises(ValidationError):
-            Gate(
-                input=GateInput,
-                output=GateOutput,
+            Gate[GateInput, GateOutput](
                 condition=lambda state: state.must_fix_remain,
                 interaction="human_stdin",
             )
 
     def test_given_empty_interaction_when_created_then_raises(self):
         with pytest.raises(ValidationError):
-            Gate(
-                input=GateInput,
-                output=GateOutput,
+            Gate[GateInput, GateOutput](
                 condition=lambda state: state.must_fix_remain,
                 interaction="",
                 prompt_key="escalation_context",
@@ -435,26 +384,16 @@ class TestAction:
     """Action primitive wraps a deterministic, non-AI function."""
 
     def test_given_valid_function_when_created_then_succeeds(self):
-        action = Action(
-            input=CommitInput,
-            output=CommitOutput,
-            function=fake_commit,
-        )
+        action = Action[CommitInput, CommitOutput](function=fake_commit)
         assert callable(action.function)
 
     def test_function_is_invocable(self):
-        action = Action(
-            input=CommitInput,
-            output=CommitOutput,
-            function=fake_commit,
-        )
+        action = Action[CommitInput, CommitOutput](function=fake_commit)
         result = action.function(CommitInput(workspace_volume="vol-1"))
         assert result.commit_hash == "abc123"
 
     def test_given_lambda_function_when_created_then_succeeds(self):
-        action = Action(
-            input=StubInput,
-            output=StubOutput,
+        action = Action[StubInput, StubOutput](
             function=lambda state: StubOutput(result="done"),
         )
         result = action.function(StubInput(value="test"))
@@ -462,10 +401,7 @@ class TestAction:
 
     def test_given_missing_function_when_created_then_raises(self):
         with pytest.raises(ValidationError):
-            Action(
-                input=CommitInput,
-                output=CommitOutput,
-            )
+            Action[CommitInput, CommitOutput]()
 
 
 # ======================================================================
@@ -477,32 +413,20 @@ class TestRecursiveNesting:
     """Primitives can be nested recursively via direct object references."""
 
     def test_sequence_containing_loop(self):
-        body = Primitive(input=StubInput, output=StubOutput)
-        loop = Loop(
-            input=LoopInput,
-            output=LoopOutput,
+        body = Primitive[StubInput, StubOutput]()
+        loop = Loop[LoopInput, LoopOutput](
             over=lambda state: state.change_sets,
             item_key="current",
             body=body,
         )
-        seq = Sequence(
-            input=StubInput,
-            output=StubOutput,
-            steps=[loop],
-        )
+        seq = Sequence[StubInput, StubOutput](steps=[loop])
         assert isinstance(seq.steps[0], Loop)
 
     def test_retry_containing_sequence(self):
-        a = Primitive(input=StubInput, output=StubOutput)
-        b = Primitive(input=StubInput, output=StubOutput)
-        inner_seq = Sequence(
-            input=StubInput,
-            output=StubOutput,
-            steps=[a, b],
-        )
-        retry = Retry(
-            input=RetryInput,
-            output=RetryOutput,
+        a = Primitive[StubInput, StubOutput]()
+        b = Primitive[StubInput, StubOutput]()
+        inner_seq = Sequence[StubInput, StubOutput](steps=[a, b])
+        retry = Retry[RetryInput, RetryOutput](
             max_attempts=2,
             until=lambda state: state.no_must_fix,
             body=inner_seq,
@@ -511,25 +435,17 @@ class TestRecursiveNesting:
         assert isinstance(retry.body, Sequence)
 
     def test_sequence_containing_conditional_containing_loop(self):
-        body = Primitive(input=StubInput, output=StubOutput)
-        loop = Loop(
-            input=LoopInput,
-            output=LoopOutput,
+        body = Primitive[StubInput, StubOutput]()
+        loop = Loop[LoopInput, LoopOutput](
             over=lambda state: state.change_sets,
             item_key="current",
             body=body,
         )
-        cond = Conditional(
-            input=CondInput,
-            output=CondOutput,
+        cond = Conditional[CondInput, CondOutput](
             condition=lambda state: state.has_findings,
             then_branch=loop,
         )
-        seq = Sequence(
-            input=StubInput,
-            output=StubOutput,
-            steps=[cond],
-        )
+        seq = Sequence[StubInput, StubOutput](steps=[cond])
         assert isinstance(seq.steps[0], Conditional)
         assert isinstance(seq.steps[0].then_branch, Loop)
 
@@ -552,6 +468,7 @@ class TestPublicAPI:
             PrimitivePlan,
             Retry,
             Sequence,
+            get_type_args,
         )
 
         assert Primitive is not None
@@ -562,3 +479,4 @@ class TestPublicAPI:
         assert Gate is not None
         assert Action is not None
         assert PrimitivePlan is not None
+        assert get_type_args is not None
