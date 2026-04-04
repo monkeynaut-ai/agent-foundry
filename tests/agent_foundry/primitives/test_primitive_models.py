@@ -467,7 +467,6 @@ class TestPublicAPI:
             PrimitivePlan,
             Retry,
             Sequence,
-            get_type_args,
         )
 
         assert Primitive is not None
@@ -478,4 +477,3 @@ class TestPublicAPI:
         assert Gate is not None
         assert Action is not None
         assert PrimitivePlan is not None
-        assert get_type_args is not None

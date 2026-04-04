@@ -8,7 +8,6 @@ from agent_foundry.primitives.models import (
     Primitive,
     Retry,
     Sequence,
-    get_type_args,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
 
@@ -21,5 +20,4 @@ __all__ = [
     "PrimitivePlan",
     "Retry",
     "Sequence",
-    "get_type_args",
 ]
