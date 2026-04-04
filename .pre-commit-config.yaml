@@ -12,3 +12,9 @@ repos:
         entry: python -m py_compile
         language: system
         types: [python]
+      - id: pytest
+        name: pytest
+        entry: pdm run pytest tests/ -x -q -m "not benchmark and not integration"
+        language: system
+        pass_filenames: false
+        always_run: true
