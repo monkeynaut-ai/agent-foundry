@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Primitive[I: BaseModel, O: BaseModel](BaseModel):
@@ -17,6 +17,16 @@ class Primitive[I: BaseModel, O: BaseModel](BaseModel):
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @model_validator(mode="after")
+    def _require_parameterization(self) -> Primitive:
+        metadata = type(self).__pydantic_generic_metadata__
+        if not metadata["args"]:
+            cls_name = type(self).__name__
+            raise ValueError(
+                f"{cls_name} must be parameterized: use {cls_name}[InputType, OutputType](...)"
+            )
+        return self
 
 
 class Sequence[I: BaseModel, O: BaseModel](Primitive[I, O]):

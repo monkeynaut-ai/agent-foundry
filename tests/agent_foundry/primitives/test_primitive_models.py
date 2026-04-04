@@ -39,10 +39,9 @@ class TestPrimitiveBase:
         assert input_type is StubInput
         assert output_type is StubOutput
 
-    def test_get_type_args_on_unparameterized_raises(self):
-        p = Primitive()
-        with pytest.raises(TypeError, match="must be parameterized"):
-            get_type_args(p)
+    def test_unparameterized_primitive_raises_at_construction(self):
+        with pytest.raises(ValidationError, match="must be parameterized"):
+            Primitive()
 
 
 # -- Fixture models for Loop tests --
