@@ -9,6 +9,7 @@ from agent_foundry.primitives.models import (
     Retry,
     Sequence,
 )
+from agent_foundry.primitives.validators import validate_primitive
 
 
 class PrimitivePlan:
@@ -20,6 +21,10 @@ class PrimitivePlan:
 
     def __init__(self, root: Primitive) -> None:
         self.root = root
+
+    def validate(self) -> None:
+        """Validate type compatibility across the entire primitive graph."""
+        validate_primitive(self.root)
 
     def all_primitives(self) -> list[Primitive]:
         """Return all primitives in the graph."""
