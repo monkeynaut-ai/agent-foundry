@@ -5,7 +5,7 @@ from __future__ import annotations
 from agent_foundry.primitives.errors import InvalidPromptKeyError, TypeMismatchError
 from agent_foundry.primitives.models import (
     Conditional,
-    Gate,
+    GateAction,
     Loop,
     Primitive,
     Retry,
@@ -28,8 +28,8 @@ def validate_primitive(prim: Primitive) -> None:
         _validate_retry(prim)
     elif isinstance(prim, Conditional):
         _validate_conditional(prim)
-    elif isinstance(prim, Gate):
-        _validate_gate(prim)
+    elif isinstance(prim, GateAction):
+        _validate_gate_action(prim)
 
 
 def _types_match(a: type, b: type) -> bool:
@@ -230,13 +230,13 @@ def _validate_conditional(cond: Conditional) -> None:
     validate_primitive(cond.then_branch)
 
 
-def _validate_gate(gate: Gate) -> None:
+def _validate_gate_action(gate: GateAction) -> None:
     input_type, _ = get_type_args(gate)
     available = list(input_type.model_fields.keys())
     if gate.prompt_key not in available:
         raise InvalidPromptKeyError(
             message=(
-                f"Gate prompt_key '{gate.prompt_key}' not found in "
+                f"GateAction prompt_key '{gate.prompt_key}' not found in "
                 f"{input_type.__name__}; available fields: {available}"
             ),
             prompt_key=gate.prompt_key,

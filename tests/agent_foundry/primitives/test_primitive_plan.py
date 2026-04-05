@@ -63,7 +63,6 @@ class TestPrimitivePlan:
             max_attempts=2,
             until=lambda s: True,
             body=inner,
-            on_exhausted="fail",
         )
         plan = PrimitivePlan(root=retry)
         assert len(plan.all_primitives()) == 2
