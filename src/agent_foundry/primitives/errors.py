@@ -19,9 +19,17 @@ class TypeMismatchError(PrimitiveValidationError):
 
 
 class InvalidPromptKeyError(PrimitiveValidationError):
-    """Gate prompt_key not found in input type's model_fields."""
+    """GateAction prompt_key not found in input type's model_fields."""
 
     def __init__(self, message: str, prompt_key: str, available_fields: list[str]):
         self.prompt_key = prompt_key
         self.available_fields = available_fields
+        super().__init__(message)
+
+
+class PrimitiveCompilationError(Exception):
+    """Raised when a primitive cannot be compiled or validated at runtime."""
+
+    def __init__(self, message: str, primitive_type: str = ""):
+        self.primitive_type = primitive_type
         super().__init__(message)
