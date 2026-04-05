@@ -13,6 +13,7 @@ from agent_foundry.primitives.models import (
     Conditional,
     FunctionAction,
     Loop,
+    Retry,
     Sequence,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
@@ -445,3 +446,80 @@ class TestCompileLoop:
         graph = compile_primitive(plan)
         result = graph.invoke({"items": ["x"], "processed": []})
         assert result["processed"] == ["X"]
+
+
+# ======================================================================
+# Retry Compilation
+# ======================================================================
+
+
+class RetryState(BaseModel):
+    attempts: int = 0
+    done: bool = False
+
+
+class TestCompileRetry:
+    def test_succeeds_first_attempt(self):
+        body = FunctionAction[RetryState, RetryState](
+            function=lambda s: RetryState(attempts=s.attempts + 1, done=True),
+        )
+        retry = Retry[RetryState, RetryState](
+            max_attempts=3,
+            until=lambda s: s.done,
+            body=body,
+        )
+        plan = PrimitivePlan(root=retry)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"attempts": 0, "done": False})
+        assert result["attempts"] == 1
+        assert result["done"] is True
+
+    def test_succeeds_second_attempt(self):
+        call_count = {"n": 0}
+
+        def body_fn(s: RetryState) -> RetryState:
+            call_count["n"] += 1
+            return RetryState(attempts=s.attempts + 1, done=call_count["n"] >= 2)
+
+        body = FunctionAction[RetryState, RetryState](function=body_fn)
+        retry = Retry[RetryState, RetryState](
+            max_attempts=5,
+            until=lambda s: s.done,
+            body=body,
+        )
+        plan = PrimitivePlan(root=retry)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"attempts": 0, "done": False})
+        assert result["attempts"] == 2
+        assert result["done"] is True
+
+    def test_exhausted_exits_normally(self):
+        """When max_attempts exhausted, Retry exits with domain state intact."""
+        body = FunctionAction[RetryState, RetryState](
+            function=lambda s: RetryState(attempts=s.attempts + 1, done=False),
+        )
+        retry = Retry[RetryState, RetryState](
+            max_attempts=2,
+            until=lambda s: s.done,
+            body=body,
+        )
+        plan = PrimitivePlan(root=retry)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"attempts": 0, "done": False})
+        assert result["attempts"] == 2
+        assert result["done"] is False
+
+    def test_max_attempts_one(self):
+        body = FunctionAction[RetryState, RetryState](
+            function=lambda s: RetryState(attempts=s.attempts + 1, done=False),
+        )
+        retry = Retry[RetryState, RetryState](
+            max_attempts=1,
+            until=lambda s: s.done,
+            body=body,
+        )
+        plan = PrimitivePlan(root=retry)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"attempts": 0, "done": False})
+        assert result["attempts"] == 1
+        assert result["done"] is False

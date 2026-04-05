@@ -14,6 +14,7 @@ from agent_foundry.primitives.models import (
     FunctionAction,
     Loop,
     Primitive,
+    Retry,
     Sequence,
     get_type_args,
 )
@@ -324,3 +325,46 @@ def _compile_loop(
 
 
 register_compiler(Loop, _compile_loop)
+
+
+def _compile_retry(
+    graph: StateGraph,
+    retry: Retry,
+    prefix: str,
+    gate_ids: list[str],
+) -> tuple[str, str]:
+    retry_in, retry_out = get_type_args(retry)
+    body_in, body_out = get_type_args(retry.body)
+
+    # Compile body as isolated subgraph
+    body_state_type = _derive_state_type(body_in, body_out)
+    body_graph = StateGraph(body_state_type)
+    body_entry, body_exit = _compile_node(body_graph, retry.body, f"{prefix}_body", gate_ids)
+    body_graph.set_entry_point(body_entry)
+    body_graph.add_edge(body_exit, END)
+    compiled_body = body_graph.compile()
+
+    until_fn = retry.until
+    max_attempts = retry.max_attempts
+
+    # Wrapper node: retry loop with scoped body execution
+    node_id = f"{prefix}_retry"
+
+    def retry_node(state: dict[str, Any]) -> dict[str, Any]:
+        current_state = _scope_in(state, retry_in)
+        for _ in range(max_attempts):
+            # Execute body in isolation
+            scoped = _scope_in(current_state, body_in)
+            result = compiled_body.invoke(scoped)
+            current_state.update(_scope_out(result, body_out))
+            # Check until condition
+            model = retry_in.model_validate(current_state)
+            if until_fn(model):
+                break
+        return _scope_out(current_state, retry_out)
+
+    graph.add_node(node_id, retry_node)
+    return (node_id, node_id)
+
+
+register_compiler(Retry, _compile_retry)
