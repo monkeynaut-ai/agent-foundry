@@ -12,6 +12,7 @@ from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     Conditional,
     FunctionAction,
+    GateAction,
     Loop,
     Primitive,
     Retry,
@@ -368,3 +369,22 @@ def _compile_retry(
 
 
 register_compiler(Retry, _compile_retry)
+
+
+def _compile_gate_action(
+    graph: StateGraph,
+    gate: GateAction,
+    prefix: str,
+    gate_ids: list[str],
+) -> tuple[str, str]:
+    gate_id = prefix
+
+    def gate_node(state: dict[str, Any]) -> dict[str, Any]:
+        return state  # interrupt_before pauses BEFORE this node
+
+    graph.add_node(gate_id, gate_node)
+    gate_ids.append(gate_id)
+    return (gate_id, gate_id)
+
+
+register_compiler(GateAction, _compile_gate_action)

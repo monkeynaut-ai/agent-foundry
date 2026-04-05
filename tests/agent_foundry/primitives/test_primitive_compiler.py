@@ -12,6 +12,7 @@ from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     Conditional,
     FunctionAction,
+    GateAction,
     Loop,
     Retry,
     Sequence,
@@ -523,3 +524,57 @@ class TestCompileRetry:
         result = graph.invoke({"attempts": 0, "done": False})
         assert result["attempts"] == 1
         assert result["done"] is False
+
+
+# ======================================================================
+# GateAction Compilation
+# ======================================================================
+
+
+class GateInput(BaseModel):
+    escalation_context: str
+    value: str = ""
+
+
+class GateOutput(BaseModel):
+    escalation_context: str
+    value: str
+    human_response: str = ""
+
+
+class TestCompileGateAction:
+    def test_auto_injects_checkpointer(self):
+        """Compile should succeed with a GateAction — MemorySaver auto-injected."""
+        gate = GateAction[GateInput, GateOutput](
+            interaction="human_stdin",
+            prompt_key="escalation_context",
+        )
+        plan = PrimitivePlan(root=gate)
+        graph = compile_primitive(plan)
+        assert graph is not None
+
+    def test_interrupts_execution(self):
+        gate = GateAction[GateInput, GateOutput](
+            interaction="human_stdin",
+            prompt_key="escalation_context",
+        )
+        plan = PrimitivePlan(root=gate)
+        graph = compile_primitive(plan)
+        result = graph.invoke(
+            {"escalation_context": "need help", "value": "stuck"},
+            config={"configurable": {"thread_id": "test-1"}},
+        )
+        assert result["escalation_context"] == "need help"
+
+    def test_prompt_key_value_in_interrupted_state(self):
+        gate = GateAction[GateInput, GateOutput](
+            interaction="human_stdin",
+            prompt_key="escalation_context",
+        )
+        plan = PrimitivePlan(root=gate)
+        graph = compile_primitive(plan)
+        result = graph.invoke(
+            {"escalation_context": "review failed twice", "value": "blocked"},
+            config={"configurable": {"thread_id": "test-2"}},
+        )
+        assert result["escalation_context"] == "review failed twice"
