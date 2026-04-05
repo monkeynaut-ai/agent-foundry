@@ -12,6 +12,7 @@ from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     Conditional,
     FunctionAction,
+    Loop,
     Primitive,
     Sequence,
     get_type_args,
@@ -273,3 +274,53 @@ def _compile_conditional(
 
 
 register_compiler(Conditional, _compile_conditional)
+
+
+def _compile_loop(
+    graph: StateGraph,
+    loop: Loop,
+    prefix: str,
+    gate_ids: list[str],
+) -> tuple[str, str]:
+    loop_in, loop_out = get_type_args(loop)
+    body_in, body_out = get_type_args(loop.body)
+
+    # Compile body as isolated subgraph
+    body_state_type = _derive_state_type(body_in, body_out)
+    body_graph = StateGraph(body_state_type)
+    body_entry, body_exit = _compile_node(body_graph, loop.body, f"{prefix}_body", gate_ids)
+    body_graph.set_entry_point(body_entry)
+    body_graph.add_edge(body_exit, END)
+    compiled_body = body_graph.compile()
+
+    over_fn = loop.over
+    item_key = loop.item_key
+    max_iter = loop.max_iterations
+
+    # Wrapper node: iterates, scoping in/out per iteration
+    node_id = f"{prefix}_loop"
+
+    def loop_node(state: dict[str, Any]) -> dict[str, Any]:
+        model = loop_in.model_validate(state)
+        items = over_fn(model)
+        current_state = dict(state)
+
+        for i, item in enumerate(items):
+            if i >= max_iter:
+                break
+            # Scope in: body.I fields from current state + item injection
+            scoped = _scope_in(current_state, body_in)
+            scoped[item_key] = item
+            # Execute body in isolation
+            result = compiled_body.invoke(scoped)
+            # Scope out: merge body.O fields back
+            updates = _scope_out(result, body_out)
+            current_state.update(updates)
+
+        return _scope_out(current_state, loop_out)
+
+    graph.add_node(node_id, loop_node)
+    return (node_id, node_id)
+
+
+register_compiler(Loop, _compile_loop)

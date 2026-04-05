@@ -12,6 +12,7 @@ from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     Conditional,
     FunctionAction,
+    Loop,
     Sequence,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
@@ -358,3 +359,89 @@ class TestCompileConditional:
         graph = compile_primitive(plan)
         result = graph.invoke({"value": "original", "flag": True})
         assert result["value"] == "detoured"
+
+
+# ======================================================================
+# Loop Compilation
+# ======================================================================
+
+
+class LoopInput(BaseModel):
+    items: list[str]
+    processed: list[str] = []
+    current_item: str = ""
+
+
+class TestCompileLoop:
+    def test_iterates_over_collection(self):
+        body = FunctionAction[LoopInput, LoopInput](
+            function=lambda s: LoopInput(
+                items=s.items,
+                processed=[*s.processed, s.current_item.upper()],
+                current_item=s.current_item,
+            ),
+        )
+        loop = Loop[LoopInput, LoopInput](
+            over=lambda s: s.items,
+            item_key="current_item",
+            body=body,
+        )
+        plan = PrimitivePlan(root=loop)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"items": ["a", "b", "c"], "processed": []})
+        assert result["processed"] == ["A", "B", "C"]
+
+    def test_respects_max_iterations(self):
+        body = FunctionAction[LoopInput, LoopInput](
+            function=lambda s: LoopInput(
+                items=s.items,
+                processed=[*s.processed, s.current_item],
+                current_item=s.current_item,
+            ),
+        )
+        loop = Loop[LoopInput, LoopInput](
+            over=lambda s: s.items,
+            item_key="current_item",
+            body=body,
+            max_iterations=2,
+        )
+        plan = PrimitivePlan(root=loop)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"items": ["a", "b", "c", "d", "e"], "processed": []})
+        assert len(result["processed"]) == 2
+
+    def test_empty_collection(self):
+        body = FunctionAction[LoopInput, LoopInput](
+            function=lambda s: LoopInput(
+                items=s.items,
+                processed=[*s.processed, s.current_item],
+                current_item=s.current_item,
+            ),
+        )
+        loop = Loop[LoopInput, LoopInput](
+            over=lambda s: s.items,
+            item_key="current_item",
+            body=body,
+        )
+        plan = PrimitivePlan(root=loop)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"items": [], "processed": []})
+        assert result["processed"] == []
+
+    def test_single_item(self):
+        body = FunctionAction[LoopInput, LoopInput](
+            function=lambda s: LoopInput(
+                items=s.items,
+                processed=[*s.processed, s.current_item.upper()],
+                current_item=s.current_item,
+            ),
+        )
+        loop = Loop[LoopInput, LoopInput](
+            over=lambda s: s.items,
+            item_key="current_item",
+            body=body,
+        )
+        plan = PrimitivePlan(root=loop)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"items": ["x"], "processed": []})
+        assert result["processed"] == ["X"]
