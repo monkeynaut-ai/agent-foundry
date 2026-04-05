@@ -578,3 +578,95 @@ class TestCompileGateAction:
             config={"configurable": {"thread_id": "test-2"}},
         )
         assert result["escalation_context"] == "review failed twice"
+
+
+# ======================================================================
+# Nested Composition
+# ======================================================================
+
+
+class TestNestedComposition:
+    def test_sequence_of_actions(self):
+        class S(BaseModel):
+            n: int = 0
+
+        s1 = FunctionAction[S, S](function=lambda s: S(n=s.n + 1))
+        s2 = FunctionAction[S, S](function=lambda s: S(n=s.n + 10))
+        s3 = FunctionAction[S, S](function=lambda s: S(n=s.n + 100))
+        seq = Sequence[S, S](steps=[s1, s2, s3])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"n": 0})
+        assert result["n"] == 111
+
+    def test_loop_body_is_sequence(self):
+        class S(BaseModel):
+            items: list[str] = []
+            processed: list[str] = []
+            current_item: str = ""
+
+        step1 = FunctionAction[S, S](
+            function=lambda s: S(
+                items=s.items,
+                processed=s.processed,
+                current_item=s.current_item.upper(),
+            ),
+        )
+        step2 = FunctionAction[S, S](
+            function=lambda s: S(
+                items=s.items,
+                processed=[*s.processed, s.current_item],
+                current_item=s.current_item,
+            ),
+        )
+        body = Sequence[S, S](steps=[step1, step2])
+        loop = Loop[S, S](over=lambda s: s.items, item_key="current_item", body=body)
+        plan = PrimitivePlan(root=loop)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"items": ["a", "b"], "processed": []})
+        assert result["processed"] == ["A", "B"]
+
+    def test_retry_then_conditional_escalation(self):
+        """Retry exhausts, parent Conditional routes to escalation based on domain state."""
+
+        class S(BaseModel):
+            n: int = 0
+            done: bool = False
+
+        body = FunctionAction[S, S](
+            function=lambda s: S(n=s.n + 1, done=False),
+        )
+        retry = Retry[S, S](max_attempts=2, until=lambda s: s.done, body=body)
+        escalation = FunctionAction[S, S](
+            function=lambda s: S(n=s.n, done=True),
+        )
+        check_exhausted = Conditional[S, S](
+            condition=lambda s: not s.done,
+            then_branch=escalation,
+        )
+        seq = Sequence[S, S](steps=[retry, check_exhausted])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"n": 0, "done": False})
+        assert result["n"] == 2
+        assert result["done"] is True
+
+    def test_sequence_containing_conditional(self):
+        class S(BaseModel):
+            value: str = ""
+            flag: bool = True
+
+        step1 = FunctionAction[S, S](function=lambda s: S(value="step1", flag=s.flag))
+        then = FunctionAction[S, S](function=lambda s: S(value=s.value + "_then", flag=s.flag))
+        else_ = FunctionAction[S, S](function=lambda s: S(value=s.value + "_else", flag=s.flag))
+        cond = Conditional[S, S](
+            condition=lambda s: s.flag,
+            then_branch=then,
+            else_branch=else_,
+        )
+        step3 = FunctionAction[S, S](function=lambda s: S(value=s.value + "_done", flag=s.flag))
+        seq = Sequence[S, S](steps=[step1, cond, step3])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"value": "", "flag": True})
+        assert result["value"] == "step1_then_done"
