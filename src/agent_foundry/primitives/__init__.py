@@ -2,6 +2,7 @@
 
 from agent_foundry.primitives.errors import (
     InvalidPromptKeyError,
+    PrimitiveCompilationError,
     PrimitiveValidationError,
     TypeMismatchError,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "InvalidPromptKeyError",
     "Loop",
     "Primitive",
+    "PrimitiveCompilationError",
     "PrimitivePlan",
     "PrimitiveValidationError",
     "Retry",
