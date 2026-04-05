@@ -80,13 +80,17 @@ def _compile_node(
     graph: StateGraph, prim: Primitive, prefix: str, gate_ids: list[str]
 ) -> tuple[str, str]:
     """Compile a primitive into graph nodes/edges. Returns (entry_id, exit_id)."""
-    compiler = _compiler_registry.get(type(prim))
-    if compiler is None:
-        raise PrimitiveCompilationError(
-            f"No compiler registered for {type(prim).__name__}",
-            primitive_type=type(prim).__name__,
-        )
-    return compiler(graph, prim, prefix, gate_ids)
+    # Parameterized generics (e.g., FunctionAction[A, B]) create new classes.
+    # Walk MRO to find the registered base type.
+    prim_type = type(prim)
+    for cls in prim_type.__mro__:
+        compiler = _compiler_registry.get(cls)
+        if compiler is not None:
+            return compiler(graph, prim, prefix, gate_ids)
+    raise PrimitiveCompilationError(
+        f"No compiler registered for {prim_type.__name__}",
+        primitive_type=prim_type.__name__,
+    )
 
 
 # -- Entry points --

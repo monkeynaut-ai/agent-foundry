@@ -7,7 +7,10 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from agent_foundry.compiler.primitive_compiler import compile_primitive, run_primitive_plan
 from agent_foundry.primitives.errors import PrimitiveCompilationError
+from agent_foundry.primitives.models import FunctionAction
+from agent_foundry.primitives.plan import PrimitivePlan
 
 # -- Test fixtures --
 
@@ -157,3 +160,66 @@ class TestScopeOut:
 
         with pytest.raises(PrimitiveCompilationError):
             _scope_out({}, OutputState)  # missing required fields
+
+
+# ======================================================================
+# FunctionAction Compilation
+# ======================================================================
+
+
+class TransformOutput(BaseModel):
+    result: str
+
+
+class TestCompileFunctionAction:
+    def test_returns_compiled_graph(self):
+        action = FunctionAction[InputState, TransformOutput](
+            function=lambda s: TransformOutput(result=s.query.upper()),
+        )
+        plan = PrimitivePlan(root=action)
+        graph = compile_primitive(plan)
+        assert hasattr(graph, "invoke")
+
+    def test_invoke_produces_correct_output(self):
+        action = FunctionAction[InputState, TransformOutput](
+            function=lambda s: TransformOutput(result=s.query.upper()),
+        )
+        plan = PrimitivePlan(root=action)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"query": "hello"})
+        assert result["result"] == "HELLO"
+
+    def test_validates_input_boundary(self):
+        action = FunctionAction[InputState, TransformOutput](
+            function=lambda s: TransformOutput(result=s.query.upper()),
+        )
+        plan = PrimitivePlan(root=action)
+        graph = compile_primitive(plan)
+        with pytest.raises(PrimitiveCompilationError):
+            graph.invoke({})  # missing required 'query'
+
+    def test_run_primitive_plan_typed(self):
+        """run_primitive_plan accepts and returns Pydantic models."""
+        action = FunctionAction[InputState, TransformOutput](
+            function=lambda s: TransformOutput(result=s.query.upper()),
+        )
+        plan = PrimitivePlan(root=action)
+        result = run_primitive_plan(plan, InputState(query="hello"))
+        assert isinstance(result, TransformOutput)
+        assert result.result == "HELLO"
+
+    def test_run_primitive_plan_default_input(self):
+        class DefaultInput(BaseModel):
+            value: str = "default"
+
+        class DefaultOutput(BaseModel):
+            value: str
+            result: str
+
+        action = FunctionAction[DefaultInput, DefaultOutput](
+            function=lambda s: DefaultOutput(value=s.value, result=s.value.upper()),
+        )
+        plan = PrimitivePlan(root=action)
+        result = run_primitive_plan(plan)
+        assert isinstance(result, DefaultOutput)
+        assert result.result == "DEFAULT"
