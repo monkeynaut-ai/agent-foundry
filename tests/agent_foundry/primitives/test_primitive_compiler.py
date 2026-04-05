@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from agent_foundry.compiler.primitive_compiler import compile_primitive, run_primitive_plan
 from agent_foundry.primitives.errors import PrimitiveCompilationError
-from agent_foundry.primitives.models import FunctionAction
+from agent_foundry.primitives.models import FunctionAction, Sequence
 from agent_foundry.primitives.plan import PrimitivePlan
 
 # -- Test fixtures --
@@ -223,3 +223,62 @@ class TestCompileFunctionAction:
         result = run_primitive_plan(plan)
         assert isinstance(result, DefaultOutput)
         assert result.result == "DEFAULT"
+
+
+# ======================================================================
+# Sequence Compilation
+# ======================================================================
+
+
+class MidState(BaseModel):
+    query: str
+    mid: str
+
+
+class TestCompileSequence:
+    def test_single_step(self):
+        step = FunctionAction[InputState, TransformOutput](
+            function=lambda s: TransformOutput(result=s.query.upper()),
+        )
+        seq = Sequence[InputState, TransformOutput](steps=[step])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"query": "hello"})
+        assert result["result"] == "HELLO"
+
+    def test_two_steps_chain(self):
+        step1 = FunctionAction[InputState, MidState](
+            function=lambda s: MidState(query=s.query, mid=s.query.upper()),
+        )
+        step2 = FunctionAction[MidState, OutputState](
+            function=lambda s: OutputState(query=s.mid, result=f"processed:{s.mid}"),
+        )
+        seq = Sequence[InputState, OutputState](steps=[step1, step2])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"query": "hello"})
+        assert result["result"] == "processed:HELLO"
+
+    def test_three_steps_order(self):
+        """Verify steps execute in order by accumulating into a list."""
+
+        class ListState(BaseModel):
+            items: list[str] = []
+
+        def append_a(s: ListState) -> ListState:
+            return ListState(items=[*s.items, "a"])
+
+        def append_b(s: ListState) -> ListState:
+            return ListState(items=[*s.items, "b"])
+
+        def append_c(s: ListState) -> ListState:
+            return ListState(items=[*s.items, "c"])
+
+        s1 = FunctionAction[ListState, ListState](function=append_a)
+        s2 = FunctionAction[ListState, ListState](function=append_b)
+        s3 = FunctionAction[ListState, ListState](function=append_c)
+        seq = Sequence[ListState, ListState](steps=[s1, s2, s3])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"items": []})
+        assert result["items"] == ["a", "b", "c"]

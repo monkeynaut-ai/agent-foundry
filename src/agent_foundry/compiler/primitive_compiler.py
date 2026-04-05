@@ -12,6 +12,7 @@ from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     FunctionAction,
     Primitive,
+    Sequence,
     get_type_args,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
@@ -154,3 +155,58 @@ def _compile_function_action(
 
 
 register_compiler(FunctionAction, _compile_function_action)
+
+
+def _compile_sequence(
+    graph: StateGraph,
+    seq: Sequence,
+    prefix: str,
+    gate_ids: list[str],
+) -> tuple[str, str]:
+    seq_in, seq_out = get_type_args(seq)
+
+    # Build subgraph state type from ALL step I/O types (not just Sequence I/O).
+    # Intermediate types may have fields not in the Sequence's I or O that
+    # LangGraph needs to carry between steps within the subgraph.
+    all_types = [seq_in, seq_out]
+    for step in seq.steps:
+        step_in, step_out = get_type_args(step)
+        all_types.extend([step_in, step_out])
+
+    fields: dict[str, Any] = {}
+    for model in all_types:
+        for name in model.model_fields:
+            fields[name] = Any
+    sub_state_type = TypedDict("SeqState", fields, total=False)  # type: ignore[call-overload]
+    sub_graph = StateGraph(sub_state_type)
+
+    first_entry = None
+    prev_exit = None
+    for i, step in enumerate(seq.steps):
+        child_prefix = f"{prefix}_step_{i}"
+        entry, exit_ = _compile_node(sub_graph, step, child_prefix, gate_ids)
+        if first_entry is None:
+            first_entry = entry
+        if prev_exit is not None:
+            sub_graph.add_edge(prev_exit, entry)
+        prev_exit = exit_
+    assert first_entry is not None
+    assert prev_exit is not None
+
+    sub_graph.set_entry_point(first_entry)
+    sub_graph.add_edge(prev_exit, END)
+    compiled_sub = sub_graph.compile()
+
+    # Wrapper node: scope-in → execute subgraph → scope-out
+    node_id = f"{prefix}_seq"
+
+    def seq_node(state: dict[str, Any]) -> dict[str, Any]:
+        scoped_input = _scope_in(state, seq_in)
+        result = compiled_sub.invoke(scoped_input)
+        return _scope_out(result, seq_out)
+
+    graph.add_node(node_id, seq_node)
+    return (node_id, node_id)
+
+
+register_compiler(Sequence, _compile_sequence)
