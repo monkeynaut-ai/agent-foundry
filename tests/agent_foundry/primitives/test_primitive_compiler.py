@@ -670,3 +670,237 @@ class TestNestedComposition:
         graph = compile_primitive(plan)
         result = graph.invoke({"value": "", "flag": True})
         assert result["value"] == "step1_then_done"
+
+
+# ======================================================================
+# State Isolation
+# ======================================================================
+
+
+class TestStateIsolation:
+    """Verify state scoping at every composition boundary."""
+
+    def test_conditional_branches_dont_leak(self):
+        """Branch internal fields don't appear in parent output."""
+
+        class CondState(BaseModel):
+            flag: bool
+            value: str
+
+        class BranchMid(BaseModel):
+            flag: bool
+            value: str
+            branch_temp: str
+
+        # then_branch is a Sequence with an internal field
+        mid_step = FunctionAction[CondState, BranchMid](
+            function=lambda s: BranchMid(flag=s.flag, value="then", branch_temp="should_not_leak"),
+        )
+        final_step = FunctionAction[BranchMid, CondState](
+            function=lambda s: CondState(flag=s.flag, value=s.value),
+        )
+        then = Sequence[CondState, CondState](steps=[mid_step, final_step])
+        else_ = FunctionAction[CondState, CondState](
+            function=lambda s: CondState(flag=s.flag, value="else"),
+        )
+        cond = Conditional[CondState, CondState](
+            condition=lambda s: s.flag,
+            then_branch=then,
+            else_branch=else_,
+        )
+        plan = PrimitivePlan(root=cond)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"flag": True, "value": "start"})
+        assert result["value"] == "then"
+        assert "branch_temp" not in result
+
+    def test_retry_body_internals_dont_leak(self):
+        """Retry body's internal fields don't appear in retry output."""
+
+        class RS(BaseModel):
+            attempts: int = 0
+            done: bool = False
+
+        class BodyMid(BaseModel):
+            attempts: int
+            done: bool
+            debug_info: str = ""
+
+        # Body is a Sequence with an internal field
+        mid = FunctionAction[RS, BodyMid](
+            function=lambda s: BodyMid(attempts=s.attempts + 1, done=True, debug_info="internal"),
+        )
+        final = FunctionAction[BodyMid, RS](
+            function=lambda s: RS(attempts=s.attempts, done=s.done),
+        )
+        body = Sequence[RS, RS](steps=[mid, final])
+        retry = Retry[RS, RS](
+            max_attempts=3,
+            until=lambda s: s.done,
+            body=body,
+        )
+        plan = PrimitivePlan(root=retry)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"attempts": 0, "done": False})
+        assert result["attempts"] == 1
+        assert "debug_info" not in result
+
+    def test_sibling_primitives_dont_interfere(self):
+        """Two sequential steps using the same internal field name don't collide."""
+
+        class StepIn(BaseModel):
+            value: str
+
+        class StepMid(BaseModel):
+            value: str
+            temp: str
+
+        class StepOut(BaseModel):
+            value: str
+
+        step1 = FunctionAction[StepIn, StepMid](
+            function=lambda s: StepMid(value=s.value + "_a", temp="from_step1"),
+        )
+        step2 = FunctionAction[StepMid, StepOut](
+            function=lambda s: StepOut(value=s.value + "_b"),
+        )
+        seq = Sequence[StepIn, StepOut](steps=[step1, step2])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"value": "start"})
+        assert result["value"] == "start_a_b"
+        assert "temp" not in result
+
+    def test_nested_loop_in_sequence_isolation(self):
+        """Loop body internals don't leak to sequence siblings."""
+
+        class SeqState(BaseModel):
+            items: list[str]
+            results: list[str] = []
+            current_item: str = ""
+
+        class BodyState(BaseModel):
+            items: list[str]
+            results: list[str]
+            current_item: str
+            processing_temp: str = ""
+
+        pre = FunctionAction[SeqState, SeqState](
+            function=lambda s: SeqState(
+                items=s.items,
+                results=["pre"],
+                current_item=s.current_item,
+            ),
+        )
+        body = FunctionAction[BodyState, BodyState](
+            function=lambda s: BodyState(
+                items=s.items,
+                results=[*s.results, s.current_item.upper()],
+                current_item=s.current_item,
+                processing_temp="should_not_leak",
+            ),
+        )
+        loop = Loop[SeqState, SeqState](
+            over=lambda s: s.items,
+            item_key="current_item",
+            body=body,
+        )
+        post = FunctionAction[SeqState, SeqState](
+            function=lambda s: SeqState(
+                items=s.items,
+                results=[*s.results, "post"],
+                current_item=s.current_item,
+            ),
+        )
+        seq = Sequence[SeqState, SeqState](steps=[pre, loop, post])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"items": ["a", "b"], "results": []})
+        assert result["results"] == ["pre", "A", "B", "post"]
+        assert "processing_temp" not in result
+
+    def test_loop_iterations_get_fresh_scope(self):
+        """Each loop iteration starts fresh — body's internal fields reset to defaults."""
+
+        class LoopIO(BaseModel):
+            items: list[str]
+            results: list[str] = []
+            current_item: str = ""
+
+        class BodyMid(BaseModel):
+            items: list[str]
+            results: list[str]
+            current_item: str
+            temp: str = ""
+
+        def mid_fn(s: LoopIO) -> BodyMid:
+            return BodyMid(
+                items=s.items,
+                results=s.results,
+                current_item=s.current_item,
+                temp="was_set",
+            )
+
+        def final_fn(s: BodyMid) -> LoopIO:
+            assert s.temp == "was_set"
+            return LoopIO(
+                items=s.items,
+                results=[*s.results, s.current_item],
+                current_item=s.current_item,
+            )
+
+        mid = FunctionAction[LoopIO, BodyMid](function=mid_fn)
+        final = FunctionAction[BodyMid, LoopIO](function=final_fn)
+        body = Sequence[LoopIO, LoopIO](steps=[mid, final])
+        loop = Loop[LoopIO, LoopIO](
+            over=lambda s: s.items,
+            item_key="current_item",
+            body=body,
+        )
+        plan = PrimitivePlan(root=loop)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"items": ["a", "b", "c"], "results": []})
+        assert result["results"] == ["a", "b", "c"]
+        assert "temp" not in result
+
+    def test_three_levels_deep_isolation(self):
+        """Isolation holds across Sequence > Loop > Sequence > FunctionAction."""
+
+        class Outer(BaseModel):
+            items: list[str]
+            final: list[str] = []
+            current_item: str = ""
+
+        class Inner(BaseModel):
+            items: list[str]
+            final: list[str]
+            current_item: str
+            inner_temp: str = ""
+
+        step1 = FunctionAction[Inner, Inner](
+            function=lambda s: Inner(
+                items=s.items,
+                final=s.final,
+                current_item=s.current_item,
+                inner_temp="deep_internal",
+            ),
+        )
+        step2 = FunctionAction[Inner, Outer](
+            function=lambda s: Outer(
+                items=s.items,
+                final=[*s.final, s.current_item.upper()],
+                current_item=s.current_item,
+            ),
+        )
+        inner_seq = Sequence[Inner, Outer](steps=[step1, step2])
+        loop = Loop[Outer, Outer](
+            over=lambda s: s.items,
+            item_key="current_item",
+            body=inner_seq,
+        )
+        outer_seq = Sequence[Outer, Outer](steps=[loop])
+        plan = PrimitivePlan(root=outer_seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"items": ["x", "y"], "final": []})
+        assert result["final"] == ["X", "Y"]
+        assert "inner_temp" not in result

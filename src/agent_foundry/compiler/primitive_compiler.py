@@ -310,9 +310,9 @@ def _compile_loop(
         for i, item in enumerate(items):
             if i >= max_iter:
                 break
-            # Scope in: body.I fields from current state + item injection
-            scoped = _scope_in(current_state, body_in)
-            scoped[item_key] = item
+            # Inject item first, then scope in (item_key may be a required field on body_in)
+            with_item = {**current_state, item_key: item}
+            scoped = _scope_in(with_item, body_in)
             # Execute body in isolation
             result = compiled_body.invoke(scoped)
             # Scope out: merge body.O fields back
