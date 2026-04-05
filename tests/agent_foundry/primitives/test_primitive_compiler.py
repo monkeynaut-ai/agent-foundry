@@ -9,7 +9,11 @@ from pydantic import BaseModel
 
 from agent_foundry.compiler.primitive_compiler import compile_primitive, run_primitive_plan
 from agent_foundry.primitives.errors import PrimitiveCompilationError
-from agent_foundry.primitives.models import FunctionAction, Sequence
+from agent_foundry.primitives.models import (
+    Conditional,
+    FunctionAction,
+    Sequence,
+)
 from agent_foundry.primitives.plan import PrimitivePlan
 
 # -- Test fixtures --
@@ -282,3 +286,75 @@ class TestCompileSequence:
         graph = compile_primitive(plan)
         result = graph.invoke({"items": []})
         assert result["items"] == ["a", "b", "c"]
+
+
+# ======================================================================
+# Conditional Compilation
+# ======================================================================
+
+
+class BranchState(BaseModel):
+    value: str
+    flag: bool
+
+
+class TestCompileConditional:
+    def test_then_branch_taken(self):
+        then = FunctionAction[BranchState, BranchState](
+            function=lambda s: BranchState(value="then", flag=s.flag),
+        )
+        else_ = FunctionAction[BranchState, BranchState](
+            function=lambda s: BranchState(value="else", flag=s.flag),
+        )
+        cond = Conditional[BranchState, BranchState](
+            condition=lambda s: s.flag,
+            then_branch=then,
+            else_branch=else_,
+        )
+        plan = PrimitivePlan(root=cond)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"value": "start", "flag": True})
+        assert result["value"] == "then"
+
+    def test_else_branch_taken(self):
+        then = FunctionAction[BranchState, BranchState](
+            function=lambda s: BranchState(value="then", flag=s.flag),
+        )
+        else_ = FunctionAction[BranchState, BranchState](
+            function=lambda s: BranchState(value="else", flag=s.flag),
+        )
+        cond = Conditional[BranchState, BranchState](
+            condition=lambda s: s.flag,
+            then_branch=then,
+            else_branch=else_,
+        )
+        plan = PrimitivePlan(root=cond)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"value": "start", "flag": False})
+        assert result["value"] == "else"
+
+    def test_no_else_passthrough(self):
+        then = FunctionAction[BranchState, BranchState](
+            function=lambda s: BranchState(value="detoured", flag=s.flag),
+        )
+        cond = Conditional[BranchState, BranchState](
+            condition=lambda s: s.flag,
+            then_branch=then,
+        )
+        plan = PrimitivePlan(root=cond)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"value": "original", "flag": False})
+        assert result["value"] == "original"
+
+    def test_no_else_condition_true(self):
+        then = FunctionAction[BranchState, BranchState](
+            function=lambda s: BranchState(value="detoured", flag=s.flag),
+        )
+        cond = Conditional[BranchState, BranchState](
+            condition=lambda s: s.flag,
+            then_branch=then,
+        )
+        plan = PrimitivePlan(root=cond)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"value": "original", "flag": True})
+        assert result["value"] == "detoured"

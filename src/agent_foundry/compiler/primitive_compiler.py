@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
+    Conditional,
     FunctionAction,
     Primitive,
     Sequence,
@@ -210,3 +211,65 @@ def _compile_sequence(
 
 
 register_compiler(Sequence, _compile_sequence)
+
+
+def _compile_conditional(
+    graph: StateGraph,
+    cond: Conditional,
+    prefix: str,
+    gate_ids: list[str],
+) -> tuple[str, str]:
+    cond_in, cond_out = get_type_args(cond)
+
+    # Build subgraph
+    sub_state_type = _derive_state_type(cond_in, cond_out)
+    sub_graph = StateGraph(sub_state_type)
+
+    router_id = f"{prefix}_router"
+    merge_id = f"{prefix}_merge"
+
+    then_entry, then_exit = _compile_node(sub_graph, cond.then_branch, f"{prefix}_then", gate_ids)
+
+    if cond.else_branch is not None:
+        else_entry, else_exit = _compile_node(
+            sub_graph, cond.else_branch, f"{prefix}_else", gate_ids
+        )
+        targets = [then_entry, else_entry]
+    else:
+        targets = [then_entry, merge_id]
+
+    condition_fn = cond.condition
+
+    def router_fn(state: dict[str, Any]) -> str:
+        model = cond_in.model_validate(state)
+        if condition_fn(model):
+            return then_entry
+        if cond.else_branch is not None:
+            return else_entry  # type: ignore[possibly-undefined]
+        return merge_id
+
+    sub_graph.add_node(router_id, lambda state: state)
+    sub_graph.add_conditional_edges(router_id, router_fn, targets)
+
+    sub_graph.add_node(merge_id, lambda state: state)
+    sub_graph.add_edge(then_exit, merge_id)
+    if cond.else_branch is not None:
+        sub_graph.add_edge(else_exit, merge_id)  # type: ignore[possibly-undefined]
+
+    sub_graph.set_entry_point(router_id)
+    sub_graph.add_edge(merge_id, END)
+    compiled_sub = sub_graph.compile()
+
+    # Wrapper node: scope-in → execute subgraph → scope-out
+    node_id = f"{prefix}_cond"
+
+    def cond_node(state: dict[str, Any]) -> dict[str, Any]:
+        scoped_input = _scope_in(state, cond_in)
+        result = compiled_sub.invoke(scoped_input)
+        return _scope_out(result, cond_out)
+
+    graph.add_node(node_id, cond_node)
+    return (node_id, node_id)
+
+
+register_compiler(Conditional, _compile_conditional)
