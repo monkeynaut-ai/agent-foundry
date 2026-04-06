@@ -14,6 +14,8 @@ A platform for building agentic workflow systems. Agent Foundry provides composa
 
 **Primitives are a tree, not a graph.** Composition is by direct object reference. No string-based names or IDs for cross-referencing. Scope is local — a primitive's children are self-contained subtrees. This guarantees that validation is local and compilation is recursive.
 
+**Accumulated state, not pipeline.** Composite primitives (Sequence, Loop, Retry, Conditional) maintain accumulated state within their subgraph. Each step reads its declared input fields from the accumulated state and merges its output fields back. State grows — it never shrinks within a subgraph. The composite's output type selects which fields leave the subgraph scope. This enables function reusability: a step only declares the fields it needs, not the full composite input.
+
 ## Primitive Taxonomy
 
 **Control flow primitives** structure the graph:
