@@ -179,14 +179,6 @@ class TransformOutput(BaseModel):
 
 
 class TestCompileFunctionAction:
-    def test_returns_compiled_graph(self):
-        action = FunctionAction[InputState, TransformOutput](
-            function=lambda s: TransformOutput(result=s.query.upper()),
-        )
-        plan = PrimitivePlan(root=action)
-        graph = compile_primitive(plan)
-        assert hasattr(graph, "invoke")
-
     def test_invoke_produces_correct_output(self):
         action = FunctionAction[InputState, TransformOutput](
             function=lambda s: TransformOutput(result=s.query.upper()),
@@ -262,16 +254,6 @@ class MidState(BaseModel):
 
 
 class TestCompileSequence:
-    def test_single_step(self):
-        step = FunctionAction[InputState, TransformOutput](
-            function=lambda s: TransformOutput(result=s.query.upper()),
-        )
-        seq = Sequence[InputState, TransformOutput](steps=[step])
-        plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"query": "hello"})
-        assert result["result"] == "HELLO"
-
     def test_two_steps_chain(self):
         step1 = FunctionAction[InputState, MidState](
             function=lambda s: MidState(query=s.query, mid=s.query.upper()),
@@ -369,6 +351,72 @@ class TestCompileSequence:
         result = graph.invoke({"x": "hello"})
         assert result["mid_value"] == "HELLO"
         assert result["final_value"] == "done:HELLO"
+
+    def test_three_steps_each_add_field(self):
+        """Three steps, each adds a different field. Output assembles from all three."""
+
+        class StepIn(BaseModel):
+            seed: str
+
+        class AOut(BaseModel):
+            a: str
+
+        class BIn(BaseModel):
+            a: str
+
+        class BOut(BaseModel):
+            b: str
+
+        class CIn(BaseModel):
+            a: str
+            b: str
+
+        class COut(BaseModel):
+            c: str
+
+        class SeqOut(BaseModel):
+            a: str
+            b: str
+            c: str
+
+        step1 = FunctionAction[StepIn, AOut](
+            function=lambda s: AOut(a=s.seed + "_a"),
+        )
+        step2 = FunctionAction[BIn, BOut](
+            function=lambda s: BOut(b=s.a + "_b"),
+        )
+        step3 = FunctionAction[CIn, COut](
+            function=lambda s: COut(c=s.a + "_" + s.b + "_c"),
+        )
+        seq = Sequence[StepIn, SeqOut](steps=[step1, step2, step3])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"seed": "x"})
+        assert result["a"] == "x_a"
+        assert result["b"] == "x_a_b"
+        assert result["c"] == "x_a_x_a_b_c"
+
+    def test_validation_error_missing_field(self):
+        """Step declares a required field not in accumulated state — fails at validation."""
+        from agent_foundry.primitives.errors import TypeMismatchError
+
+        class In(BaseModel):
+            x: str
+
+        class NeedsY(BaseModel):
+            y: int  # not produced by any previous step
+
+        class Out(BaseModel):
+            result: str
+
+        step1 = FunctionAction[In, In](function=lambda s: s)
+        step2 = FunctionAction[NeedsY, Out](
+            function=lambda s: Out(result=str(s.y)),
+        )
+        seq = Sequence[In, Out](steps=[step1, step2])
+        plan = PrimitivePlan(root=seq)
+        with pytest.raises(TypeMismatchError, match=r"requires fields.*y.*not available"):
+            compile_primitive(plan)
 
 
 # ======================================================================
