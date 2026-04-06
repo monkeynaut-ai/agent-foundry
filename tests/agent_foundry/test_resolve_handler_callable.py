@@ -19,8 +19,6 @@ def _make_spec(module, class_name, method="__call__"):
             class_name=class_name,
             method=method,
         ),
-        inputs_schema={"type": "object", "properties": {}},
-        outputs_schema={"type": "object", "properties": {}},
     )
 
 

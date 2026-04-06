@@ -1,32 +1,13 @@
 name: schema_validator
 description: Validates output against a JSON schema and blocks on failure
-version: "1.0.0"
+version: 1.0.0
 implementation:
   module: agent_foundry.roles.schema_validator
   class_name: SchemaValidatorRole
-inputs_schema:
-  type: object
-  properties:
-    data:
-      type: object
-    schema:
-      type: object
-  required:
-    - data
-    - schema
-outputs_schema:
-  type: object
-  properties:
-    valid:
-      type: boolean
-    errors:
-      type: array
-  required:
-    - valid
 tags:
-  - validation
-  - eval_gate
-  - schema
+- validation
+- eval_gate
+- schema
 quality_controls:
   timeout_seconds: 10
   max_retries: 0

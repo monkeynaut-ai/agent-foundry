@@ -4,30 +4,6 @@ version: "1.0.0"
 implementation:
   module: agent_foundry.roles.rag_retriever
   class_name: RagRetrieverRole
-inputs_schema:
-  type: object
-  properties:
-    query:
-      type: string
-      description: The search query
-  required:
-    - query
-outputs_schema:
-  type: object
-  properties:
-    snippets:
-      type: array
-      items:
-        type: object
-        properties:
-          id:
-            type: string
-          text:
-            type: string
-          source:
-            type: string
-  required:
-    - snippets
 tags:
   - retrieval
   - rag

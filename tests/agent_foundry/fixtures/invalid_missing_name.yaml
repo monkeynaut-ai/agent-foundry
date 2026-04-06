@@ -3,9 +3,3 @@ version: "1.0.0"
 implementation:
   module: agent_foundry.roles.test
   class_name: TestRole
-inputs_schema:
-  type: object
-  properties: {}
-outputs_schema:
-  type: object
-  properties: {}

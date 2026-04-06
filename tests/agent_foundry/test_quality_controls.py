@@ -25,8 +25,6 @@ def _make_spec(timeout_seconds: int = 30, max_retries: int = 0) -> RoleSpec:
         description="test",
         version="1.0.0",
         implementation=ImplementationPointer(module="builtins", class_name="dict"),
-        inputs_schema={"type": "object", "properties": {}},
-        outputs_schema={"type": "object", "properties": {}},
         tags=[],
         quality_controls=QualityControls(timeout_seconds=timeout_seconds, max_retries=max_retries),
     )

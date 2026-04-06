@@ -1,29 +1,13 @@
 name: rag_retriever
 description: Retrieves relevant documents using RAG pattern
-version: "1.0.0"
+version: 1.0.0
 implementation:
   module: agent_foundry.roles.rag_retriever
   class_name: RagRetrieverRole
-inputs_schema:
-  type: object
-  properties:
-    query:
-      type: string
-  required:
-    - query
-outputs_schema:
-  type: object
-  properties:
-    snippets:
-      type: array
-      items:
-        type: object
-  required:
-    - snippets
 tags:
-  - retrieval
-  - rag
-  - search
+- retrieval
+- rag
+- search
 quality_controls:
   timeout_seconds: 30
   max_retries: 2

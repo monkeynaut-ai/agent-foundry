@@ -1,15 +1,12 @@
-"""Role execution with input/output schema enforcement and quality controls."""
+"""Role execution with quality controls."""
 
 import concurrent.futures
 from collections.abc import Callable
 from typing import Any
 
-import jsonschema
-
 from agent_foundry.registry.errors import RoleExecutionError
 from agent_foundry.registry.spec import RoleSpec
 
-FF_SCHEMA_ENFORCEMENT = True
 FF_RETRY_TIMEOUTS = False
 
 
@@ -19,35 +16,26 @@ def execute_role(
     handler: Callable,
     node_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Execute a role handler with optional schema enforcement and quality controls.
+    """Execute a role handler with optional quality controls.
 
     Args:
-        spec: The role specification with input/output schemas.
+        spec: The role specification.
         inputs: The input data to pass to the handler.
         handler: The callable that performs the role logic.
-        node_config: Static per-node configuration from the wiring plan.
+        node_config: Static per-node configuration.
 
     Returns:
         The handler's output dict.
 
     Raises:
-        RoleExecutionError: If validation, timeout, or retry exhaustion fails.
+        RoleExecutionError: If timeout or retry exhaustion fails.
     """
     if node_config is None:
         node_config = {}
 
-    if FF_SCHEMA_ENFORCEMENT and spec.inputs_schema is not None:
-        _validate_schema(inputs, spec.inputs_schema, spec.name, "input_validation")
-
     if FF_RETRY_TIMEOUTS:
-        result = _execute_with_quality_controls(spec, inputs, handler, node_config)
-    else:
-        result = handler(inputs, node_config)
-
-    if FF_SCHEMA_ENFORCEMENT and spec.outputs_schema is not None:
-        _validate_schema(result, spec.outputs_schema, spec.name, "output_validation")
-
-    return result
+        return _execute_with_quality_controls(spec, inputs, handler, node_config)
+    return handler(inputs, node_config)
 
 
 def _execute_with_quality_controls(
@@ -94,24 +82,3 @@ def _execute_with_timeout(
                 role_name=role_name,
                 phase="timeout",
             ) from err
-
-
-def _validate_schema(
-    data: dict[str, Any],
-    schema: dict[str, Any],
-    role_name: str,
-    phase: str,
-) -> None:
-    validator = jsonschema.Draft7Validator(schema)
-    errors = list(validator.iter_errors(data))
-    if errors:
-        field_paths = [
-            ".".join(str(p) for p in err.absolute_path) or err.json_path for err in errors
-        ]
-        messages = [err.message for err in errors]
-        raise RoleExecutionError(
-            message=f"Schema {phase} failed for '{role_name}': {'; '.join(messages)}",
-            role_name=role_name,
-            phase=phase,
-            field_paths=field_paths,
-        )

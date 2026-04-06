@@ -1,30 +1,13 @@
 name: structured_output_pydantic
 description: Produces structured output validated by Pydantic models
-version: "1.0.0"
+version: 1.0.0
 implementation:
   module: agent_foundry.roles.structured_output
   class_name: StructuredOutputRole
-inputs_schema:
-  type: object
-  properties:
-    prompt:
-      type: string
-    output_model:
-      type: string
-  required:
-    - prompt
-    - output_model
-outputs_schema:
-  type: object
-  properties:
-    result:
-      type: object
-  required:
-    - result
 tags:
-  - structured_output
-  - pydantic
-  - llm
+- structured_output
+- pydantic
+- llm
 quality_controls:
   timeout_seconds: 60
   max_retries: 3

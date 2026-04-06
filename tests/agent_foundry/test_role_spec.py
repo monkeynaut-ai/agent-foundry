@@ -21,8 +21,6 @@ SPEC_CASES = [
             "tags": ["retrieval", "rag", "search"],
             "timeout_seconds": 30,
             "max_retries": 2,
-            "inputs_required": ["query"],
-            "output_field": "snippets",
         },
     ),
     (
@@ -37,8 +35,6 @@ SPEC_CASES = [
             "tags": ["structured_output", "pydantic", "llm"],
             "timeout_seconds": 60,
             "max_retries": 3,
-            "inputs_required": None,
-            "output_field": None,
         },
     ),
 ]
@@ -53,14 +49,6 @@ def _assert_spec_fields(spec: RoleSpec, expected: dict) -> None:
     assert spec.tags == expected["tags"]
     assert spec.quality_controls.timeout_seconds == expected["timeout_seconds"]
     assert spec.quality_controls.max_retries == expected["max_retries"]
-
-    if expected["inputs_required"] is not None:
-        assert spec.inputs_schema["type"] == "object"
-        assert spec.inputs_schema["required"] == expected["inputs_required"]
-
-    if expected["output_field"] is not None:
-        assert spec.outputs_schema["type"] == "object"
-        assert expected["output_field"] in spec.outputs_schema["properties"]
 
 
 @pytest.mark.parametrize("_, path, expected", SPEC_CASES)

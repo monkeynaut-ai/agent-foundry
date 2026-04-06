@@ -21,18 +21,6 @@ version: "1.0.0"
 implementation:
   module: fake.module
   class_name: FakeHandler
-inputs_schema:
-  type: object
-  properties:
-    input:
-      type: string
-  required:
-    - input
-outputs_schema:
-  type: object
-  properties:
-    output:
-      type: string
 """
 
 
