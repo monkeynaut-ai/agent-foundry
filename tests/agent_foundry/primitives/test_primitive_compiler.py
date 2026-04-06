@@ -290,6 +290,67 @@ class TestCompileSequence:
         result = graph.invoke({"items": []})
         assert result["items"] == ["a", "b", "c"]
 
+    def test_step_reads_from_accumulated_state(self):
+        """Step 2 reads a field from Sequence input that step 1 didn't produce."""
+        from datetime import date, timedelta
+
+        class SeqIn(BaseModel):
+            offset: int
+
+        class DateState(BaseModel):
+            today: date
+
+        class ResultState(BaseModel):
+            offset: int
+            today: date
+
+        class SeqOut(BaseModel):
+            result: str
+
+        def get_today(s: SeqIn) -> DateState:
+            return DateState(today=date(2026, 4, 6))
+
+        def add_days(s: ResultState) -> SeqOut:
+            later = s.today + timedelta(days=s.offset)
+            return SeqOut(result=str(later))
+
+        step1 = FunctionAction[SeqIn, DateState](function=get_today)
+        step2 = FunctionAction[ResultState, SeqOut](function=add_days)
+        seq = Sequence[SeqIn, SeqOut](steps=[step1, step2])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"offset": 3})
+        assert result["result"] == "2026-04-09"
+
+    def test_output_from_intermediate_step(self):
+        """Sequence output includes a field produced by an intermediate step, not the last."""
+
+        class In(BaseModel):
+            x: str
+
+        class Mid(BaseModel):
+            mid_value: str
+
+        class Final(BaseModel):
+            final_value: str
+
+        class Out(BaseModel):
+            mid_value: str
+            final_value: str
+
+        step1 = FunctionAction[In, Mid](
+            function=lambda s: Mid(mid_value=s.x.upper()),
+        )
+        step2 = FunctionAction[Mid, Final](
+            function=lambda s: Final(final_value=f"done:{s.mid_value}"),
+        )
+        seq = Sequence[In, Out](steps=[step1, step2])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+        result = graph.invoke({"x": "hello"})
+        assert result["mid_value"] == "HELLO"
+        assert result["final_value"] == "done:HELLO"
+
 
 # ======================================================================
 # Conditional Compilation

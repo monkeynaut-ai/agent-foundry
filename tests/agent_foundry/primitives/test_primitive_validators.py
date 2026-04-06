@@ -109,14 +109,14 @@ class TestSequenceValidation:
     def test_last_step_output_mismatch(self):
         step = Primitive[StateA, StateA]()
         seq = Sequence[StateA, StateB](steps=[step])
-        with pytest.raises(TypeMismatchError, match="Sequence step 0 output"):
+        with pytest.raises(TypeMismatchError, match="Sequence output"):
             validate_primitive(seq)
 
     def test_adjacent_step_mismatch(self):
         s1 = Primitive[StateA, StateB]()
-        s2 = Primitive[StateC, StateC]()  # expects StateC, gets StateB
+        s2 = Primitive[StateC, StateC]()  # expects StateC fields, not available
         seq = Sequence[StateA, StateC](steps=[s1, s2])
-        with pytest.raises(TypeMismatchError, match=r"step 0 output .* step 1 input"):
+        with pytest.raises(TypeMismatchError, match="Sequence step 1 input"):
             validate_primitive(seq)
 
     def test_recurses_into_steps(self):
