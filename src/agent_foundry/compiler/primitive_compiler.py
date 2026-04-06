@@ -144,14 +144,20 @@ def run_primitive_plan(
 def _compile_function_action(
     graph: StateGraph, action: FunctionAction, prefix: str, gate_ids: list[str]
 ) -> tuple[str, str]:
+    import inspect
+
     node_id = prefix
     input_type, _ = get_type_args(action)
     fn = action.function
+    takes_input = len(inspect.signature(fn).parameters) > 0
 
     def node_fn(state: dict[str, Any]) -> dict[str, Any]:
-        _validate_boundary(state, input_type, node_id)
-        model_input = input_type.model_validate(state)
-        result = fn(model_input)
+        if takes_input:
+            _validate_boundary(state, input_type, node_id)
+            model_input = input_type.model_validate(state)
+            result = fn(model_input)
+        else:
+            result = fn()
         return result.model_dump()
 
     graph.add_node(node_id, node_fn)

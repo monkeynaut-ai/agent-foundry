@@ -231,6 +231,25 @@ class TestCompileFunctionAction:
         assert isinstance(result, DefaultOutput)
         assert result.result == "DEFAULT"
 
+    def test_zero_arg_function(self):
+        """Functions that take no arguments work without Empty input model."""
+        from datetime import date
+
+        class DateOut(BaseModel):
+            today: date
+
+        class Empty(BaseModel):
+            pass
+
+        def get_today() -> DateOut:
+            return DateOut(today=date(2026, 4, 6))
+
+        action = FunctionAction[Empty, DateOut](function=get_today)
+        plan = PrimitivePlan(root=action)
+        result = run_primitive_plan(plan)
+        assert isinstance(result, DateOut)
+        assert result.today == date(2026, 4, 6)
+
 
 # ======================================================================
 # Sequence Compilation
