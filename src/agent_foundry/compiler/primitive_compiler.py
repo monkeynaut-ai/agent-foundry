@@ -230,8 +230,19 @@ def _compile_conditional(
 ) -> tuple[str, str]:
     cond_in, cond_out = get_type_args(cond)
 
-    # Build subgraph
-    sub_state_type = _derive_state_type(cond_in, cond_out)
+    # Build subgraph state from all branch I/O types
+    all_types = [cond_in, cond_out]
+    then_in, then_out = get_type_args(cond.then_branch)
+    all_types.extend([then_in, then_out])
+    if cond.else_branch is not None:
+        else_in_t, else_out_t = get_type_args(cond.else_branch)
+        all_types.extend([else_in_t, else_out_t])
+
+    fields: dict[str, Any] = {}
+    for model in all_types:
+        for name in model.model_fields:
+            fields[name] = Any
+    sub_state_type = TypedDict("CondState", fields, total=False)  # type: ignore[call-overload]
     sub_graph = StateGraph(sub_state_type)
 
     router_id = f"{prefix}_router"
@@ -273,8 +284,8 @@ def _compile_conditional(
     node_id = f"{prefix}_cond"
 
     def cond_node(state: dict[str, Any]) -> dict[str, Any]:
-        scoped_input = _scope_in(state, cond_in)
-        result = compiled_sub.invoke(scoped_input)
+        # Pass full parent state — branches read what they need from accumulated state
+        result = compiled_sub.invoke(dict(state))
         return _scope_out(result, cond_out)
 
     graph.add_node(node_id, cond_node)
@@ -293,8 +304,13 @@ def _compile_loop(
     loop_in, loop_out = get_type_args(loop)
     body_in, body_out = get_type_args(loop.body)
 
-    # Compile body as isolated subgraph
-    body_state_type = _derive_state_type(body_in, body_out)
+    # Compile body subgraph — state includes loop I/O + body I/O for accumulated context
+    all_types = [loop_in, loop_out, body_in, body_out]
+    fields: dict[str, Any] = {}
+    for model in all_types:
+        for name in model.model_fields:
+            fields[name] = Any
+    body_state_type = TypedDict("LoopBodyState", fields, total=False)  # type: ignore[call-overload]
     body_graph = StateGraph(body_state_type)
     body_entry, body_exit = _compile_node(body_graph, loop.body, f"{prefix}_body", gate_ids)
     body_graph.set_entry_point(body_entry)
@@ -311,17 +327,16 @@ def _compile_loop(
     def loop_node(state: dict[str, Any]) -> dict[str, Any]:
         model = loop_in.model_validate(state)
         items = over_fn(model)
+        # Accumulated state — starts with full parent state, grows across iterations
         current_state = dict(state)
 
         for i, item in enumerate(items):
             if i >= max_iter:
                 break
-            # Inject item first, then scope in (item_key may be a required field on body_in)
-            with_item = {**current_state, item_key: item}
-            scoped = _scope_in(with_item, body_in)
-            # Execute body in isolation
-            result = compiled_body.invoke(scoped)
-            # Scope out: merge body.O fields back
+            # Inject item, then pass full accumulated state to body
+            current_state[item_key] = item
+            result = compiled_body.invoke(dict(current_state))
+            # Merge body output back into accumulated state
             updates = _scope_out(result, body_out)
             current_state.update(updates)
 
@@ -343,8 +358,13 @@ def _compile_retry(
     retry_in, retry_out = get_type_args(retry)
     body_in, body_out = get_type_args(retry.body)
 
-    # Compile body as isolated subgraph
-    body_state_type = _derive_state_type(body_in, body_out)
+    # Compile body subgraph — state includes retry I/O + body I/O for accumulated context
+    all_types = [retry_in, retry_out, body_in, body_out]
+    fields: dict[str, Any] = {}
+    for model in all_types:
+        for name in model.model_fields:
+            fields[name] = Any
+    body_state_type = TypedDict("RetryBodyState", fields, total=False)  # type: ignore[call-overload]
     body_graph = StateGraph(body_state_type)
     body_entry, body_exit = _compile_node(body_graph, retry.body, f"{prefix}_body", gate_ids)
     body_graph.set_entry_point(body_entry)
@@ -358,11 +378,11 @@ def _compile_retry(
     node_id = f"{prefix}_retry"
 
     def retry_node(state: dict[str, Any]) -> dict[str, Any]:
-        current_state = _scope_in(state, retry_in)
+        # Accumulated state — starts with full parent state
+        current_state = dict(state)
         for _ in range(max_attempts):
-            # Execute body in isolation
-            scoped = _scope_in(current_state, body_in)
-            result = compiled_body.invoke(scoped)
+            # Pass full accumulated state to body
+            result = compiled_body.invoke(dict(current_state))
             current_state.update(_scope_out(result, body_out))
             # Check until condition
             model = retry_in.model_validate(current_state)
