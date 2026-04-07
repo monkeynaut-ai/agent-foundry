@@ -179,15 +179,6 @@ class TransformOutput(BaseModel):
 
 
 class TestCompileFunctionAction:
-    def test_invoke_produces_correct_output(self):
-        action = FunctionAction[InputState, TransformOutput](
-            function=lambda s: TransformOutput(result=s.query.upper()),
-        )
-        plan = PrimitivePlan(root=action)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"query": "hello"})
-        assert result["result"] == "HELLO"
-
     def test_validates_input_boundary(self):
         action = FunctionAction[InputState, TransformOutput](
             function=lambda s: TransformOutput(result=s.query.upper()),
@@ -263,9 +254,8 @@ class TestCompileSequence:
         )
         seq = Sequence[InputState, OutputState](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"query": "hello"})
-        assert result["result"] == "processed:HELLO"
+        result = run_primitive_plan(plan, InputState(query="hello"))
+        assert result.result == "processed:HELLO"
 
     def test_three_steps_order(self):
         """Verify steps execute in order by accumulating into a list."""
@@ -287,9 +277,8 @@ class TestCompileSequence:
         s3 = FunctionAction[ListState, ListState](function=append_c)
         seq = Sequence[ListState, ListState](steps=[s1, s2, s3])
         plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"items": []})
-        assert result["items"] == ["a", "b", "c"]
+        result = run_primitive_plan(plan, ListState(items=[]))
+        assert result.items == ["a", "b", "c"]
 
     def test_step_reads_from_accumulated_state(self):
         """Step 2 reads a field from Sequence input that step 1 didn't produce."""
@@ -319,9 +308,8 @@ class TestCompileSequence:
         step2 = FunctionAction[ResultState, SeqOut](function=add_days)
         seq = Sequence[SeqIn, SeqOut](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"offset": 3})
-        assert result["result"] == "2026-04-09"
+        result = run_primitive_plan(plan, SeqIn(offset=3))
+        assert result.result == "2026-04-09"
 
     def test_output_from_intermediate_step(self):
         """Sequence output includes a field produced by an intermediate step, not the last."""
@@ -347,10 +335,9 @@ class TestCompileSequence:
         )
         seq = Sequence[In, Out](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"x": "hello"})
-        assert result["mid_value"] == "HELLO"
-        assert result["final_value"] == "done:HELLO"
+        result = run_primitive_plan(plan, In(x="hello"))
+        assert result.mid_value == "HELLO"
+        assert result.final_value == "done:HELLO"
 
     def test_three_steps_each_add_field(self):
         """Three steps, each adds a different field. Output assembles from all three."""
@@ -390,11 +377,10 @@ class TestCompileSequence:
         )
         seq = Sequence[StepIn, SeqOut](steps=[step1, step2, step3])
         plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"seed": "x"})
-        assert result["a"] == "x_a"
-        assert result["b"] == "x_a_b"
-        assert result["c"] == "x_a_x_a_b_c"
+        result = run_primitive_plan(plan, StepIn(seed="x"))
+        assert result.a == "x_a"
+        assert result.b == "x_a_b"
+        assert result.c == "x_a_x_a_b_c"
 
     def test_validation_error_missing_field(self):
         """Step declares a required field not in accumulated state — fails at validation."""
@@ -443,9 +429,8 @@ class TestCompileConditional:
             else_branch=else_,
         )
         plan = PrimitivePlan(root=cond)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"value": "start", "flag": True})
-        assert result["value"] == "then"
+        result = run_primitive_plan(plan, BranchState(value="start", flag=True))
+        assert result.value == "then"
 
     def test_else_branch_taken(self):
         then = FunctionAction[BranchState, BranchState](
@@ -460,9 +445,8 @@ class TestCompileConditional:
             else_branch=else_,
         )
         plan = PrimitivePlan(root=cond)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"value": "start", "flag": False})
-        assert result["value"] == "else"
+        result = run_primitive_plan(plan, BranchState(value="start", flag=False))
+        assert result.value == "else"
 
     def test_no_else_passthrough(self):
         then = FunctionAction[BranchState, BranchState](
@@ -473,9 +457,8 @@ class TestCompileConditional:
             then_branch=then,
         )
         plan = PrimitivePlan(root=cond)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"value": "original", "flag": False})
-        assert result["value"] == "original"
+        result = run_primitive_plan(plan, BranchState(value="original", flag=False))
+        assert result.value == "original"
 
     def test_no_else_condition_true(self):
         then = FunctionAction[BranchState, BranchState](
@@ -486,9 +469,8 @@ class TestCompileConditional:
             then_branch=then,
         )
         plan = PrimitivePlan(root=cond)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"value": "original", "flag": True})
-        assert result["value"] == "detoured"
+        result = run_primitive_plan(plan, BranchState(value="original", flag=True))
+        assert result.value == "detoured"
 
 
 # ======================================================================
@@ -517,9 +499,8 @@ class TestCompileLoop:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"items": ["a", "b", "c"], "processed": []})
-        assert result["processed"] == ["A", "B", "C"]
+        result = run_primitive_plan(plan, LoopInput(items=["a", "b", "c"], processed=[]))
+        assert result.processed == ["A", "B", "C"]
 
     def test_respects_max_iterations(self):
         body = FunctionAction[LoopInput, LoopInput](
@@ -536,9 +517,8 @@ class TestCompileLoop:
             max_iterations=2,
         )
         plan = PrimitivePlan(root=loop)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"items": ["a", "b", "c", "d", "e"], "processed": []})
-        assert len(result["processed"]) == 2
+        result = run_primitive_plan(plan, LoopInput(items=["a", "b", "c", "d", "e"], processed=[]))
+        assert len(result.processed) == 2
 
     def test_empty_collection(self):
         body = FunctionAction[LoopInput, LoopInput](
@@ -554,9 +534,8 @@ class TestCompileLoop:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"items": [], "processed": []})
-        assert result["processed"] == []
+        result = run_primitive_plan(plan, LoopInput(items=[], processed=[]))
+        assert result.processed == []
 
     def test_single_item(self):
         body = FunctionAction[LoopInput, LoopInput](
@@ -572,9 +551,8 @@ class TestCompileLoop:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"items": ["x"], "processed": []})
-        assert result["processed"] == ["X"]
+        result = run_primitive_plan(plan, LoopInput(items=["x"], processed=[]))
+        assert result.processed == ["X"]
 
 
 # ======================================================================
@@ -598,10 +576,9 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"attempts": 0, "done": False})
-        assert result["attempts"] == 1
-        assert result["done"] is True
+        result = run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        assert result.attempts == 1
+        assert result.done is True
 
     def test_succeeds_second_attempt(self):
         call_count = {"n": 0}
@@ -617,10 +594,9 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"attempts": 0, "done": False})
-        assert result["attempts"] == 2
-        assert result["done"] is True
+        result = run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        assert result.attempts == 2
+        assert result.done is True
 
     def test_exhausted_exits_normally(self):
         """When max_attempts exhausted, Retry exits with domain state intact."""
@@ -633,10 +609,9 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"attempts": 0, "done": False})
-        assert result["attempts"] == 2
-        assert result["done"] is False
+        result = run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        assert result.attempts == 2
+        assert result.done is False
 
     def test_max_attempts_one(self):
         body = FunctionAction[RetryState, RetryState](
@@ -648,10 +623,9 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"attempts": 0, "done": False})
-        assert result["attempts"] == 1
-        assert result["done"] is False
+        result = run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        assert result.attempts == 1
+        assert result.done is False
 
 
 # ======================================================================
@@ -723,9 +697,8 @@ class TestNestedComposition:
         s3 = FunctionAction[S, S](function=lambda s: S(n=s.n + 100))
         seq = Sequence[S, S](steps=[s1, s2, s3])
         plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"n": 0})
-        assert result["n"] == 111
+        result = run_primitive_plan(plan, S(n=0))
+        assert result.n == 111
 
     def test_loop_body_is_sequence(self):
         class S(BaseModel):
@@ -750,9 +723,8 @@ class TestNestedComposition:
         body = Sequence[S, S](steps=[step1, step2])
         loop = Loop[S, S](over=lambda s: s.items, item_key="current_item", body=body)
         plan = PrimitivePlan(root=loop)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"items": ["a", "b"], "processed": []})
-        assert result["processed"] == ["A", "B"]
+        result = run_primitive_plan(plan, S(items=["a", "b"], processed=[]))
+        assert result.processed == ["A", "B"]
 
     def test_retry_then_conditional_escalation(self):
         """Retry exhausts, parent Conditional routes to escalation based on domain state."""
@@ -774,10 +746,9 @@ class TestNestedComposition:
         )
         seq = Sequence[S, S](steps=[retry, check_exhausted])
         plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"n": 0, "done": False})
-        assert result["n"] == 2
-        assert result["done"] is True
+        result = run_primitive_plan(plan, S(n=0, done=False))
+        assert result.n == 2
+        assert result.done is True
 
     def test_sequence_containing_conditional(self):
         class S(BaseModel):
@@ -795,9 +766,8 @@ class TestNestedComposition:
         step3 = FunctionAction[S, S](function=lambda s: S(value=s.value + "_done", flag=s.flag))
         seq = Sequence[S, S](steps=[step1, cond, step3])
         plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"value": "", "flag": True})
-        assert result["value"] == "step1_then_done"
+        result = run_primitive_plan(plan, S(value="", flag=True))
+        assert result.value == "step1_then_done"
 
 
 # ======================================================================
@@ -837,10 +807,9 @@ class TestStateIsolation:
             else_branch=else_,
         )
         plan = PrimitivePlan(root=cond)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"flag": True, "value": "start"})
-        assert result["value"] == "then"
-        assert "branch_temp" not in result
+        result = run_primitive_plan(plan, CondState(flag=True, value="start"))
+        assert result.value == "then"
+        assert "branch_temp" not in result.model_dump()
 
     def test_retry_body_internals_dont_leak(self):
         """Retry body's internal fields don't appear in retry output."""
@@ -868,10 +837,9 @@ class TestStateIsolation:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"attempts": 0, "done": False})
-        assert result["attempts"] == 1
-        assert "debug_info" not in result
+        result = run_primitive_plan(plan, RS(attempts=0, done=False))
+        assert result.attempts == 1
+        assert "debug_info" not in result.model_dump()
 
     def test_sibling_primitives_dont_interfere(self):
         """Two sequential steps using the same internal field name don't collide."""
@@ -894,10 +862,9 @@ class TestStateIsolation:
         )
         seq = Sequence[StepIn, StepOut](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"value": "start"})
-        assert result["value"] == "start_a_b"
-        assert "temp" not in result
+        result = run_primitive_plan(plan, StepIn(value="start"))
+        assert result.value == "start_a_b"
+        assert "temp" not in result.model_dump()
 
     def test_nested_loop_in_sequence_isolation(self):
         """Loop body internals don't leak to sequence siblings."""
@@ -942,10 +909,9 @@ class TestStateIsolation:
         )
         seq = Sequence[SeqState, SeqState](steps=[pre, loop, post])
         plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"items": ["a", "b"], "results": []})
-        assert result["results"] == ["pre", "A", "B", "post"]
-        assert "processing_temp" not in result
+        result = run_primitive_plan(plan, SeqState(items=["a", "b"], results=[]))
+        assert result.results == ["pre", "A", "B", "post"]
+        assert "processing_temp" not in result.model_dump()
 
     def test_loop_iterations_get_fresh_scope(self):
         """Each loop iteration starts fresh — body's internal fields reset to defaults."""
@@ -986,10 +952,9 @@ class TestStateIsolation:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"items": ["a", "b", "c"], "results": []})
-        assert result["results"] == ["a", "b", "c"]
-        assert "temp" not in result
+        result = run_primitive_plan(plan, LoopIO(items=["a", "b", "c"], results=[]))
+        assert result.results == ["a", "b", "c"]
+        assert "temp" not in result.model_dump()
 
     def test_three_levels_deep_isolation(self):
         """Isolation holds across Sequence > Loop > Sequence > FunctionAction."""
@@ -1028,7 +993,6 @@ class TestStateIsolation:
         )
         outer_seq = Sequence[Outer, Outer](steps=[loop])
         plan = PrimitivePlan(root=outer_seq)
-        graph = compile_primitive(plan)
-        result = graph.invoke({"items": ["x", "y"], "final": []})
-        assert result["final"] == ["X", "Y"]
-        assert "inner_temp" not in result
+        result = run_primitive_plan(plan, Outer(items=["x", "y"], final=[]))
+        assert result.final == ["X", "Y"]
+        assert "inner_temp" not in result.model_dump()
