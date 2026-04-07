@@ -12,7 +12,7 @@ from agent_foundry.primitives.errors import (
 )
 from agent_foundry.primitives.models import (
     Conditional,
-    Gate,
+    GateAction,
     Loop,
     Primitive,
     Retry,
@@ -109,14 +109,14 @@ class TestSequenceValidation:
     def test_last_step_output_mismatch(self):
         step = Primitive[StateA, StateA]()
         seq = Sequence[StateA, StateB](steps=[step])
-        with pytest.raises(TypeMismatchError, match="Sequence step 0 output"):
+        with pytest.raises(TypeMismatchError, match="Sequence output"):
             validate_primitive(seq)
 
     def test_adjacent_step_mismatch(self):
         s1 = Primitive[StateA, StateB]()
-        s2 = Primitive[StateC, StateC]()  # expects StateC, gets StateB
+        s2 = Primitive[StateC, StateC]()  # expects StateC fields, not available
         seq = Sequence[StateA, StateC](steps=[s1, s2])
-        with pytest.raises(TypeMismatchError, match=r"step 0 output .* step 1 input"):
+        with pytest.raises(TypeMismatchError, match="Sequence step 1 input"):
             validate_primitive(seq)
 
     def test_recurses_into_steps(self):
@@ -168,7 +168,6 @@ class TestRetryValidation:
             max_attempts=2,
             until=lambda s: True,
             body=body,
-            on_exhausted="escalate",
         )
         validate_primitive(retry)  # should not raise
 
@@ -178,7 +177,6 @@ class TestRetryValidation:
             max_attempts=2,
             until=lambda s: True,
             body=body,
-            on_exhausted="escalate",
         )
         with pytest.raises(TypeMismatchError, match="Retry body input"):
             validate_primitive(retry)
@@ -189,7 +187,6 @@ class TestRetryValidation:
             max_attempts=2,
             until=lambda s: True,
             body=body,
-            on_exhausted="escalate",
         )
         with pytest.raises(TypeMismatchError, match="Retry body output"):
             validate_primitive(retry)
@@ -201,7 +198,6 @@ class TestRetryValidation:
             max_attempts=2,
             until=lambda s: True,
             body=body,
-            on_exhausted="escalate",
         )
         with pytest.raises(TypeMismatchError, match="re-entry"):
             validate_primitive(retry)
@@ -212,7 +208,6 @@ class TestRetryValidation:
             max_attempts=2,
             until=lambda s: True,
             body=body,
-            on_exhausted="escalate",
         )
         validate_primitive(retry)  # should not raise
 
@@ -223,7 +218,6 @@ class TestRetryValidation:
             max_attempts=2,
             until=lambda s: True,
             body=inner_seq,
-            on_exhausted="escalate",
         )
         with pytest.raises(TypeMismatchError):
             validate_primitive(retry)
@@ -357,22 +351,20 @@ class TestConditionalValidation:
 
 
 # ======================================================================
-# Gate Validation
+# GateAction Validation
 # ======================================================================
 
 
-class TestGateValidation:
+class TestGateActionValidation:
     def test_valid_prompt_key(self):
-        gate = Gate[GateState, GateOutput](
-            condition=lambda s: s.should_block,
+        gate = GateAction[GateState, GateOutput](
             interaction="human_stdin",
             prompt_key="escalation_context",
         )
         validate_primitive(gate)  # should not raise
 
     def test_invalid_prompt_key(self):
-        gate = Gate[GateState, GateOutput](
-            condition=lambda s: s.should_block,
+        gate = GateAction[GateState, GateOutput](
             interaction="human_stdin",
             prompt_key="nonexistent_field",
         )

@@ -2,13 +2,14 @@
 
 from agent_foundry.primitives.errors import (
     InvalidPromptKeyError,
+    PrimitiveCompilationError,
     PrimitiveValidationError,
     TypeMismatchError,
 )
 from agent_foundry.primitives.models import (
-    Action,
     Conditional,
-    Gate,
+    FunctionAction,
+    GateAction,
     Loop,
     Primitive,
     Retry,
@@ -18,12 +19,13 @@ from agent_foundry.primitives.plan import PrimitivePlan
 from agent_foundry.primitives.validators import validate_primitive
 
 __all__ = [
-    "Action",
     "Conditional",
-    "Gate",
+    "FunctionAction",
+    "GateAction",
     "InvalidPromptKeyError",
     "Loop",
     "Primitive",
+    "PrimitiveCompilationError",
     "PrimitivePlan",
     "PrimitiveValidationError",
     "Retry",

@@ -6,9 +6,9 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from agent_foundry.primitives.models import (
-    Action,
     Conditional,
-    Gate,
+    FunctionAction,
+    GateAction,
     Loop,
     Primitive,
     Retry,
@@ -230,10 +230,8 @@ class TestRetry:
             max_attempts=2,
             until=lambda state: state.no_must_fix,
             body=body,
-            on_exhausted="escalate",
         )
         assert retry.max_attempts == 2
-        assert retry.on_exhausted == "escalate"
 
     def test_until_callable_is_invocable(self):
         body = Primitive[StubInput, StubOutput]()
@@ -241,7 +239,6 @@ class TestRetry:
             max_attempts=2,
             until=lambda state: state.no_must_fix,
             body=body,
-            on_exhausted="escalate",
         )
         state = RetryInput(findings=[], no_must_fix=True)
         assert retry.until(state) is True
@@ -251,16 +248,6 @@ class TestRetry:
         with pytest.raises(ValidationError):
             Retry[RetryInput, RetryOutput](
                 max_attempts=0,
-                until=lambda state: state.no_must_fix,
-                body=body,
-                on_exhausted="escalate",
-            )
-
-    def test_given_missing_on_exhausted_when_created_then_raises(self):
-        body = Primitive[StubInput, StubOutput]()
-        with pytest.raises(ValidationError):
-            Retry[RetryInput, RetryOutput](
-                max_attempts=2,
                 until=lambda state: state.no_must_fix,
                 body=body,
             )
@@ -321,54 +308,32 @@ class TestConditional:
 # ======================================================================
 
 
-class TestGate:
-    """Gate primitive blocks execution until external input."""
+class TestGateAction:
+    """GateAction always blocks when reached — no condition field."""
 
     def test_given_valid_config_when_created_then_succeeds(self):
-        gate = Gate[GateInput, GateOutput](
-            condition=lambda state: state.must_fix_remain,
+        gate = GateAction[GateInput, GateOutput](
             interaction="human_stdin",
             prompt_key="escalation_context",
         )
         assert gate.interaction == "human_stdin"
         assert gate.prompt_key == "escalation_context"
 
-    def test_condition_callable_is_invocable(self):
-        gate = Gate[GateInput, GateOutput](
-            condition=lambda state: state.must_fix_remain,
-            interaction="human_stdin",
-            prompt_key="escalation_context",
-        )
-        state = GateInput(must_fix_remain=True, escalation_context="help")
-        assert gate.condition(state) is True
-
-    def test_given_false_condition_gate_is_skippable(self):
-        gate = Gate[GateInput, GateOutput](
-            condition=lambda state: state.must_fix_remain,
-            interaction="human_stdin",
-            prompt_key="escalation_context",
-        )
-        state = GateInput(must_fix_remain=False, escalation_context="")
-        assert gate.condition(state) is False
-
     def test_given_missing_interaction_when_created_then_raises(self):
         with pytest.raises(ValidationError):
-            Gate[GateInput, GateOutput](
-                condition=lambda state: state.must_fix_remain,
+            GateAction[GateInput, GateOutput](
                 prompt_key="escalation_context",
             )
 
     def test_given_missing_prompt_key_when_created_then_raises(self):
         with pytest.raises(ValidationError):
-            Gate[GateInput, GateOutput](
-                condition=lambda state: state.must_fix_remain,
+            GateAction[GateInput, GateOutput](
                 interaction="human_stdin",
             )
 
     def test_given_empty_interaction_when_created_then_raises(self):
         with pytest.raises(ValidationError):
-            Gate[GateInput, GateOutput](
-                condition=lambda state: state.must_fix_remain,
+            GateAction[GateInput, GateOutput](
                 interaction="",
                 prompt_key="escalation_context",
             )
@@ -379,20 +344,20 @@ class TestGate:
 # ======================================================================
 
 
-class TestAction:
-    """Action primitive wraps a deterministic, non-AI function."""
+class TestFunctionAction:
+    """FunctionAction wraps a synchronous, in-process function."""
 
     def test_given_valid_function_when_created_then_succeeds(self):
-        action = Action[CommitInput, CommitOutput](function=fake_commit)
+        action = FunctionAction[CommitInput, CommitOutput](function=fake_commit)
         assert callable(action.function)
 
     def test_function_is_invocable(self):
-        action = Action[CommitInput, CommitOutput](function=fake_commit)
+        action = FunctionAction[CommitInput, CommitOutput](function=fake_commit)
         result = action.function(CommitInput(workspace_volume="vol-1"))
         assert result.commit_hash == "abc123"
 
     def test_given_lambda_function_when_created_then_succeeds(self):
-        action = Action[StubInput, StubOutput](
+        action = FunctionAction[StubInput, StubOutput](
             function=lambda state: StubOutput(result="done"),
         )
         result = action.function(StubInput(value="test"))
@@ -400,7 +365,7 @@ class TestAction:
 
     def test_given_missing_function_when_created_then_raises(self):
         with pytest.raises(ValidationError):
-            Action[CommitInput, CommitOutput]()
+            FunctionAction[CommitInput, CommitOutput]()
 
 
 # ======================================================================
@@ -429,7 +394,6 @@ class TestRecursiveNesting:
             max_attempts=2,
             until=lambda state: state.no_must_fix,
             body=inner_seq,
-            on_exhausted="escalate",
         )
         assert isinstance(retry.body, Sequence)
 
@@ -459,9 +423,9 @@ class TestPublicAPI:
 
     def test_import_from_package(self):
         from agent_foundry.primitives import (
-            Action,
             Conditional,
-            Gate,
+            FunctionAction,
+            GateAction,
             Loop,
             Primitive,
             PrimitivePlan,
@@ -474,6 +438,6 @@ class TestPublicAPI:
         assert Loop is not None
         assert Retry is not None
         assert Conditional is not None
-        assert Gate is not None
-        assert Action is not None
+        assert FunctionAction is not None
+        assert GateAction is not None
         assert PrimitivePlan is not None

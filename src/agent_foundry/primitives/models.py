@@ -53,14 +53,14 @@ class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Execute body, evaluate condition, repeat up to max_attempts times.
 
     The ``until`` callable checks a condition on the state — when it returns
-    True, the retry stops.  If max_attempts is exhausted without the condition
-    being met, the ``on_exhausted`` action is taken (e.g. "escalate").
+    True, the retry stops.  If max_attempts is exhausted, Retry exits normally
+    with domain state intact.  The parent reads the output and routes accordingly
+    (e.g. via a Conditional to a GateAction for human escalation).
     """
 
     max_attempts: int = Field(ge=1)
     until: Callable[[I], bool]
     body: Primitive
-    on_exhausted: str
 
 
 class Conditional[I: BaseModel, O: BaseModel](Primitive[I, O]):
@@ -76,29 +76,28 @@ class Conditional[I: BaseModel, O: BaseModel](Primitive[I, O]):
     else_branch: Primitive | None = None
 
 
-class Gate[I: BaseModel, O: BaseModel](Primitive[I, O]):
-    """Block execution until external input is received.
+class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
+    """A synchronous, in-process function call.
 
-    The ``condition`` callable determines whether the gate activates.
-    If True, execution blocks and ``prompt_key`` identifies which state
-    field to display to the human.  The ``interaction`` field specifies
-    the interaction method (e.g. "human_stdin").
-    """
-
-    condition: Callable[[I], bool]
-    interaction: str = Field(min_length=1)
-    prompt_key: str = Field(min_length=1)
-
-
-class Action[I: BaseModel, O: BaseModel](Primitive[I, O]):
-    """A deterministic, non-AI step.
-
-    Wraps a plain function that transforms input state to output state
-    without invoking an LLM.  Used for operations like git commit,
-    PR submission, file generation.
+    Wraps a plain function that transforms input state to output state.
+    Used for deterministic operations like git commit, PR submission,
+    file generation, or any non-AI transformation.
     """
 
     function: Callable[[I], O]
+
+
+class GateAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
+    """Block execution until external input is received.
+
+    Always blocks when reached — routing to the gate is the parent's
+    responsibility (e.g. a Conditional checking whether escalation is needed).
+    The ``prompt_key`` identifies which state field to display to the human.
+    The ``interaction`` field specifies the interaction method (e.g. "human_stdin").
+    """
+
+    interaction: str = Field(min_length=1)
+    prompt_key: str = Field(min_length=1)
 
 
 def get_type_args(prim: Primitive) -> tuple[type[BaseModel], type[BaseModel]]:
@@ -118,3 +117,5 @@ Sequence.model_rebuild()
 Loop.model_rebuild()
 Retry.model_rebuild()
 Conditional.model_rebuild()
+FunctionAction.model_rebuild()
+GateAction.model_rebuild()
