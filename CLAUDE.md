@@ -58,4 +58,9 @@ An autonomous software development system built on Agent Foundry. Uses a system 
 ## Commands
 
 - `pdm add <package>`: Add a dependency
-- `pdm run pytest`: Run tests
+- `pdm format`: Find and fix format violations`
+- `pdm lint`: Run the linter
+- `pdm test-all`: Run all tests
+- `pdm test-integration`: Run integration tests
+- `pdm test-unit`: Run unit tests
+- `pdm typecheck`: Run Pyright typechecking

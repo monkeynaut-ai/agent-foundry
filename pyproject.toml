@@ -7,7 +7,7 @@ name = "agent-foundry"
 version = "0.4.0"
 description = "Default template for PDM package"
 authors = [
-    {name = "mark norman", email = "mark@marknorman.com"},
+    {name = "Mark Norman", email = "mark@marknorman.com"},
 ]
 dependencies = [
     "pydantic>=2.12.5",
@@ -51,6 +51,8 @@ test-unit.cmd = "pytest tests/ -m 'not integration and not benchmark'"
 test-unit.env = {PYTHONPATH = "src"}
 test-integration.cmd = "pytest tests/ -m 'integration'"
 test-integration.env = {PYTHONPATH = "src"}
+test-all.cmd = "pytest tests/ -m 'not benchmark'"
+test-all.env = {PYTHONPATH = "src"}
 lint-imports.cmd = "lint-imports"
 lint-imports.env = {PYTHONPATH = "src"}
 lint.cmd = "ruff check --fix src/ tests/"
@@ -63,7 +65,7 @@ typecheck.env = {PYTHONPATH = "src"}
 [dependency-groups]
 dev = [
     "import-linter>=2.10",
-    "ruff>=0.15.4",
+    "ruff==0.14.14",
     "pyright>=1.1.408",
     "pre-commit>=4.5.1",
 ]
