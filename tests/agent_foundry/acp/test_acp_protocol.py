@@ -13,6 +13,7 @@ from agent_foundry.acp.protocol import (
     MarkerMapping,
     OutputMessage,
     StatusMessage,
+    StructuredOutputMessage,
     parse_protocol_message,
 )
 
@@ -205,3 +206,28 @@ class TestParseProtocolMessage:
         assert OutputMessage in AdapterMessage.__args__
         assert AgentEventMessage in AdapterMessage.__args__
         assert StatusMessage in AdapterMessage.__args__
+
+
+class TestStructuredOutputMessage:
+    def test_given_valid_data_when_constructed_then_has_payload(self):
+        msg = StructuredOutputMessage(
+            session_id="sess-1",
+            payload={"outcome": {"kind": "success", "payload": {"x": 1}}},
+            timestamp=1234567890.0,
+        )
+        assert msg.type == "structured_output"
+        assert msg.payload["outcome"]["kind"] == "success"
+
+    def test_given_serialized_message_when_parsed_then_roundtrips(self):
+        msg = StructuredOutputMessage(
+            session_id="sess-1",
+            payload={"outcome": {"kind": "clarification_needed", "question": "which?"}},
+            timestamp=1234567890.0,
+        )
+        parsed = parse_protocol_message(msg.model_dump_json())
+        assert isinstance(parsed, StructuredOutputMessage)
+        assert parsed == msg
+
+    def test_given_unknown_type_when_parsed_then_raises_protocol_error(self):
+        with pytest.raises(ProtocolError):
+            parse_protocol_message('{"type": "nonsense", "session_id": "s", "timestamp": 0}')
