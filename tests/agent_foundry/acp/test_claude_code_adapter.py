@@ -1,6 +1,7 @@
 """Tests for Claude Code ACP adapter — marker matching and event mapping."""
 
 import json
+from typing import Any
 
 from agent_foundry.acp.adapters.claude_code import ClaudeCodeAdapter, _build_claude_cmd
 from agent_foundry.acp.protocol import MarkerMapping
@@ -315,3 +316,93 @@ class TestRunTurnStructuredOutput:
         }
         assert result.task_complete is True
         assert result.agent_session_id == "sess-1"
+
+
+class TestStderrOnError:
+    def test_given_llm_error_with_stderr_then_turn_complete_carries_stderr_tail(self, monkeypatch):
+        import subprocess
+
+        fake_stdout_lines = [
+            json.dumps({"type": "system", "subtype": "init", "session_id": "sess-1"}) + "\n",
+            json.dumps({"type": "result", "is_error": True, "stop_reason": "error"}) + "\n",
+        ]
+        fake_stderr_lines = [
+            "claude: authentication failed\n",
+            "hint: run `claude auth login`\n",
+        ]
+
+        class _FakeProc:
+            def __init__(self):
+                self.stdout = iter(fake_stdout_lines)
+                self.stderr = iter(fake_stderr_lines)
+
+            def wait(self):
+                return 1
+
+            def terminate(self):
+                pass
+
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _FakeProc())
+
+        sent: list[dict[str, Any]] = []
+
+        class _FakeWS:
+            def send(self, data):
+                sent.append(json.loads(data))
+
+        adapter = ClaudeCodeAdapter()
+        adapter.run_turn(prompt="test", ws=_FakeWS(), protocol_session_id="proto-1")
+
+        terminal = [
+            m for m in sent if m.get("type") == "status" and m.get("exit_code") not in (None, 0)
+        ]
+        assert len(terminal) == 1, (
+            f"expected exactly one terminal status; got {len(terminal)}: {terminal}"
+        )
+        assert "authentication failed" in terminal[0].get("detail", "")
+        assert terminal[0].get("status") == "turn_complete"
+
+    def test_given_crash_before_result_event_then_synthetic_error_status_with_stderr(
+        self, monkeypatch
+    ):
+        import subprocess
+
+        fake_stdout_lines = [
+            json.dumps({"type": "system", "subtype": "init", "session_id": "sess-1"}) + "\n",
+        ]
+        fake_stderr_lines = [
+            "claude: segmentation fault\n",
+            "core dumped\n",
+        ]
+
+        class _FakeProc:
+            def __init__(self):
+                self.stdout = iter(fake_stdout_lines)
+                self.stderr = iter(fake_stderr_lines)
+
+            def wait(self):
+                return 139
+
+            def terminate(self):
+                pass
+
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _FakeProc())
+
+        sent: list[dict[str, Any]] = []
+
+        class _FakeWS:
+            def send(self, data):
+                sent.append(json.loads(data))
+
+        adapter = ClaudeCodeAdapter()
+        adapter.run_turn(prompt="test", ws=_FakeWS(), protocol_session_id="proto-1")
+
+        terminal = [
+            m for m in sent if m.get("type") == "status" and m.get("exit_code") not in (None, 0)
+        ]
+        assert len(terminal) == 1, (
+            f"expected exactly one terminal status; got {len(terminal)}: {terminal}"
+        )
+        assert terminal[0].get("status") == "error"
+        assert "segmentation fault" in terminal[0].get("detail", "")
+        assert terminal[0].get("exit_code") == 139

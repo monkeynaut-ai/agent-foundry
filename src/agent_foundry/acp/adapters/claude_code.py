@@ -109,6 +109,7 @@ class ClaudeCodeAdapter(AdapterBase):
         self,
         event: dict[str, Any],
         session_id: str,
+        stderr_tail: str = "",
     ) -> tuple[list[dict[str, Any]], bool]:
         """Map a Claude Code stream-json event to protocol messages.
 
@@ -192,13 +193,16 @@ class ClaudeCodeAdapter(AdapterBase):
         elif event_type == "result":
             is_error = event.get("is_error", False)
             exit_code = 1 if is_error else 0
+            detail = event.get("stop_reason", "")
+            if is_error and stderr_tail:
+                detail = f"{detail}\n{stderr_tail}".strip() if detail else stderr_tail
             messages.append(
                 {
                     "type": "status",
                     "session_id": session_id,
                     "status": "turn_complete",
                     "exit_code": exit_code,
-                    "detail": event.get("stop_reason", ""),
+                    "detail": detail,
                     "timestamp": ts,
                 }
             )
@@ -248,6 +252,7 @@ class ClaudeCodeAdapter(AdapterBase):
 
         exit_code = 1
         saw_task_complete = False
+        saw_terminal_status = False
         captured_structured_output: dict[str, Any] | None = None
         deadline = time.monotonic() + timeout
 
@@ -278,6 +283,7 @@ class ClaudeCodeAdapter(AdapterBase):
                         "timestamp": time.time(),
                     }
                 )
+                saw_terminal_status = True
                 break
 
             line = line.strip()
@@ -293,22 +299,51 @@ class ClaudeCodeAdapter(AdapterBase):
             if event.get("type") == "system" and event.get("subtype") == "init":
                 captured_session_id = event.get("session_id", captured_session_id)
 
-            protocol_msgs, is_complete = self._map_event_to_protocol(event, protocol_session_id)
+            # For result events, pass stderr tail so it can be folded into the detail
+            stderr_tail = ""
+            if event.get("type") == "result":
+                stderr_thread.join(timeout=2)
+                stderr_tail = "\n".join(stderr_lines)
+
+            protocol_msgs, is_complete = self._map_event_to_protocol(
+                event, protocol_session_id, stderr_tail=stderr_tail
+            )
             if is_complete:
                 saw_task_complete = True
             for msg in protocol_msgs:
                 if msg.get("type") == "structured_output":
                     captured_structured_output = msg["payload"]
+                if msg.get("type") == "status" and msg.get("status") in (
+                    "turn_complete",
+                    "error",
+                ):
+                    saw_terminal_status = True
                 _send_msg(msg)
 
             if event.get("type") == "result":
                 exit_code = 1 if event.get("is_error", False) else 0
 
-        proc.wait()
+        actual_exit_code = proc.wait()
         stderr_thread.join(timeout=2)
 
         if stderr_lines:
             logger.info("Claude stderr: %s", "\n".join(stderr_lines))
+
+        # Path 2: process crashed before any result event
+        if actual_exit_code != 0 and not saw_terminal_status:
+            exit_code = actual_exit_code
+            stderr_tail_str = "\n".join(stderr_lines)
+            _send_msg(
+                {
+                    "type": "status",
+                    "session_id": protocol_session_id,
+                    "status": "error",
+                    "exit_code": actual_exit_code,
+                    "detail": stderr_tail_str,
+                    "timestamp": time.time(),
+                }
+            )
+            saw_terminal_status = True
 
         return TurnResult(
             agent_session_id=captured_session_id,
