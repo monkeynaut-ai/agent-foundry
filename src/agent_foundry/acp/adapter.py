@@ -18,11 +18,15 @@ class TurnResult:
         agent_session_id: Agent's internal session ID (for --resume).
         exit_code: Agent CLI exit code for this turn.
         task_complete: Whether the agent signaled task completion.
+        structured_output: If the turn ran under --json-schema and the agent
+            called Claude Code's synthetic StructuredOutput tool, this holds
+            the raw dict payload. None otherwise.
     """
 
     agent_session_id: str | None = None
     exit_code: int = -1
     task_complete: bool = False
+    structured_output: dict[str, Any] | None = None
 
 
 class AdapterBase(ABC):

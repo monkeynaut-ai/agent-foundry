@@ -51,3 +51,21 @@ class TestAdapterBase:
 
         adapter = StubAdapter()
         assert adapter.run("prompt", "ws://host", "p1") == 42
+
+
+class TestTurnResultStructuredOutput:
+    def test_given_default_construction_then_structured_output_is_none(self):
+        result = TurnResult()
+        assert result.structured_output is None
+
+    def test_given_structured_output_when_set_then_preserved(self):
+        payload = {"outcome": {"kind": "success", "payload": {"field": "value"}}}
+        result = TurnResult(structured_output=payload)
+        assert result.structured_output == payload
+
+    def test_given_existing_fields_when_structured_output_added_then_backwards_compatible(self):
+        result = TurnResult(agent_session_id="sess-1", exit_code=0, task_complete=True)
+        assert result.agent_session_id == "sess-1"
+        assert result.exit_code == 0
+        assert result.task_complete is True
+        assert result.structured_output is None
