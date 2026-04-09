@@ -46,7 +46,10 @@ def _connect_with_backoff(ws_url: str, timeout: float = 30.0):
 
 
 def _build_claude_cmd(
-    prompt: str, session_id: str | None = None, skip_permissions: bool = False
+    prompt: str,
+    session_id: str | None = None,
+    skip_permissions: bool = False,
+    json_schema: dict[str, Any] | None = None,
 ) -> list[str]:
     """Build the claude CLI command for headless mode."""
     cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose"]
@@ -54,6 +57,8 @@ def _build_claude_cmd(
         cmd.extend(["--resume", session_id])
     if skip_permissions:
         cmd.append("--dangerously-skip-permissions")
+    if json_schema is not None:
+        cmd.extend(["--json-schema", json.dumps(json_schema)])
     return cmd
 
 
@@ -82,6 +87,7 @@ class ClaudeCodeAdapter(AdapterBase):
         self._skip_permissions = skip_permissions
         self._turn_timeout = turn_timeout
         self._connect_timeout = connect_timeout
+        self._in_structured_output_retry = False
 
     def _match_marker(self, line: str) -> tuple[str, dict[str, Any]] | None:
         """Check if a line matches any configured marker.
@@ -104,6 +110,7 @@ class ClaudeCodeAdapter(AdapterBase):
         self,
         event: dict[str, Any],
         session_id: str,
+        stderr_tail: str = "",
     ) -> tuple[list[dict[str, Any]], bool]:
         """Map a Claude Code stream-json event to protocol messages.
 
@@ -157,6 +164,17 @@ class ClaudeCodeAdapter(AdapterBase):
                 elif block.get("type") == "tool_use":
                     tool_name = block.get("name", "unknown")
                     tool_input = block.get("input", {})
+                    if tool_name == "StructuredOutput":
+                        messages.append(
+                            {
+                                "type": "structured_output",
+                                "session_id": session_id,
+                                "payload": tool_input,
+                                "timestamp": ts,
+                            }
+                        )
+                        task_complete = True
+                        continue
                     summary = f"[tool_use: {tool_name}]"
                     if isinstance(tool_input, dict):
                         for key in ("command", "file_path", "query"):
@@ -176,13 +194,16 @@ class ClaudeCodeAdapter(AdapterBase):
         elif event_type == "result":
             is_error = event.get("is_error", False)
             exit_code = 1 if is_error else 0
+            detail = event.get("stop_reason", "")
+            if is_error and stderr_tail:
+                detail = f"{detail}\n{stderr_tail}".strip() if detail else stderr_tail
             messages.append(
                 {
                     "type": "status",
                     "session_id": session_id,
                     "status": "turn_complete",
                     "exit_code": exit_code,
-                    "detail": event.get("stop_reason", ""),
+                    "detail": detail,
                     "timestamp": ts,
                 }
             )
@@ -207,11 +228,17 @@ class ClaudeCodeAdapter(AdapterBase):
         protocol_session_id: str,
         claude_session_id: str | None = None,
         timeout: float | None = None,
+        json_schema: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> TurnResult:
         """Run a single Claude Code headless turn."""
         timeout = timeout or self._turn_timeout
-        cmd = _build_claude_cmd(prompt, claude_session_id, skip_permissions=self._skip_permissions)
+        cmd = _build_claude_cmd(
+            prompt,
+            claude_session_id,
+            skip_permissions=self._skip_permissions,
+            json_schema=json_schema,
+        )
         logger.info("Running: %s", " ".join(cmd))
 
         captured_session_id = claude_session_id
@@ -226,6 +253,9 @@ class ClaudeCodeAdapter(AdapterBase):
 
         exit_code = 1
         saw_task_complete = False
+        saw_terminal_status = False
+        captured_structured_output: dict[str, Any] | None = None
+        captured_stop_reason: str = ""
         deadline = time.monotonic() + timeout
 
         def _send_msg(msg: dict) -> None:
@@ -255,6 +285,7 @@ class ClaudeCodeAdapter(AdapterBase):
                         "timestamp": time.time(),
                     }
                 )
+                saw_terminal_status = True
                 break
 
             line = line.strip()
@@ -270,25 +301,87 @@ class ClaudeCodeAdapter(AdapterBase):
             if event.get("type") == "system" and event.get("subtype") == "init":
                 captured_session_id = event.get("session_id", captured_session_id)
 
-            protocol_msgs, is_complete = self._map_event_to_protocol(event, protocol_session_id)
+            # For result events, pass stderr tail so it can be folded into the detail
+            stderr_tail = ""
+            if event.get("type") == "result":
+                stderr_thread.join(timeout=2)
+                stderr_tail = "\n".join(stderr_lines)
+
+            protocol_msgs, is_complete = self._map_event_to_protocol(
+                event, protocol_session_id, stderr_tail=stderr_tail
+            )
             if is_complete:
                 saw_task_complete = True
             for msg in protocol_msgs:
+                if msg.get("type") == "structured_output":
+                    captured_structured_output = msg["payload"]
+                if msg.get("type") == "status" and msg.get("status") in (
+                    "turn_complete",
+                    "error",
+                ):
+                    saw_terminal_status = True
                 _send_msg(msg)
 
             if event.get("type") == "result":
                 exit_code = 1 if event.get("is_error", False) else 0
+                captured_stop_reason = event.get("stop_reason", "")
 
-        proc.wait()
+        actual_exit_code = proc.wait()
         stderr_thread.join(timeout=2)
 
         if stderr_lines:
             logger.info("Claude stderr: %s", "\n".join(stderr_lines))
 
+        # Path 2: process crashed before any result event
+        if actual_exit_code != 0 and not saw_terminal_status:
+            exit_code = actual_exit_code
+            stderr_tail_str = "\n".join(stderr_lines)
+            _send_msg(
+                {
+                    "type": "status",
+                    "session_id": protocol_session_id,
+                    "status": "error",
+                    "exit_code": actual_exit_code,
+                    "detail": stderr_tail_str,
+                    "timestamp": time.time(),
+                }
+            )
+            saw_terminal_status = True
+
+        # Non-recoverable stop reasons — retrying won't help.
+        # See: https://platform.claude.com/docs/en/build-with-claude/structured-outputs#invalid-outputs
+        _non_recoverable_stop_reasons = ("refusal", "max_tokens")
+
+        # Retry once if json_schema was set but no StructuredOutput was captured,
+        # UNLESS the stop reason indicates a non-recoverable condition.
+        if (
+            json_schema is not None
+            and captured_structured_output is None
+            and not self._in_structured_output_retry
+            and captured_stop_reason not in _non_recoverable_stop_reasons
+        ):
+            logger.info("No StructuredOutput captured; retrying with --resume")
+            self._in_structured_output_retry = True
+            try:
+                return self.run_turn(
+                    prompt=(
+                        "You must call the StructuredOutput tool with your response. "
+                        "Do not respond with plain text."
+                    ),
+                    ws=ws,
+                    protocol_session_id=protocol_session_id,
+                    claude_session_id=captured_session_id,
+                    timeout=timeout,
+                    json_schema=json_schema,
+                )
+            finally:
+                self._in_structured_output_retry = False
+
         return TurnResult(
             agent_session_id=captured_session_id,
             exit_code=exit_code,
             task_complete=saw_task_complete,
+            structured_output=captured_structured_output,
         )
 
     def run(

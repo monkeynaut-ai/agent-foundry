@@ -40,6 +40,24 @@ class AgentEventMessage(BaseModel):
     timestamp: float
 
 
+class StructuredOutputMessage(BaseModel):
+    """Typed payload captured from Claude Code's StructuredOutput tool call.
+
+    Emitted by the adapter when the agent (running under --json-schema) calls
+    the synthetic StructuredOutput tool. The payload is the raw dict from
+    ``tool_use.input``; orchestrators are expected to validate it against
+    their own typed envelope model.
+
+    Distinct from AgentEventMessage: this carries the turn's final typed
+    result, not a mid-stream signal parsed from free text.
+    """
+
+    type: Literal["structured_output"] = "structured_output"
+    session_id: str
+    payload: dict[str, Any]
+    timestamp: float
+
+
 class StatusMessage(BaseModel):
     """Agent lifecycle status change."""
 
@@ -93,7 +111,7 @@ class MarkerMapping(BaseModel):
 
 # ── Type aliases ──
 
-AdapterMessage = OutputMessage | AgentEventMessage | StatusMessage
+AdapterMessage = OutputMessage | AgentEventMessage | StructuredOutputMessage | StatusMessage
 OrchestratorMessage = InputMessage | ControlMessage
 ProtocolMessage = AdapterMessage | OrchestratorMessage
 
@@ -102,6 +120,7 @@ ProtocolMessage = AdapterMessage | OrchestratorMessage
 _MESSAGE_TYPES: dict[str, type[BaseModel]] = {
     "output": OutputMessage,
     "agent_event": AgentEventMessage,
+    "structured_output": StructuredOutputMessage,
     "status": StatusMessage,
     "input": InputMessage,
     "control": ControlMessage,
