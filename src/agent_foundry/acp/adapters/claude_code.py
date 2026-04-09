@@ -223,11 +223,17 @@ class ClaudeCodeAdapter(AdapterBase):
         protocol_session_id: str,
         claude_session_id: str | None = None,
         timeout: float | None = None,
+        json_schema: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> TurnResult:
         """Run a single Claude Code headless turn."""
         timeout = timeout or self._turn_timeout
-        cmd = _build_claude_cmd(prompt, claude_session_id, skip_permissions=self._skip_permissions)
+        cmd = _build_claude_cmd(
+            prompt,
+            claude_session_id,
+            skip_permissions=self._skip_permissions,
+            json_schema=json_schema,
+        )
         logger.info("Running: %s", " ".join(cmd))
 
         captured_session_id = claude_session_id
@@ -242,6 +248,7 @@ class ClaudeCodeAdapter(AdapterBase):
 
         exit_code = 1
         saw_task_complete = False
+        captured_structured_output: dict[str, Any] | None = None
         deadline = time.monotonic() + timeout
 
         def _send_msg(msg: dict) -> None:
@@ -290,6 +297,8 @@ class ClaudeCodeAdapter(AdapterBase):
             if is_complete:
                 saw_task_complete = True
             for msg in protocol_msgs:
+                if msg.get("type") == "structured_output":
+                    captured_structured_output = msg["payload"]
                 _send_msg(msg)
 
             if event.get("type") == "result":
@@ -305,6 +314,7 @@ class ClaudeCodeAdapter(AdapterBase):
             agent_session_id=captured_session_id,
             exit_code=exit_code,
             task_complete=saw_task_complete,
+            structured_output=captured_structured_output,
         )
 
     def run(

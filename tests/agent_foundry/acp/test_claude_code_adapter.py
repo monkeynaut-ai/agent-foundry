@@ -242,3 +242,76 @@ class TestAdapterDetectsStructuredOutput:
         assert len(structured) == 0
         outputs = [m for m in messages if m.get("type") == "output"]
         assert any("Read" in m.get("text", "") for m in outputs)
+
+
+class TestRunTurnStructuredOutput:
+    """Integration-lite test with synthetic subprocess stdout."""
+
+    def test_given_stream_with_structured_output_tool_use_then_turn_result_populated(
+        self, monkeypatch
+    ):
+        import subprocess
+
+        fake_stdout_lines = [
+            json.dumps({"type": "system", "subtype": "init", "session_id": "sess-1"}) + "\n",
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "tu-1",
+                                "name": "StructuredOutput",
+                                "input": {
+                                    "outcome": {
+                                        "kind": "success",
+                                        "payload": {"city": "Paris"},
+                                    }
+                                },
+                            }
+                        ]
+                    },
+                }
+            )
+            + "\n",
+            json.dumps({"type": "result", "is_error": False, "stop_reason": "end_turn"}) + "\n",
+        ]
+
+        class _FakeProc:
+            def __init__(self):
+                self.stdout = iter(fake_stdout_lines)
+                self.stderr = iter([])
+
+            def wait(self):
+                return 0
+
+            def terminate(self):
+                pass
+
+        monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _FakeProc())
+
+        class _FakeWS:
+            def __init__(self):
+                self.sent: list[str] = []
+
+            def send(self, data):
+                self.sent.append(data)
+
+        adapter = ClaudeCodeAdapter()
+        ws = _FakeWS()
+        result = adapter.run_turn(
+            prompt="test",
+            ws=ws,
+            protocol_session_id="proto-1",
+            json_schema={
+                "type": "object",
+                "properties": {"outcome": {"type": "object"}},
+            },
+        )
+
+        assert result.structured_output == {
+            "outcome": {"kind": "success", "payload": {"city": "Paris"}}
+        }
+        assert result.task_complete is True
+        assert result.agent_session_id == "sess-1"
