@@ -5,7 +5,7 @@
 groups = ["default", "dev"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:9813d534d1f4850af012d388ea0c570f1e6de27f05ef9f3118fdf87e216bec5f"
+content_hash = "sha256:37c07dc46ff979fdcb2d4206c3c79253e95cebb13142bd11cbff4e1d835e7d16"
 
 [[metadata.targets]]
 requires_python = "==3.14.*"
@@ -169,6 +169,17 @@ files = [
 ]
 
 [[package]]
+name = "execnet"
+version = "2.1.2"
+requires_python = ">=3.8"
+summary = "execnet: rapid multi-Python deployment"
+groups = ["dev"]
+files = [
+    {file = "execnet-2.1.2-py3-none-any.whl", hash = "sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec"},
+    {file = "execnet-2.1.2.tar.gz", hash = "sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd"},
+]
+
+[[package]]
 name = "filelock"
 version = "3.25.2"
 requires_python = ">=3.10"
@@ -302,7 +313,7 @@ name = "iniconfig"
 version = "2.3.0"
 requires_python = ">=3.10"
 summary = "brain-dead simple config-ini parsing"
-groups = ["default"]
+groups = ["default", "dev"]
 files = [
     {file = "iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12"},
     {file = "iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730"},
@@ -560,7 +571,7 @@ name = "packaging"
 version = "26.0"
 requires_python = ">=3.8"
 summary = "Core utilities for Python packages"
-groups = ["default"]
+groups = ["default", "dev"]
 files = [
     {file = "packaging-26.0-py3-none-any.whl", hash = "sha256:b36f1fef9334a5588b4166f8bcd26a14e521f2b55e6b9de3aaa80d3ff7a37529"},
     {file = "packaging-26.0.tar.gz", hash = "sha256:00243ae351a257117b6a241061796684b084ed1c516a08c48a3f7e147a9d80b4"},
@@ -595,7 +606,7 @@ name = "pluggy"
 version = "1.6.0"
 requires_python = ">=3.9"
 summary = "plugin and hook calling mechanisms for python"
-groups = ["default"]
+groups = ["default", "dev"]
 files = [
     {file = "pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746"},
     {file = "pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3"},
@@ -718,7 +729,7 @@ name = "pytest"
 version = "9.0.3"
 requires_python = ">=3.10"
 summary = "pytest: simple powerful testing with Python"
-groups = ["default"]
+groups = ["default", "dev"]
 dependencies = [
     "colorama>=0.4; sys_platform == \"win32\"",
     "exceptiongroup>=1; python_version < \"3.11\"",
@@ -731,6 +742,21 @@ dependencies = [
 files = [
     {file = "pytest-9.0.3-py3-none-any.whl", hash = "sha256:2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9"},
     {file = "pytest-9.0.3.tar.gz", hash = "sha256:b86ada508af81d19edeb213c681b1d48246c1a91d304c6c81a427674c17eb91c"},
+]
+
+[[package]]
+name = "pytest-xdist"
+version = "3.8.0"
+requires_python = ">=3.9"
+summary = "pytest xdist plugin for distributed testing, most importantly across multiple CPUs"
+groups = ["dev"]
+dependencies = [
+    "execnet>=2.1",
+    "pytest>=7.0.0",
+]
+files = [
+    {file = "pytest_xdist-3.8.0-py3-none-any.whl", hash = "sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88"},
+    {file = "pytest_xdist-3.8.0.tar.gz", hash = "sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1"},
 ]
 
 [[package]]

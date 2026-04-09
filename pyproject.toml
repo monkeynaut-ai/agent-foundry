@@ -28,11 +28,12 @@ license = {text = "MIT"}
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-m 'not benchmark'"
+addopts = "-m 'not benchmark' -n 8"
 markers = [
     "benchmark: performance benchmark tests (excluded from normal runs)",
     "integration: integration tests (require Docker, external services)",
 ]
+
 
 
 
@@ -68,6 +69,7 @@ dev = [
     "ruff==0.14.14",
     "pyright>=1.1.408",
     "pre-commit>=4.5.1",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.ruff]
