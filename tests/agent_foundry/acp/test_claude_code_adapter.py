@@ -748,3 +748,106 @@ class TestNoRetryOnNonRecoverableStopReason:
 
         assert call_count == 1, f"expected NO retry on max_tokens; got {call_count} calls"
         assert result.structured_output is None
+
+
+class TestRetryOnRecoverableFailure:
+    """Verify that retry DOES fire for recoverable failure modes — specifically
+    the cold-start pattern (anthropics/claude-code#23265) where the first
+    --json-schema invocation fails with is_error=True but an immediate retry
+    succeeds. This is the primary bug the retry mechanism was built to catch.
+    """
+
+    def test_given_is_error_true_on_first_call_then_retries_and_succeeds(self, monkeypatch):
+        """Cold-start pattern: first call fails (is_error=True), retry succeeds."""
+        import subprocess
+
+        call_count = 0
+
+        def _fake_popen(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                # First call: fails with is_error=True (cold-start failure)
+                stdout = [
+                    json.dumps({"type": "system", "subtype": "init", "session_id": "sess-1"})
+                    + "\n",
+                    json.dumps(
+                        {
+                            "type": "result",
+                            "is_error": True,
+                            "stop_reason": "error",
+                        }
+                    )
+                    + "\n",
+                ]
+            else:
+                # Retry: succeeds with StructuredOutput
+                stdout = [
+                    json.dumps({"type": "system", "subtype": "init", "session_id": "sess-1"})
+                    + "\n",
+                    json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "content": [
+                                    {
+                                        "type": "tool_use",
+                                        "id": "tu-1",
+                                        "name": "StructuredOutput",
+                                        "input": {
+                                            "outcome": {
+                                                "kind": "success",
+                                                "payload": {"value": 42},
+                                            }
+                                        },
+                                    }
+                                ]
+                            },
+                        }
+                    )
+                    + "\n",
+                    json.dumps(
+                        {
+                            "type": "result",
+                            "is_error": False,
+                            "stop_reason": "end_turn",
+                        }
+                    )
+                    + "\n",
+                ]
+
+            class _FakeProc:
+                def __init__(self):
+                    self.stdout = iter(stdout)
+                    self.stderr = iter([])
+
+                def wait(self):
+                    return 1 if call_count == 1 else 0
+
+                def terminate(self):
+                    pass
+
+            return _FakeProc()
+
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen)
+
+        sent = []
+
+        class _FakeWS:
+            def send(self, data):
+                sent.append(json.loads(data))
+
+        adapter = ClaudeCodeAdapter()
+        result = adapter.run_turn(
+            prompt="test",
+            ws=_FakeWS(),
+            protocol_session_id="proto-1",
+            json_schema={"type": "object", "properties": {"outcome": {"type": "object"}}},
+        )
+
+        assert call_count == 2, f"expected retry on is_error=True; got {call_count} calls"
+        assert result.structured_output == {
+            "outcome": {"kind": "success", "payload": {"value": 42}}
+        }
+        assert result.task_complete is True
