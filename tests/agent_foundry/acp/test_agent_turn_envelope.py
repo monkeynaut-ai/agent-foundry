@@ -3,7 +3,7 @@
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from agent_foundry.acp.turn_outcome import (
+from agent_foundry.acp.agent_turn_envelope import (
     AgentTurnEnvelope,
     ClarificationOutcome,
     FailureOutcome,
