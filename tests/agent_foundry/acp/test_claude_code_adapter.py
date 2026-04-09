@@ -1,5 +1,7 @@
 """Tests for Claude Code ACP adapter — marker matching and event mapping."""
 
+import json
+
 from agent_foundry.acp.adapters.claude_code import ClaudeCodeAdapter, _build_claude_cmd
 from agent_foundry.acp.protocol import MarkerMapping
 
@@ -170,3 +172,22 @@ class TestAdapterConfig:
         adapter = ClaudeCodeAdapter(turn_timeout=120.0, connect_timeout=10.0)
         assert adapter._turn_timeout == 120.0
         assert adapter._connect_timeout == 10.0
+
+
+class TestBuildClaudeCmdJsonSchema:
+    def test_given_no_schema_when_cmd_built_then_no_json_schema_flag(self):
+        cmd = _build_claude_cmd("hello", json_schema=None)
+        assert "--json-schema" not in cmd
+
+    def test_given_schema_when_cmd_built_then_json_schema_flag_emitted(self):
+        schema = {"type": "object", "properties": {"city": {"type": "string"}}}
+        cmd = _build_claude_cmd("hello", json_schema=schema)
+        assert "--json-schema" in cmd
+        idx = cmd.index("--json-schema")
+        assert json.loads(cmd[idx + 1]) == schema
+
+    def test_given_schema_and_session_id_when_cmd_built_then_both_flags_present(self):
+        schema = {"type": "object"}
+        cmd = _build_claude_cmd("hello", session_id="sess-1", json_schema=schema)
+        assert "--json-schema" in cmd
+        assert "--resume" in cmd

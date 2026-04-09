@@ -46,7 +46,10 @@ def _connect_with_backoff(ws_url: str, timeout: float = 30.0):
 
 
 def _build_claude_cmd(
-    prompt: str, session_id: str | None = None, skip_permissions: bool = False
+    prompt: str,
+    session_id: str | None = None,
+    skip_permissions: bool = False,
+    json_schema: dict[str, Any] | None = None,
 ) -> list[str]:
     """Build the claude CLI command for headless mode."""
     cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose"]
@@ -54,6 +57,8 @@ def _build_claude_cmd(
         cmd.extend(["--resume", session_id])
     if skip_permissions:
         cmd.append("--dangerously-skip-permissions")
+    if json_schema is not None:
+        cmd.extend(["--json-schema", json.dumps(json_schema)])
     return cmd
 
 
