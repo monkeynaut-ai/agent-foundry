@@ -162,6 +162,17 @@ class ClaudeCodeAdapter(AdapterBase):
                 elif block.get("type") == "tool_use":
                     tool_name = block.get("name", "unknown")
                     tool_input = block.get("input", {})
+                    if tool_name == "StructuredOutput":
+                        messages.append(
+                            {
+                                "type": "structured_output",
+                                "session_id": session_id,
+                                "payload": tool_input,
+                                "timestamp": ts,
+                            }
+                        )
+                        task_complete = True
+                        continue
                     summary = f"[tool_use: {tool_name}]"
                     if isinstance(tool_input, dict):
                         for key in ("command", "file_path", "query"):

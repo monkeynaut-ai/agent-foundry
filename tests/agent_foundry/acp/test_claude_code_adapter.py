@@ -191,3 +191,54 @@ class TestBuildClaudeCmdJsonSchema:
         cmd = _build_claude_cmd("hello", session_id="sess-1", json_schema=schema)
         assert "--json-schema" in cmd
         assert "--resume" in cmd
+
+
+class TestAdapterDetectsStructuredOutput:
+    def test_given_tool_use_event_for_structured_output_then_emits_structured_output_message(self):
+        adapter = ClaudeCodeAdapter()
+        event = {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tu-1",
+                        "name": "StructuredOutput",
+                        "input": {"outcome": {"kind": "success", "payload": {"city": "Paris"}}},
+                    }
+                ]
+            },
+        }
+        messages, task_complete = adapter._map_event_to_protocol(event, "sess-1")
+        structured = [m for m in messages if m.get("type") == "structured_output"]
+        assert len(structured) == 1
+        assert structured[0]["payload"] == {
+            "outcome": {"kind": "success", "payload": {"city": "Paris"}}
+        }
+        assert task_complete is True
+        # Regression guard: no generic summary output for this block
+        outputs = [m for m in messages if m.get("type") == "output"]
+        assert not any("StructuredOutput" in m.get("text", "") for m in outputs), (
+            f"StructuredOutput block should not emit a summary output; got: {outputs}"
+        )
+
+    def test_given_tool_use_event_for_other_tool_then_no_structured_output_message(self):
+        adapter = ClaudeCodeAdapter()
+        event = {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tu-2",
+                        "name": "Read",
+                        "input": {"file_path": "/tmp/foo.py"},
+                    }
+                ]
+            },
+        }
+        messages, _task_complete = adapter._map_event_to_protocol(event, "sess-1")
+        structured = [m for m in messages if m.get("type") == "structured_output"]
+        assert len(structured) == 0
+        outputs = [m for m in messages if m.get("type") == "output"]
+        assert any("Read" in m.get("text", "") for m in outputs)
