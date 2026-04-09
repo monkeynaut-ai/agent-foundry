@@ -87,6 +87,7 @@ class ClaudeCodeAdapter(AdapterBase):
         self._skip_permissions = skip_permissions
         self._turn_timeout = turn_timeout
         self._connect_timeout = connect_timeout
+        self._in_structured_output_retry = False
 
     def _match_marker(self, line: str) -> tuple[str, dict[str, Any]] | None:
         """Check if a line matches any configured marker.
@@ -344,6 +345,29 @@ class ClaudeCodeAdapter(AdapterBase):
                 }
             )
             saw_terminal_status = True
+
+        # Retry once if json_schema was set but no StructuredOutput was captured
+        if (
+            json_schema is not None
+            and captured_structured_output is None
+            and not self._in_structured_output_retry
+        ):
+            logger.info("No StructuredOutput captured; retrying with --resume")
+            self._in_structured_output_retry = True
+            try:
+                return self.run_turn(
+                    prompt=(
+                        "You must call the StructuredOutput tool with your response. "
+                        "Do not respond with plain text."
+                    ),
+                    ws=ws,
+                    protocol_session_id=protocol_session_id,
+                    claude_session_id=captured_session_id,
+                    timeout=timeout,
+                    json_schema=json_schema,
+                )
+            finally:
+                self._in_structured_output_retry = False
 
         return TurnResult(
             agent_session_id=captured_session_id,
