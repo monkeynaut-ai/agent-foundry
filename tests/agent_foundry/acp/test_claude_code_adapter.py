@@ -626,3 +626,125 @@ class TestLocalRetryOnMissingStructuredOutput:
         )
 
         assert call_count == 1
+
+
+class TestNoRetryOnNonRecoverableStopReason:
+    """When stop_reason indicates a non-recoverable condition (refusal, max_tokens),
+    the adapter should NOT retry — the same prompt/limits will produce the same result.
+    See: https://platform.claude.com/docs/en/build-with-claude/structured-outputs#invalid-outputs
+    """
+
+    def test_given_refusal_stop_reason_then_no_retry(self, monkeypatch):
+        """Claude refused for safety reasons. Retrying is pointless."""
+        import subprocess
+
+        call_count = 0
+
+        def _fake_popen(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            stdout = [
+                json.dumps({"type": "system", "subtype": "init", "session_id": "sess-1"}) + "\n",
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [
+                                {"type": "text", "text": "I cannot help with that request."}
+                            ]
+                        },
+                    }
+                )
+                + "\n",
+                json.dumps(
+                    {
+                        "type": "result",
+                        "is_error": False,
+                        "stop_reason": "refusal",
+                    }
+                )
+                + "\n",
+            ]
+
+            class _FakeProc:
+                def __init__(self):
+                    self.stdout = iter(stdout)
+                    self.stderr = iter([])
+
+                def wait(self):
+                    return 0
+
+                def terminate(self):
+                    pass
+
+            return _FakeProc()
+
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen)
+
+        sent = []
+
+        class _FakeWS:
+            def send(self, data):
+                sent.append(json.loads(data))
+
+        adapter = ClaudeCodeAdapter()
+        result = adapter.run_turn(
+            prompt="test",
+            ws=_FakeWS(),
+            protocol_session_id="proto-1",
+            json_schema={"type": "object", "properties": {"x": {"type": "integer"}}},
+        )
+
+        assert call_count == 1, f"expected NO retry on refusal; got {call_count} calls"
+        assert result.structured_output is None
+
+    def test_given_max_tokens_stop_reason_then_no_retry(self, monkeypatch):
+        """Response was truncated. Same max_tokens = same truncation."""
+        import subprocess
+
+        call_count = 0
+
+        def _fake_popen(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            stdout = [
+                json.dumps({"type": "system", "subtype": "init", "session_id": "sess-1"}) + "\n",
+                json.dumps(
+                    {
+                        "type": "result",
+                        "is_error": False,
+                        "stop_reason": "max_tokens",
+                    }
+                )
+                + "\n",
+            ]
+
+            class _FakeProc:
+                def __init__(self):
+                    self.stdout = iter(stdout)
+                    self.stderr = iter([])
+
+                def wait(self):
+                    return 0
+
+                def terminate(self):
+                    pass
+
+            return _FakeProc()
+
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen)
+
+        class _FakeWS:
+            def send(self, data):
+                pass
+
+        adapter = ClaudeCodeAdapter()
+        result = adapter.run_turn(
+            prompt="test",
+            ws=_FakeWS(),
+            protocol_session_id="proto-1",
+            json_schema={"type": "object", "properties": {"x": {"type": "integer"}}},
+        )
+
+        assert call_count == 1, f"expected NO retry on max_tokens; got {call_count} calls"
+        assert result.structured_output is None

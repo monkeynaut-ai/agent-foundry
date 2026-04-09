@@ -255,6 +255,7 @@ class ClaudeCodeAdapter(AdapterBase):
         saw_task_complete = False
         saw_terminal_status = False
         captured_structured_output: dict[str, Any] | None = None
+        captured_stop_reason: str = ""
         deadline = time.monotonic() + timeout
 
         def _send_msg(msg: dict) -> None:
@@ -323,6 +324,7 @@ class ClaudeCodeAdapter(AdapterBase):
 
             if event.get("type") == "result":
                 exit_code = 1 if event.get("is_error", False) else 0
+                captured_stop_reason = event.get("stop_reason", "")
 
         actual_exit_code = proc.wait()
         stderr_thread.join(timeout=2)
@@ -346,11 +348,17 @@ class ClaudeCodeAdapter(AdapterBase):
             )
             saw_terminal_status = True
 
-        # Retry once if json_schema was set but no StructuredOutput was captured
+        # Non-recoverable stop reasons — retrying won't help.
+        # See: https://platform.claude.com/docs/en/build-with-claude/structured-outputs#invalid-outputs
+        _non_recoverable_stop_reasons = ("refusal", "max_tokens")
+
+        # Retry once if json_schema was set but no StructuredOutput was captured,
+        # UNLESS the stop reason indicates a non-recoverable condition.
         if (
             json_schema is not None
             and captured_structured_output is None
             and not self._in_structured_output_retry
+            and captured_stop_reason not in _non_recoverable_stop_reasons
         ):
             logger.info("No StructuredOutput captured; retrying with --resume")
             self._in_structured_output_retry = True
