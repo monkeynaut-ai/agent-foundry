@@ -4,6 +4,11 @@ import json
 from typing import Any
 
 from agent_foundry.acp.adapters.claude_code import ClaudeCodeAdapter, _build_claude_cmd
+from agent_foundry.acp.claude_code_events import (
+    AssistantEvent,
+    ErrorEvent,
+    ResultEvent,
+)
 from agent_foundry.acp.protocol import MarkerMapping
 
 
@@ -77,29 +82,32 @@ class TestMarkerMatching:
 class TestEventMapping:
     def test_given_assistant_text_with_task_complete_when_mapped_then_task_complete_true(self):
         adapter = _make_adapter()
-        event = {
-            "type": "assistant",
-            "message": {"content": [{"type": "text", "text": "All done.\nTASK_DONE"}]},
-        }
+        event = AssistantEvent.model_validate(
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "All done.\nTASK_DONE"}]},
+            }
+        )
         msgs, tc = adapter._map_event_to_protocol(event, "s1")
         assert tc is True
-        # "All done." should still appear as output
         output_msgs = [m for m in msgs if m["type"] == "output"]
         assert any("All done." in m["text"] for m in output_msgs)
 
     def test_given_assistant_text_with_interrupt_when_mapped_then_agent_event_emitted(self):
         adapter = _make_adapter()
-        event = {
-            "type": "assistant",
-            "message": {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": 'NEED_HELP {"question": "which?", "options": ["a", "b"]}',
-                    }
-                ]
-            },
-        }
+        event = AssistantEvent.model_validate(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": 'NEED_HELP {"question": "which?", "options": ["a", "b"]}',
+                        }
+                    ]
+                },
+            }
+        )
         msgs, tc = adapter._map_event_to_protocol(event, "s1")
         assert tc is False
         event_msgs = [m for m in msgs if m["type"] == "agent_event"]
@@ -109,10 +117,12 @@ class TestEventMapping:
 
     def test_given_plain_text_when_mapped_then_output_message_emitted(self):
         adapter = _make_adapter()
-        event = {
-            "type": "assistant",
-            "message": {"content": [{"type": "text", "text": "Working on it..."}]},
-        }
+        event = AssistantEvent.model_validate(
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "Working on it..."}]},
+            }
+        )
         msgs, tc = adapter._map_event_to_protocol(event, "s1")
         assert tc is False
         assert len(msgs) == 1
@@ -121,7 +131,9 @@ class TestEventMapping:
 
     def test_given_result_event_when_mapped_then_turn_complete_status_emitted(self):
         adapter = _make_adapter()
-        event = {"type": "result", "is_error": False, "stop_reason": "end_turn"}
+        event = ResultEvent.model_validate(
+            {"type": "result", "is_error": False, "stop_reason": "end_turn"}
+        )
         msgs, tc = adapter._map_event_to_protocol(event, "s1")
         assert tc is False
         assert len(msgs) == 1
@@ -131,7 +143,7 @@ class TestEventMapping:
 
     def test_given_error_event_when_mapped_then_stderr_output_emitted(self):
         adapter = _make_adapter()
-        event = {"type": "error", "error": {"message": "rate limited"}}
+        event = ErrorEvent.model_validate({"type": "error", "error": {"message": "rate limited"}})
         msgs, _tc = adapter._map_event_to_protocol(event, "s1")
         assert len(msgs) == 1
         assert msgs[0]["stream"] == "stderr"
@@ -139,18 +151,16 @@ class TestEventMapping:
 
     def test_given_tool_use_block_when_mapped_then_tool_summary_emitted(self):
         adapter = _make_adapter()
-        event = {
-            "type": "assistant",
-            "message": {
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "name": "Bash",
-                        "input": {"command": "pytest -v"},
-                    }
-                ]
-            },
-        }
+        event = AssistantEvent.model_validate(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "tool_use", "name": "Bash", "input": {"command": "pytest -v"}}
+                    ]
+                },
+            }
+        )
         msgs, _tc = adapter._map_event_to_protocol(event, "s1")
         assert len(msgs) == 1
         assert "[tool_use: Bash] pytest -v" in msgs[0]["text"]
@@ -197,19 +207,21 @@ class TestBuildClaudeCmdJsonSchema:
 class TestAdapterDetectsStructuredOutput:
     def test_given_tool_use_event_for_structured_output_then_emits_structured_output_message(self):
         adapter = ClaudeCodeAdapter()
-        event = {
-            "type": "assistant",
-            "message": {
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "id": "tu-1",
-                        "name": "StructuredOutput",
-                        "input": {"outcome": {"kind": "success", "payload": {"city": "Paris"}}},
-                    }
-                ]
-            },
-        }
+        event = AssistantEvent.model_validate(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tu-1",
+                            "name": "StructuredOutput",
+                            "input": {"outcome": {"kind": "success", "payload": {"city": "Paris"}}},
+                        }
+                    ]
+                },
+            }
+        )
         messages, task_complete = adapter._map_event_to_protocol(event, "sess-1")
         structured = [m for m in messages if m.get("type") == "structured_output"]
         assert len(structured) == 1
@@ -217,7 +229,6 @@ class TestAdapterDetectsStructuredOutput:
             "outcome": {"kind": "success", "payload": {"city": "Paris"}}
         }
         assert task_complete is True
-        # Regression guard: no generic summary output for this block
         outputs = [m for m in messages if m.get("type") == "output"]
         assert not any("StructuredOutput" in m.get("text", "") for m in outputs), (
             f"StructuredOutput block should not emit a summary output; got: {outputs}"
@@ -225,19 +236,21 @@ class TestAdapterDetectsStructuredOutput:
 
     def test_given_tool_use_event_for_other_tool_then_no_structured_output_message(self):
         adapter = ClaudeCodeAdapter()
-        event = {
-            "type": "assistant",
-            "message": {
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "id": "tu-2",
-                        "name": "Read",
-                        "input": {"file_path": "/tmp/foo.py"},
-                    }
-                ]
-            },
-        }
+        event = AssistantEvent.model_validate(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tu-2",
+                            "name": "Read",
+                            "input": {"file_path": "/tmp/foo.py"},
+                        }
+                    ]
+                },
+            }
+        )
         messages, _task_complete = adapter._map_event_to_protocol(event, "sess-1")
         structured = [m for m in messages if m.get("type") == "structured_output"]
         assert len(structured) == 0

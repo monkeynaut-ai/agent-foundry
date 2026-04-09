@@ -23,6 +23,17 @@ from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect as ws_connect
 
 from agent_foundry.acp.adapter import AdapterBase, TurnResult
+from agent_foundry.acp.claude_code_events import (
+    NON_RECOVERABLE_STOP_REASONS,
+    STRUCTURED_OUTPUT_TOOL_NAME,
+    AssistantEvent,
+    ErrorEvent,
+    ResultEvent,
+    SystemInitEvent,
+    TextBlock,
+    ToolUseBlock,
+    parse_stream_event,
+)
 from agent_foundry.acp.protocol import MarkerMapping
 
 logger = logging.getLogger(__name__)
@@ -108,28 +119,29 @@ class ClaudeCodeAdapter(AdapterBase):
 
     def _map_event_to_protocol(
         self,
-        event: dict[str, Any],
+        event: AssistantEvent | ResultEvent | ErrorEvent,
         session_id: str,
         stderr_tail: str = "",
     ) -> tuple[list[dict[str, Any]], bool]:
-        """Map a Claude Code stream-json event to protocol messages.
+        """Map a typed Claude Code event to protocol messages.
+
+        Accepts typed event models from ``claude_code_events``. The caller
+        (``run_turn``) parses raw JSON into typed events at the boundary;
+        this method never sees raw dicts.
 
         Returns (messages, task_complete).
         """
         ts = time.time()
-        event_type = event.get("type", "")
         messages: list[dict[str, Any]] = []
         task_complete = False
 
-        if event_type == "assistant":
-            msg = event.get("message", {})
-            for block in msg.get("content", []):
-                if block.get("type") == "text":
-                    text = block["text"]
-                    if not text.strip():
+        if isinstance(event, AssistantEvent):
+            for block in event.message.content:
+                if isinstance(block, TextBlock):
+                    if not block.text.strip():
                         continue
                     output_lines: list[str] = []
-                    for line in text.splitlines():
+                    for line in block.text.splitlines():
                         stripped = line.strip()
                         marker_result = self._match_marker(stripped)
                         if marker_result:
@@ -161,26 +173,23 @@ class ClaudeCodeAdapter(AdapterBase):
                                 "timestamp": ts,
                             }
                         )
-                elif block.get("type") == "tool_use":
-                    tool_name = block.get("name", "unknown")
-                    tool_input = block.get("input", {})
-                    if tool_name == "StructuredOutput":
+                elif isinstance(block, ToolUseBlock):
+                    if block.name == STRUCTURED_OUTPUT_TOOL_NAME:
                         messages.append(
                             {
                                 "type": "structured_output",
                                 "session_id": session_id,
-                                "payload": tool_input,
+                                "payload": block.input,
                                 "timestamp": ts,
                             }
                         )
                         task_complete = True
                         continue
-                    summary = f"[tool_use: {tool_name}]"
-                    if isinstance(tool_input, dict):
-                        for key in ("command", "file_path", "query"):
-                            if key in tool_input:
-                                summary = f"[tool_use: {tool_name}] {tool_input[key]}"
-                                break
+                    summary = f"[tool_use: {block.name}]"
+                    for key in ("command", "file_path", "query"):
+                        if key in block.input:
+                            summary = f"[tool_use: {block.name}] {block.input[key]}"
+                            break
                     messages.append(
                         {
                             "type": "output",
@@ -191,11 +200,10 @@ class ClaudeCodeAdapter(AdapterBase):
                         }
                     )
 
-        elif event_type == "result":
-            is_error = event.get("is_error", False)
-            exit_code = 1 if is_error else 0
-            detail = event.get("stop_reason", "")
-            if is_error and stderr_tail:
+        elif isinstance(event, ResultEvent):
+            exit_code = 1 if event.is_error else 0
+            detail = event.stop_reason
+            if event.is_error and stderr_tail:
                 detail = f"{detail}\n{stderr_tail}".strip() if detail else stderr_tail
             messages.append(
                 {
@@ -208,12 +216,12 @@ class ClaudeCodeAdapter(AdapterBase):
                 }
             )
 
-        elif event_type == "error":
+        elif isinstance(event, ErrorEvent):
             messages.append(
                 {
                     "type": "output",
                     "session_id": session_id,
-                    "text": f"[error] {event.get('error', {}).get('message', 'unknown error')}",
+                    "text": f"[error] {event.error.message}",
                     "stream": "stderr",
                     "timestamp": ts,
                 }
@@ -293,17 +301,23 @@ class ClaudeCodeAdapter(AdapterBase):
                 continue
 
             try:
-                event = json.loads(line)
+                raw = json.loads(line)
             except json.JSONDecodeError:
                 logger.warning("Non-JSON line from claude: %s", line[:200])
                 continue
 
-            if event.get("type") == "system" and event.get("subtype") == "init":
-                captured_session_id = event.get("session_id", captured_session_id)
+            # Parse at the boundary — typed from here on.
+            event = parse_stream_event(raw)
+            if event is None:
+                continue  # Unknown event type (rate_limit, user synthetic, etc.)
+
+            if isinstance(event, SystemInitEvent):
+                captured_session_id = event.session_id
+                continue  # No protocol messages for init events
 
             # For result events, pass stderr tail so it can be folded into the detail
             stderr_tail = ""
-            if event.get("type") == "result":
+            if isinstance(event, ResultEvent):
                 stderr_thread.join(timeout=2)
                 stderr_tail = "\n".join(stderr_lines)
 
@@ -322,9 +336,9 @@ class ClaudeCodeAdapter(AdapterBase):
                     saw_terminal_status = True
                 _send_msg(msg)
 
-            if event.get("type") == "result":
-                exit_code = 1 if event.get("is_error", False) else 0
-                captured_stop_reason = event.get("stop_reason", "")
+            if isinstance(event, ResultEvent):
+                exit_code = 1 if event.is_error else 0
+                captured_stop_reason = event.stop_reason
 
         actual_exit_code = proc.wait()
         stderr_thread.join(timeout=2)
@@ -348,17 +362,14 @@ class ClaudeCodeAdapter(AdapterBase):
             )
             saw_terminal_status = True
 
-        # Non-recoverable stop reasons — retrying won't help.
-        # See: https://platform.claude.com/docs/en/build-with-claude/structured-outputs#invalid-outputs
-        _non_recoverable_stop_reasons = ("refusal", "max_tokens")
-
         # Retry once if json_schema was set but no StructuredOutput was captured,
         # UNLESS the stop reason indicates a non-recoverable condition.
+        # See: https://platform.claude.com/docs/en/build-with-claude/structured-outputs#invalid-outputs
         if (
             json_schema is not None
             and captured_structured_output is None
             and not self._in_structured_output_retry
-            and captured_stop_reason not in _non_recoverable_stop_reasons
+            and captured_stop_reason not in NON_RECOVERABLE_STOP_REASONS
         ):
             logger.info("No StructuredOutput captured; retrying with --resume")
             self._in_structured_output_retry = True
