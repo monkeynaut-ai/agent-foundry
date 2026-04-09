@@ -64,7 +64,9 @@ class TestPermissionOutcome:
         }
         env = _TrivialEnvelope.model_validate(data)
         assert isinstance(env.outcome, PermissionOutcome)
+        assert env.outcome.action == "delete /workspace/old"
         assert env.outcome.risk_level == "high"
+        assert env.outcome.why_needed == "cleanup"
 
 
 class TestFailureOutcome:
