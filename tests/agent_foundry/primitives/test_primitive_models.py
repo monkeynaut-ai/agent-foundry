@@ -441,3 +441,22 @@ class TestPublicAPI:
         assert FunctionAction is not None
         assert GateAction is not None
         assert PrimitivePlan is not None
+
+    def test_agent_action_importable_from_package(self):
+        from agent_foundry.primitives import AgentAction
+
+        assert AgentAction is not None
+
+    def test_container_reuse_policy_importable_from_package(self):
+        from agent_foundry.primitives import ContainerReusePolicy
+
+        assert ContainerReusePolicy is not None
+
+    def test_response_channels_importable_from_package(self):
+        from agent_foundry.primitives import (
+            FileCollectionChannel,
+            StructuredOutputChannel,
+        )
+
+        assert StructuredOutputChannel is not None
+        assert FileCollectionChannel is not None

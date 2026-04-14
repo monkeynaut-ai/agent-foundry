@@ -7,19 +7,26 @@ from agent_foundry.primitives.errors import (
     TypeMismatchError,
 )
 from agent_foundry.primitives.models import (
+    AgentAction,
     Conditional,
+    ContainerReusePolicy,
+    FileCollectionChannel,
     FunctionAction,
     GateAction,
     Loop,
     Primitive,
     Retry,
     Sequence,
+    StructuredOutputChannel,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
 from agent_foundry.primitives.validators import validate_primitive
 
 __all__ = [
+    "AgentAction",
     "Conditional",
+    "ContainerReusePolicy",
+    "FileCollectionChannel",
     "FunctionAction",
     "GateAction",
     "InvalidPromptKeyError",
@@ -30,6 +37,7 @@ __all__ = [
     "PrimitiveValidationError",
     "Retry",
     "Sequence",
+    "StructuredOutputChannel",
     "TypeMismatchError",
     "validate_primitive",
 ]
