@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ValidationError
@@ -24,14 +24,22 @@ from agent_foundry.primitives.plan import PrimitivePlan
 
 # -- Compiler registry --
 
-type CompilerFn = Callable[[StateGraph, Primitive, str, list[str]], tuple[str, str]]
+type _CompilerStorage = Callable[[StateGraph, Any, str, list[str]], tuple[str, str]]
 
-_compiler_registry: dict[type[Primitive], CompilerFn] = {}
+_compiler_registry: dict[type[Primitive], _CompilerStorage] = {}
 
 
-def register_compiler(prim_type: type[Primitive], compiler_fn: CompilerFn) -> None:
-    """Register a compiler function for a primitive type."""
-    _compiler_registry[prim_type] = compiler_fn
+def register_compiler[P: Primitive](
+    prim_type: type[P],
+    compiler_fn: Callable[[StateGraph, P, str, list[str]], tuple[str, str]],
+) -> None:
+    """Register a compiler function for a primitive type.
+
+    The function's primitive parameter type is checked against ``prim_type``
+    at the call site, so ``register_compiler(Sequence, _compile_sequence)``
+    statically verifies ``_compile_sequence`` accepts ``Sequence``.
+    """
+    _compiler_registry[prim_type] = cast(_CompilerStorage, compiler_fn)
 
 
 # -- Helpers --
