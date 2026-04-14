@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
+    AgentAction,
     Conditional,
     FunctionAction,
     GateAction,
@@ -414,3 +415,37 @@ def _compile_gate_action(
 
 
 register_compiler(GateAction, _compile_gate_action)
+
+
+def _compile_agent_action(
+    graph: StateGraph,
+    action: AgentAction,
+    prefix: str,
+    gate_ids: list[str],
+) -> tuple[str, str]:
+    node_id = prefix
+    input_type, output_type = get_type_args(action)
+    prompt_builder = action.prompt_builder
+    executor = action.executor
+
+    def node_fn(state: dict[str, Any]) -> dict[str, Any]:
+        _validate_boundary(state, input_type, node_id)
+        model_input = input_type.model_validate(state)
+        prompt = prompt_builder(model_input)
+
+        result = executor(primitive=action, prompt=prompt)
+
+        if not isinstance(result, output_type):
+            raise PrimitiveCompilationError(
+                f"AgentAction {node_id}: executor returned "
+                f"{type(result).__name__}, expected {output_type.__name__}",
+                primitive_type=node_id,
+            )
+
+        return result.model_dump()
+
+    graph.add_node(node_id, node_fn)
+    return (node_id, node_id)
+
+
+register_compiler(AgentAction, _compile_agent_action)
