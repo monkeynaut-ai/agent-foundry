@@ -5,6 +5,7 @@ from agent_foundry.primitives.errors import (
     PrimitiveCompilationError,
     PrimitiveValidationError,
     TypeMismatchError,
+    UnregisteredPrimitiveError,
 )
 from agent_foundry.primitives.models import (
     AgentAction,
@@ -20,7 +21,7 @@ from agent_foundry.primitives.models import (
     StructuredOutputChannel,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
-from agent_foundry.primitives.validators import validate_primitive
+from agent_foundry.primitives.validators import register_validator, validate_primitive
 
 __all__ = [
     "AgentAction",
@@ -39,5 +40,7 @@ __all__ = [
     "Sequence",
     "StructuredOutputChannel",
     "TypeMismatchError",
+    "UnregisteredPrimitiveError",
+    "register_validator",
     "validate_primitive",
 ]

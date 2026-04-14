@@ -94,11 +94,21 @@ class TestCompilerRegistry:
         assert FunctionAction in _compiler_registry
 
     def test_unknown_type_raises(self):
+        from pydantic import BaseModel
+
         from agent_foundry.compiler.primitive_compiler import compile_primitive
         from agent_foundry.primitives.models import Primitive
         from agent_foundry.primitives.plan import PrimitivePlan
+        from agent_foundry.primitives.validators import register_validator
 
-        prim = Primitive[InputState, InputState]()
+        # A custom Primitive subclass with a registered validator (no-op) but
+        # no compiler registered — exercises the compiler's unknown-type path.
+        class _UncompiledPrim[I: BaseModel, O: BaseModel](Primitive[I, O]):
+            pass
+
+        register_validator(_UncompiledPrim, lambda p: None)
+
+        prim = _UncompiledPrim[InputState, InputState]()
         plan = PrimitivePlan(root=prim)
         with pytest.raises(PrimitiveCompilationError, match="No compiler registered"):
             compile_primitive(plan)

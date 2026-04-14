@@ -27,6 +27,14 @@ class InvalidPromptKeyError(PrimitiveValidationError):
         super().__init__(message)
 
 
+class UnregisteredPrimitiveError(PrimitiveValidationError):
+    """No validator registered for a primitive type encountered during validation."""
+
+    def __init__(self, message: str, primitive_type: type):
+        self.primitive_type = primitive_type
+        super().__init__(message)
+
+
 class PrimitiveCompilationError(Exception):
     """Raised when a primitive cannot be compiled or validated at runtime."""
 

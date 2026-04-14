@@ -1,10 +1,27 @@
-"""Graph-level type compatibility validation for primitives."""
+"""Graph-level type compatibility validation for primitives.
+
+Uses a registry keyed by primitive type. Built-in primitives register
+their validators at module import. Applications can define their own
+Primitive subclasses and register validators for them via
+``register_validator``.
+
+Unknown primitive types raise ``UnregisteredPrimitiveError`` — silent
+no-op fallback is rejected to prevent misconfiguration.
+"""
 
 from __future__ import annotations
 
-from agent_foundry.primitives.errors import InvalidPromptKeyError, TypeMismatchError
+from collections.abc import Callable
+
+from agent_foundry.primitives.errors import (
+    InvalidPromptKeyError,
+    TypeMismatchError,
+    UnregisteredPrimitiveError,
+)
 from agent_foundry.primitives.models import (
+    AgentAction,
     Conditional,
+    FunctionAction,
     GateAction,
     Loop,
     Primitive,
@@ -13,23 +30,41 @@ from agent_foundry.primitives.models import (
     get_type_args,
 )
 
+# -- Registry --
+
+type ValidatorFn = Callable[[Primitive], None]
+
+_validator_registry: dict[type[Primitive], ValidatorFn] = {}
+
+
+def register_validator(prim_type: type[Primitive], fn: ValidatorFn) -> None:
+    """Register a validator function for a primitive type."""
+    _validator_registry[prim_type] = fn
+
 
 def validate_primitive(prim: Primitive) -> None:
-    """Recursively validate type compatibility across a primitive tree.
+    """Validate a primitive (and recursively, its children).
 
-    Raises TypeMismatchError or InvalidPromptKeyError on the first
-    incompatibility found.
+    Walks the type's MRO so a validator registered for a parent class
+    handles subclasses unless a subclass has its own entry.
+
+    Raises ``UnregisteredPrimitiveError`` if no validator is registered
+    for any class in the primitive's MRO.
     """
-    if isinstance(prim, Sequence):
-        _validate_sequence(prim)
-    elif isinstance(prim, Loop):
-        _validate_loop(prim)
-    elif isinstance(prim, Retry):
-        _validate_retry(prim)
-    elif isinstance(prim, Conditional):
-        _validate_conditional(prim)
-    elif isinstance(prim, GateAction):
-        _validate_gate_action(prim)
+    prim_type = type(prim)
+    for cls in prim_type.__mro__:
+        fn = _validator_registry.get(cls)
+        if fn is not None:
+            fn(prim)
+            return
+    raise UnregisteredPrimitiveError(
+        f"No validator registered for {prim_type.__name__}; "
+        f"register one with register_validator(...)",
+        primitive_type=prim_type,
+    )
+
+
+# -- Helpers --
 
 
 def _types_match(a: type, b: type) -> bool:
@@ -54,32 +89,27 @@ def _fields_available(required_type: type, available_fields: set[str], position:
         )
 
 
+# -- Per-type validators --
+
+
 def _validate_sequence(seq: Sequence) -> None:
     seq_in, seq_out = get_type_args(seq)
     step_types = [get_type_args(s) for s in seq.steps]
 
-    # Accumulated state starts with Sequence input fields
     accumulated_fields = set(seq_in.model_fields.keys())
 
     for i, (step_in, step_out) in enumerate(step_types):
-        # Step input fields must be available in accumulated state
         _fields_available(step_in, accumulated_fields, f"Sequence step {i} input")
-        # Step output fields merge into accumulated state
         accumulated_fields |= set(step_out.model_fields.keys())
 
-    # Sequence output fields must be available in final accumulated state
     _fields_available(seq_out, accumulated_fields, "Sequence output")
 
-    # Recurse into each step
     for step in seq.steps:
         validate_primitive(step)
 
 
 def _validate_loop(loop: Loop) -> None:
     # Loop body type compatibility is deferred to the compiler (CS3).
-    # The body's input type may differ from the loop's input type due to
-    # item_key injection and parent context joining. Only recurse into
-    # the body to catch errors within it.
     validate_primitive(loop.body)
 
 
@@ -109,7 +139,6 @@ def _validate_retry(retry: Retry) -> None:
             position="Retry body output",
         )
 
-    # Re-entry: body output feeds back as body input on next attempt
     if not _types_match(body_in, body_out):
         raise TypeMismatchError(
             message=(
@@ -130,9 +159,6 @@ def _validate_conditional(cond: Conditional) -> None:
     then_in, then_out = get_type_args(cond.then_branch)
 
     if cond.else_branch is None:
-        # No else branch: this is a "detour" — state type must be stable.
-        # All four types must be identical: Conditional.I == Conditional.O
-        # == then.I == then.O
         if not _types_match(cond_in, cond_out):
             raise TypeMismatchError(
                 message=(
@@ -166,7 +192,6 @@ def _validate_conditional(cond: Conditional) -> None:
                 position="Conditional then_branch output",
             )
     else:
-        # Both branches present: standard boundary checks.
         if not _types_match(cond_in, then_in):
             raise TypeMismatchError(
                 message=(
@@ -230,3 +255,26 @@ def _validate_gate_action(gate: GateAction) -> None:
             prompt_key=gate.prompt_key,
             available_fields=available,
         )
+
+
+def _validate_function_action(action: FunctionAction) -> None:
+    # FunctionAction has no graph-level constraints beyond Primitive
+    # parameterization (enforced at construction).
+    return
+
+
+def _validate_agent_action(action: AgentAction) -> None:
+    # AgentAction is a leaf — no children to recurse into, no
+    # graph-level constraints beyond Primitive parameterization.
+    return
+
+
+# -- Registration --
+
+register_validator(Sequence, _validate_sequence)
+register_validator(Loop, _validate_loop)
+register_validator(Retry, _validate_retry)
+register_validator(Conditional, _validate_conditional)
+register_validator(GateAction, _validate_gate_action)
+register_validator(FunctionAction, _validate_function_action)
+register_validator(AgentAction, _validate_agent_action)

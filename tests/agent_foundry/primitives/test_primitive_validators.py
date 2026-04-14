@@ -9,16 +9,18 @@ from agent_foundry.primitives.errors import (
     InvalidPromptKeyError,
     PrimitiveValidationError,
     TypeMismatchError,
+    UnregisteredPrimitiveError,
 )
 from agent_foundry.primitives.models import (
     Conditional,
+    FunctionAction,
     GateAction,
     Loop,
     Primitive,
     Retry,
     Sequence,
 )
-from agent_foundry.primitives.validators import validate_primitive
+from agent_foundry.primitives.validators import register_validator, validate_primitive
 
 # -- Test fixtures --
 
@@ -42,6 +44,86 @@ class GateState(BaseModel):
 
 class GateOutput(BaseModel):
     human_response: str
+
+
+# ======================================================================
+# Validator registry
+# ======================================================================
+
+
+class _RegInput(BaseModel):
+    value: str
+
+
+class _RegOutput(BaseModel):
+    result: str
+
+
+class TestValidatorRegistry:
+    """Validator dispatch uses a registry keyed by primitive type."""
+
+    def test_unknown_primitive_type_raises(self):
+        class MyCustomPrimitive[I: BaseModel, O: BaseModel](Primitive[I, O]):
+            pass
+
+        prim = MyCustomPrimitive[_RegInput, _RegOutput]()
+        with pytest.raises(UnregisteredPrimitiveError, match="MyCustomPrimitive"):
+            validate_primitive(prim)
+
+    def test_registering_validator_allows_validation(self):
+        class MyCustomPrimitive2[I: BaseModel, O: BaseModel](Primitive[I, O]):
+            pass
+
+        calls: list[object] = []
+
+        def _my_validator(prim):
+            calls.append(prim)
+
+        register_validator(MyCustomPrimitive2, _my_validator)
+
+        prim = MyCustomPrimitive2[_RegInput, _RegOutput]()
+        validate_primitive(prim)
+        assert len(calls) == 1
+        assert calls[0] is prim
+
+    def test_registry_walks_mro_for_subclasses(self):
+        class ParentPrim[I: BaseModel, O: BaseModel](Primitive[I, O]):
+            pass
+
+        class ChildPrim[I: BaseModel, O: BaseModel](ParentPrim[I, O]):
+            pass
+
+        calls: list[str] = []
+
+        def _parent_validator(prim):
+            calls.append("parent")
+
+        register_validator(ParentPrim, _parent_validator)
+
+        child = ChildPrim[_RegInput, _RegOutput]()
+        validate_primitive(child)
+        assert calls == ["parent"]
+
+    def test_reregistering_overwrites_previous(self):
+        """Last-write-wins is intentional — products may override built-in validators."""
+
+        class OverridePrim[I: BaseModel, O: BaseModel](Primitive[I, O]):
+            pass
+
+        calls: list[str] = []
+
+        def _first(prim):
+            calls.append("first")
+
+        def _second(prim):
+            calls.append("second")
+
+        register_validator(OverridePrim, _first)
+        register_validator(OverridePrim, _second)
+
+        prim = OverridePrim[_RegInput, _RegOutput]()
+        validate_primitive(prim)
+        assert calls == ["second"]
 
 
 # ======================================================================
@@ -90,38 +172,38 @@ class TestInvalidPromptKeyError:
 
 class TestSequenceValidation:
     def test_valid_single_step(self):
-        step = Primitive[StateA, StateB]()
+        step = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
         seq = Sequence[StateA, StateB](steps=[step])
         validate_primitive(seq)  # should not raise
 
     def test_valid_chain(self):
-        s1 = Primitive[StateA, StateB]()
-        s2 = Primitive[StateB, StateC]()
+        s1 = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
+        s2 = FunctionAction[StateB, StateC](function=lambda s: StateC.model_construct())
         seq = Sequence[StateA, StateC](steps=[s1, s2])
         validate_primitive(seq)  # should not raise
 
     def test_first_step_input_mismatch(self):
-        step = Primitive[StateB, StateB]()
+        step = FunctionAction[StateB, StateB](function=lambda s: s)
         seq = Sequence[StateA, StateB](steps=[step])
         with pytest.raises(TypeMismatchError, match="Sequence step 0 input"):
             validate_primitive(seq)
 
     def test_last_step_output_mismatch(self):
-        step = Primitive[StateA, StateA]()
+        step = FunctionAction[StateA, StateA](function=lambda s: s)
         seq = Sequence[StateA, StateB](steps=[step])
         with pytest.raises(TypeMismatchError, match="Sequence output"):
             validate_primitive(seq)
 
     def test_adjacent_step_mismatch(self):
-        s1 = Primitive[StateA, StateB]()
-        s2 = Primitive[StateC, StateC]()  # expects StateC fields, not available
+        s1 = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
+        s2 = FunctionAction[StateC, StateC](function=lambda s: s)
         seq = Sequence[StateA, StateC](steps=[s1, s2])
         with pytest.raises(TypeMismatchError, match="Sequence step 1 input"):
             validate_primitive(seq)
 
     def test_recurses_into_steps(self):
         """A nested sequence with an internal mismatch is caught."""
-        bad_inner = Primitive[StateC, StateC]()  # wrong input
+        bad_inner = FunctionAction[StateC, StateC](function=lambda s: s)
         inner_seq = Sequence[StateA, StateC](steps=[bad_inner])
         outer_seq = Sequence[StateA, StateC](steps=[inner_seq])
         with pytest.raises(TypeMismatchError):
@@ -135,7 +217,7 @@ class TestSequenceValidation:
 
 class TestLoopValidation:
     def test_valid_loop_passes(self):
-        body = Primitive[StateA, StateA]()
+        body = FunctionAction[StateA, StateA](function=lambda s: s)
         loop = Loop[StateA, StateA](
             over=lambda s: [],
             item_key="item",
@@ -145,7 +227,7 @@ class TestLoopValidation:
 
     def test_recurses_into_body(self):
         """Errors inside the loop body are caught."""
-        bad_step = Primitive[StateC, StateC]()
+        bad_step = FunctionAction[StateC, StateC](function=lambda s: s)
         inner_seq = Sequence[StateA, StateA](steps=[bad_step])
         loop = Loop[StateA, StateA](
             over=lambda s: [],
@@ -163,7 +245,7 @@ class TestLoopValidation:
 
 class TestRetryValidation:
     def test_valid_body(self):
-        body = Primitive[StateA, StateA]()
+        body = FunctionAction[StateA, StateA](function=lambda s: s)
         retry = Retry[StateA, StateA](
             max_attempts=2,
             until=lambda s: True,
@@ -172,7 +254,7 @@ class TestRetryValidation:
         validate_primitive(retry)  # should not raise
 
     def test_body_input_mismatch(self):
-        body = Primitive[StateB, StateA]()
+        body = FunctionAction[StateB, StateA](function=lambda s: StateA.model_construct())
         retry = Retry[StateA, StateA](
             max_attempts=2,
             until=lambda s: True,
@@ -182,7 +264,7 @@ class TestRetryValidation:
             validate_primitive(retry)
 
     def test_body_output_mismatch(self):
-        body = Primitive[StateA, StateB]()
+        body = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
         retry = Retry[StateA, StateA](
             max_attempts=2,
             until=lambda s: True,
@@ -193,7 +275,7 @@ class TestRetryValidation:
 
     def test_body_reentry_mismatch(self):
         """Body output must be compatible with body input for re-entry."""
-        body = Primitive[StateA, StateB]()
+        body = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
         retry = Retry[StateA, StateB](
             max_attempts=2,
             until=lambda s: True,
@@ -203,7 +285,7 @@ class TestRetryValidation:
             validate_primitive(retry)
 
     def test_body_reentry_valid_when_same_type(self):
-        body = Primitive[StateA, StateA]()
+        body = FunctionAction[StateA, StateA](function=lambda s: s)
         retry = Retry[StateA, StateA](
             max_attempts=2,
             until=lambda s: True,
@@ -212,7 +294,7 @@ class TestRetryValidation:
         validate_primitive(retry)  # should not raise
 
     def test_recurses_into_body(self):
-        bad_step = Primitive[StateC, StateC]()
+        bad_step = FunctionAction[StateC, StateC](function=lambda s: s)
         inner_seq = Sequence[StateA, StateA](steps=[bad_step])
         retry = Retry[StateA, StateA](
             max_attempts=2,
@@ -230,8 +312,8 @@ class TestRetryValidation:
 
 class TestConditionalValidation:
     def test_valid_both_branches(self):
-        then = Primitive[StateA, StateB]()
-        else_ = Primitive[StateA, StateB]()
+        then = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
+        else_ = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
         cond = Conditional[StateA, StateB](
             condition=lambda s: True,
             then_branch=then,
@@ -241,7 +323,7 @@ class TestConditionalValidation:
 
     def test_valid_no_else(self):
         """No else branch: all types must be identical (detour pattern)."""
-        then = Primitive[StateA, StateA]()
+        then = FunctionAction[StateA, StateA](function=lambda s: s)
         cond = Conditional[StateA, StateA](
             condition=lambda s: True,
             then_branch=then,
@@ -250,7 +332,7 @@ class TestConditionalValidation:
 
     def test_no_else_input_output_mismatch(self):
         """No else branch but Conditional.I != Conditional.O — not a valid detour."""
-        then = Primitive[StateA, StateB]()
+        then = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
         cond = Conditional[StateA, StateB](
             condition=lambda s: True,
             then_branch=then,
@@ -260,7 +342,7 @@ class TestConditionalValidation:
 
     def test_no_else_then_output_mismatch(self):
         """No else branch but then_branch.O != Conditional.I — not a valid detour."""
-        then = Primitive[StateA, StateB]()
+        then = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
         cond = Conditional[StateA, StateA](
             condition=lambda s: True,
             then_branch=then,
@@ -269,8 +351,8 @@ class TestConditionalValidation:
             validate_primitive(cond)
 
     def test_then_input_mismatch(self):
-        then = Primitive[StateC, StateB]()
-        else_ = Primitive[StateA, StateB]()
+        then = FunctionAction[StateC, StateB](function=lambda s: StateB.model_construct())
+        else_ = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
         cond = Conditional[StateA, StateB](
             condition=lambda s: True,
             then_branch=then,
@@ -280,8 +362,8 @@ class TestConditionalValidation:
             validate_primitive(cond)
 
     def test_then_output_mismatch(self):
-        then = Primitive[StateA, StateC]()
-        else_ = Primitive[StateA, StateB]()
+        then = FunctionAction[StateA, StateC](function=lambda s: StateC.model_construct())
+        else_ = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
         cond = Conditional[StateA, StateB](
             condition=lambda s: True,
             then_branch=then,
@@ -291,8 +373,8 @@ class TestConditionalValidation:
             validate_primitive(cond)
 
     def test_else_input_mismatch(self):
-        then = Primitive[StateA, StateB]()
-        else_ = Primitive[StateC, StateB]()
+        then = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
+        else_ = FunctionAction[StateC, StateB](function=lambda s: StateB.model_construct())
         cond = Conditional[StateA, StateB](
             condition=lambda s: True,
             then_branch=then,
@@ -302,8 +384,8 @@ class TestConditionalValidation:
             validate_primitive(cond)
 
     def test_else_output_mismatch(self):
-        then = Primitive[StateA, StateB]()
-        else_ = Primitive[StateA, StateC]()
+        then = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
+        else_ = FunctionAction[StateA, StateC](function=lambda s: StateC.model_construct())
         cond = Conditional[StateA, StateB](
             condition=lambda s: True,
             then_branch=then,
@@ -314,9 +396,9 @@ class TestConditionalValidation:
 
     def test_recurses_into_then_branch(self):
         """Errors inside then_branch are caught (with else present)."""
-        bad_step = Primitive[StateC, StateC]()
+        bad_step = FunctionAction[StateC, StateC](function=lambda s: s)
         bad_seq = Sequence[StateA, StateB](steps=[bad_step])
-        good_else = Primitive[StateA, StateB]()
+        good_else = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
         cond = Conditional[StateA, StateB](
             condition=lambda s: True,
             then_branch=bad_seq,
@@ -327,8 +409,8 @@ class TestConditionalValidation:
 
     def test_recurses_into_else_branch(self):
         """Errors inside else_branch are caught."""
-        good_then = Primitive[StateA, StateB]()
-        bad_step = Primitive[StateC, StateC]()
+        good_then = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
+        bad_step = FunctionAction[StateC, StateC](function=lambda s: s)
         bad_seq = Sequence[StateA, StateB](steps=[bad_step])
         cond = Conditional[StateA, StateB](
             condition=lambda s: True,
@@ -340,7 +422,7 @@ class TestConditionalValidation:
 
     def test_recurses_into_no_else_then_branch(self):
         """Errors inside then_branch are caught (no else, detour pattern)."""
-        bad_step = Primitive[StateC, StateC]()
+        bad_step = FunctionAction[StateC, StateC](function=lambda s: s)
         bad_seq = Sequence[StateA, StateA](steps=[bad_step])
         cond = Conditional[StateA, StateA](
             condition=lambda s: True,
@@ -384,8 +466,8 @@ class TestPrimitivePlanValidate:
     def test_valid_plan_passes(self):
         from agent_foundry.primitives.plan import PrimitivePlan
 
-        s1 = Primitive[StateA, StateB]()
-        s2 = Primitive[StateB, StateC]()
+        s1 = FunctionAction[StateA, StateB](function=lambda s: StateB.model_construct())
+        s2 = FunctionAction[StateB, StateC](function=lambda s: StateC.model_construct())
         seq = Sequence[StateA, StateC](steps=[s1, s2])
         plan = PrimitivePlan(root=seq)
         plan.validate()  # should not raise
@@ -393,7 +475,7 @@ class TestPrimitivePlanValidate:
     def test_invalid_plan_raises(self):
         from agent_foundry.primitives.plan import PrimitivePlan
 
-        bad = Primitive[StateC, StateC]()
+        bad = FunctionAction[StateC, StateC](function=lambda s: s)
         seq = Sequence[StateA, StateB](steps=[bad])
         plan = PrimitivePlan(root=seq)
         with pytest.raises(TypeMismatchError):
