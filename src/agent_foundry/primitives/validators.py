@@ -12,6 +12,7 @@ no-op fallback is rejected to prevent misconfiguration.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from agent_foundry.primitives.errors import (
     InvalidPromptKeyError,
@@ -32,7 +33,7 @@ from agent_foundry.primitives.models import (
 
 # -- Registry --
 
-type ValidatorFn = Callable[[Primitive], None]
+type ValidatorFn = Callable[[Any], None]
 
 _validator_registry: dict[type[Primitive], ValidatorFn] = {}
 
@@ -257,13 +258,13 @@ def _validate_gate_action(gate: GateAction) -> None:
         )
 
 
-def _validate_function_action(action: FunctionAction) -> None:
+def _validate_function_action(_action: FunctionAction) -> None:
     # FunctionAction has no graph-level constraints beyond Primitive
     # parameterization (enforced at construction).
     return
 
 
-def _validate_agent_action(action: AgentAction) -> None:
+def _validate_agent_action(_action: AgentAction) -> None:
     # AgentAction is a leaf — no children to recurse into, no
     # graph-level constraints beyond Primitive parameterization.
     return
