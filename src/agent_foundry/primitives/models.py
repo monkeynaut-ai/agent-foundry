@@ -3,8 +3,24 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class ContainerReusePolicy(StrEnum):
+    """Policy for whether and how an AgentAction reuses containers across invocations.
+
+    - NEW_EACH_TIME: Each invocation creates a fresh container, destroyed after.
+    - REUSE_RESUME: Subsequent invocations reuse the same container with the
+      agent session resumed (same conversation context).
+    - REUSE_NEW_SESSION: Subsequent invocations reuse the container but start
+      a fresh agent session (no conversation history, filesystem state persists).
+    """
+
+    NEW_EACH_TIME = "new_each_time"
+    REUSE_RESUME = "reuse_resume"
+    REUSE_NEW_SESSION = "reuse_new_session"
 
 
 class Primitive[I: BaseModel, O: BaseModel](BaseModel):
