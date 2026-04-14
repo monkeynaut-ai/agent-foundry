@@ -12,6 +12,7 @@ from agent_foundry.primitives.errors import (
     UnregisteredPrimitiveError,
 )
 from agent_foundry.primitives.models import (
+    AgentAction,
     Conditional,
     FunctionAction,
     GateAction,
@@ -19,6 +20,7 @@ from agent_foundry.primitives.models import (
     Primitive,
     Retry,
     Sequence,
+    StructuredOutputChannel,
 )
 from agent_foundry.primitives.validators import register_validator, validate_primitive
 
@@ -498,3 +500,61 @@ class TestValidatorPublicAPI:
         assert PrimitiveValidationError is not None
         assert TypeMismatchError is not None
         assert InvalidPromptKeyError is not None
+
+
+# ======================================================================
+# AgentAction composition validation
+# ======================================================================
+
+
+class _AgentValInput(BaseModel):
+    value: str
+
+
+class _AgentValOutput(BaseModel):
+    value: str
+    result: str
+
+
+def _stub_prompt_builder_for_validator(state):
+    return "prompt"
+
+
+def _stub_instructions_for_validator() -> str:
+    return "# instructions"
+
+
+def _stub_executor_for_validator(*, primitive, prompt) -> _AgentValOutput:
+    return _AgentValOutput(value="v", result="r")
+
+
+def _make_agent_action(input_type, output_type):
+    """Build an AgentAction with all required fields populated."""
+    return AgentAction[input_type, output_type](
+        prompt_builder=_stub_prompt_builder_for_validator,
+        instructions_provider=_stub_instructions_for_validator,
+        response_channel=StructuredOutputChannel(),
+        executor=_stub_executor_for_validator,
+    )
+
+
+class TestAgentActionCompositionValidation:
+    """AgentAction composes correctly inside parent primitives."""
+
+    def test_standalone_agent_action_validates(self):
+        action = _make_agent_action(_AgentValInput, _AgentValOutput)
+        validate_primitive(action)  # should not raise
+
+    def test_agent_action_in_sequence_validates_types(self):
+        action = _make_agent_action(_AgentValInput, _AgentValOutput)
+        seq = Sequence[_AgentValInput, _AgentValOutput](steps=[action])
+        validate_primitive(seq)  # should not raise
+
+    def test_agent_action_in_sequence_with_missing_input_raises(self):
+        class _OtherInput(BaseModel):
+            other: str
+
+        action = _make_agent_action(_OtherInput, _AgentValOutput)
+        seq = Sequence[_AgentValInput, _AgentValOutput](steps=[action])
+        with pytest.raises(TypeMismatchError):
+            validate_primitive(seq)
