@@ -47,7 +47,13 @@ def register_validator[P: Primitive](
     The function's parameter type is checked against ``prim_type`` at the
     call site, so ``register_validator(Sequence, _validate_sequence)``
     statically verifies ``_validate_sequence`` accepts ``Sequence``.
+
+    Raises ``ValueError`` if a validator is already registered for
+    ``prim_type``. This guards against accidental override of core
+    validators by extension code or import-order bugs.
     """
+    if prim_type in _validator_registry:
+        raise ValueError(f"Validator already registered for {prim_type.__name__}")
     _validator_registry[prim_type] = cast(_ValidatorStorage, fn)
 
 

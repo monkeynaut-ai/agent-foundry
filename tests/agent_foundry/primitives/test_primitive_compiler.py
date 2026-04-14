@@ -113,6 +113,24 @@ class TestCompilerRegistry:
         with pytest.raises(PrimitiveCompilationError, match="No compiler registered"):
             compile_primitive(plan)
 
+    def test_duplicate_registration_raises(self):
+        """Re-registering a compiler for the same type is a footgun; raise instead of clobbering."""
+        from agent_foundry.compiler.primitive_compiler import register_compiler
+        from agent_foundry.primitives.models import Primitive
+
+        class _DuplicateCompilerPrim[I: BaseModel, O: BaseModel](Primitive[I, O]):
+            pass
+
+        def _first(graph, prim, prefix, gate_ids):
+            return ("", "")
+
+        def _second(graph, prim, prefix, gate_ids):
+            return ("", "")
+
+        register_compiler(_DuplicateCompilerPrim, _first)
+        with pytest.raises(ValueError, match="_DuplicateCompilerPrim"):
+            register_compiler(_DuplicateCompilerPrim, _second)
+
 
 # ======================================================================
 # Boundary Validation

@@ -106,26 +106,21 @@ class TestValidatorRegistry:
         validate_primitive(child)
         assert calls == ["parent"]
 
-    def test_reregistering_overwrites_previous(self):
-        """Last-write-wins is intentional — products may override built-in validators."""
+    def test_duplicate_registration_raises(self):
+        """Re-registering for the same type is a footgun; raise instead of clobbering."""
 
-        class OverridePrim[I: BaseModel, O: BaseModel](Primitive[I, O]):
+        class DuplicatePrim[I: BaseModel, O: BaseModel](Primitive[I, O]):
             pass
 
-        calls: list[str] = []
-
         def _first(prim):
-            calls.append("first")
+            pass
 
         def _second(prim):
-            calls.append("second")
+            pass
 
-        register_validator(OverridePrim, _first)
-        register_validator(OverridePrim, _second)
-
-        prim = OverridePrim[_RegInput, _RegOutput]()
-        validate_primitive(prim)
-        assert calls == ["second"]
+        register_validator(DuplicatePrim, _first)
+        with pytest.raises(ValueError, match="DuplicatePrim"):
+            register_validator(DuplicatePrim, _second)
 
 
 # ======================================================================

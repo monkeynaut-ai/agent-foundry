@@ -38,7 +38,13 @@ def register_compiler[P: Primitive](
     The function's primitive parameter type is checked against ``prim_type``
     at the call site, so ``register_compiler(Sequence, _compile_sequence)``
     statically verifies ``_compile_sequence`` accepts ``Sequence``.
+
+    Raises ``ValueError`` if a compiler is already registered for
+    ``prim_type``. This guards against accidental override of core
+    compilers by extension code or import-order bugs.
     """
+    if prim_type in _compiler_registry:
+        raise ValueError(f"Compiler already registered for {prim_type.__name__}")
     _compiler_registry[prim_type] = cast(_CompilerStorage, compiler_fn)
 
 
