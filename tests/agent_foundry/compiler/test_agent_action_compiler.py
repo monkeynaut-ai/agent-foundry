@@ -211,3 +211,60 @@ class TestAgentActionCompiler_ExceptionPropagation:
 
         with pytest.raises(_ExecutorFailure, match="agent failed"):
             graph.invoke({"query": "hello"})
+
+
+# ======================================================================
+# AgentAction integration — nested composition
+# ======================================================================
+
+
+class SeqInput(BaseModel):
+    query: str
+
+
+class SeqMid(BaseModel):
+    query: str
+    answer: str
+
+
+class SeqOutput(BaseModel):
+    query: str
+    answer: str
+    annotated: str
+
+
+class TestAgentActionCompiler_Composition:
+    def test_agent_action_inside_sequence(self):
+        from agent_foundry.primitives.models import FunctionAction, Sequence
+
+        class AgentStepInput(BaseModel):
+            query: str
+
+        class AgentStepOutput(BaseModel):
+            answer: str
+
+        def _executor(*, primitive, prompt):
+            return AgentStepOutput(answer="42")
+
+        agent_step = AgentAction[AgentStepInput, AgentStepOutput](
+            prompt_builder=lambda s: f"Q: {s.query}",
+            instructions_provider=_stub_instructions,
+            response_channel=StructuredOutputChannel(),
+            executor=_executor,
+        )
+        annotate_step = FunctionAction[SeqMid, SeqOutput](
+            function=lambda s: SeqOutput(
+                query=s.query,
+                answer=s.answer,
+                annotated=f"[{s.answer}]",
+            ),
+        )
+        seq = Sequence[SeqInput, SeqOutput](steps=[agent_step, annotate_step])
+        plan = PrimitivePlan(root=seq)
+        graph = compile_primitive(plan)
+
+        result = graph.invoke({"query": "hello"})
+
+        assert result["query"] == "hello"
+        assert result["answer"] == "42"
+        assert result["annotated"] == "[42]"
