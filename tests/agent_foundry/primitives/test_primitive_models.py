@@ -460,3 +460,9 @@ class TestPublicAPI:
 
         assert StructuredOutputChannel is not None
         assert FileCollectionChannel is not None
+
+    def test_response_channel_kind_importable_from_package(self):
+        from agent_foundry.primitives import ResponseChannelKind
+
+        assert ResponseChannelKind.STRUCTURED_OUTPUT == "structured_output"
+        assert ResponseChannelKind.FILE_COLLECTION == "file_collection"

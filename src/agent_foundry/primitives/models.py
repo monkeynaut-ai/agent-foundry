@@ -24,6 +24,18 @@ class ContainerReusePolicy(StrEnum):
     REUSE_NEW_SESSION = "reuse_new_session"
 
 
+class ResponseChannelKind(StrEnum):
+    """Discriminator values for ``ResponseChannel`` variants.
+
+    Used as ``Literal[ResponseChannelKind.VARIANT]`` tags on each channel
+    model so the Pydantic discriminated union can route by ``kind`` while
+    keeping the variant values as navigable first-class symbols.
+    """
+
+    STRUCTURED_OUTPUT = "structured_output"
+    FILE_COLLECTION = "file_collection"
+
+
 class Primitive[I: BaseModel, O: BaseModel](BaseModel):
     """Base class for all plan primitives.
 
@@ -125,7 +137,7 @@ class StructuredOutputChannel(BaseModel):
     ``AgentTurnEnvelope[O]`` structurally before returning an ``O`` instance.
     """
 
-    kind: Literal["structured_output"] = "structured_output"
+    kind: Literal[ResponseChannelKind.STRUCTURED_OUTPUT] = ResponseChannelKind.STRUCTURED_OUTPUT
 
 
 class FileCollectionChannel(BaseModel):
@@ -136,7 +148,7 @@ class FileCollectionChannel(BaseModel):
     of container path to file contents to construct an ``O`` instance.
     """
 
-    kind: Literal["file_collection"] = "file_collection"
+    kind: Literal[ResponseChannelKind.FILE_COLLECTION] = ResponseChannelKind.FILE_COLLECTION
     files: list[str] = Field(min_length=1)
     builder: Callable[[dict[str, str]], BaseModel]
 
