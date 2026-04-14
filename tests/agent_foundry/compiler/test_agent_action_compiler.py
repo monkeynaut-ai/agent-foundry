@@ -182,3 +182,32 @@ class TestAgentActionCompiler:
         result = graph.invoke({"query": "hello"})
 
         assert result["answer"] == "42"
+
+
+# ======================================================================
+# AgentAction compiler — exception propagation
+# ======================================================================
+
+
+class _ExecutorFailure(RuntimeError):
+    """Simulates any executor-level failure (non-success envelope, crash, etc)."""
+
+
+class TestAgentActionCompiler_ExceptionPropagation:
+    """Executor exceptions propagate through the compiled node."""
+
+    def test_executor_exception_propagates(self):
+        def _executor(*, primitive, prompt):
+            raise _ExecutorFailure("agent failed")
+
+        action = AgentAction[AgentInput, AgentOutput](
+            prompt_builder=_record_prompt_builder,
+            instructions_provider=_stub_instructions,
+            response_channel=StructuredOutputChannel(),
+            executor=_executor,
+        )
+        plan = PrimitivePlan(root=action)
+        graph = compile_primitive(plan)
+
+        with pytest.raises(_ExecutorFailure, match="agent failed"):
+            graph.invoke({"query": "hello"})
