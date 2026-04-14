@@ -116,6 +116,23 @@ class GateAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     prompt_key: str = Field(min_length=1)
 
 
+class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
+    """Run an LLM agent in a container to transform input state to output state.
+
+    Two-sided interface:
+      - Product side declares agent configuration via collaborator callables
+        (``prompt_builder``, ``instructions_provider``).
+      - Platform side handles container lifecycle, instruction injection,
+        structured output, and response validation.
+
+    This primitive is a leaf (no children). The compiler registers a node
+    that calls the prompt builder, then delegates to the agent runner.
+    """
+
+    prompt_builder: Callable[[I], str]
+    instructions_provider: Callable[[], str]
+
+
 def get_type_args(prim: Primitive) -> tuple[type[BaseModel], type[BaseModel]]:
     """Extract (input_type, output_type) from a parameterized primitive.
 
@@ -135,3 +152,4 @@ Retry.model_rebuild()
 Conditional.model_rebuild()
 FunctionAction.model_rebuild()
 GateAction.model_rebuild()
+AgentAction.model_rebuild()
