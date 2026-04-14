@@ -8,6 +8,8 @@ from pydantic import BaseModel, ValidationError
 from agent_foundry.primitives.models import (
     AgentAction,
     ContainerReusePolicy,
+    FileCollectionChannel,
+    StructuredOutputChannel,
     get_type_args,
 )
 
@@ -54,6 +56,10 @@ def _stub_instructions_provider() -> str:
     return "# Agent instructions\n\nDo the thing."
 
 
+def _stub_executor_for_required(*, primitive, prompt) -> StubOutput:
+    return StubOutput(result="stub")
+
+
 class TestAgentActionRequiredFields:
     """AgentAction requires prompt_builder and instructions_provider."""
 
@@ -61,6 +67,8 @@ class TestAgentActionRequiredFields:
         action = AgentAction[StubInput, StubOutput](
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
+            response_channel=StructuredOutputChannel(),
+            executor=_stub_executor_for_required,
         )
         assert callable(action.prompt_builder)
         assert callable(action.instructions_provider)
@@ -70,24 +78,32 @@ class TestAgentActionRequiredFields:
             AgentAction(
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
+                response_channel=StructuredOutputChannel(),
+                executor=_stub_executor_for_required,
             )
 
     def test_missing_prompt_builder_raises(self):
         with pytest.raises(ValidationError):
             AgentAction[StubInput, StubOutput](
                 instructions_provider=_stub_instructions_provider,
+                response_channel=StructuredOutputChannel(),
+                executor=_stub_executor_for_required,
             )
 
     def test_missing_instructions_provider_raises(self):
         with pytest.raises(ValidationError):
             AgentAction[StubInput, StubOutput](
                 prompt_builder=_stub_prompt_builder,
+                response_channel=StructuredOutputChannel(),
+                executor=_stub_executor_for_required,
             )
 
     def test_get_type_args_returns_parameterized_types(self):
         action = AgentAction[StubInput, StubOutput](
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
+            response_channel=StructuredOutputChannel(),
+            executor=_stub_executor_for_required,
         )
         input_type, output_type = get_type_args(action)
         assert input_type is StubInput
@@ -97,6 +113,8 @@ class TestAgentActionRequiredFields:
         action = AgentAction[StubInput, StubOutput](
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
+            response_channel=StructuredOutputChannel(),
+            executor=_stub_executor_for_required,
         )
         result = action.prompt_builder(StubInput(value="hello"))
         assert result == "prompt: hello"
@@ -105,6 +123,157 @@ class TestAgentActionRequiredFields:
         action = AgentAction[StubInput, StubOutput](
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
+            response_channel=StructuredOutputChannel(),
+            executor=_stub_executor_for_required,
         )
         text = action.instructions_provider()
         assert text.startswith("# Agent instructions")
+
+
+# ======================================================================
+# AgentAction — response channels
+# ======================================================================
+
+
+def _stub_file_builder(files: dict[str, str]) -> StubOutput:
+    return StubOutput(result=files.get("/workspace/out.md", ""))
+
+
+class TestAgentActionResponseChannel:
+    """response_channel is required; product must choose structured or file."""
+
+    def test_missing_response_channel_raises(self):
+        with pytest.raises(ValidationError):
+            AgentAction[StubInput, StubOutput](
+                prompt_builder=_stub_prompt_builder,
+                instructions_provider=_stub_instructions_provider,
+            )
+
+    def test_structured_output_channel_accepted(self):
+        action = AgentAction[StubInput, StubOutput](
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            response_channel=StructuredOutputChannel(),
+            executor=_stub_executor,
+        )
+        assert isinstance(action.response_channel, StructuredOutputChannel)
+
+    def test_file_collection_channel_accepted(self):
+        action = AgentAction[StubInput, StubOutput](
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            response_channel=FileCollectionChannel(
+                files=["/workspace/out.md"],
+                builder=_stub_file_builder,
+            ),
+            executor=_stub_executor,
+        )
+        assert isinstance(action.response_channel, FileCollectionChannel)
+        assert action.response_channel.files == ["/workspace/out.md"]
+        assert callable(action.response_channel.builder)
+
+    def test_file_collection_requires_files(self):
+        with pytest.raises(ValidationError):
+            FileCollectionChannel(builder=_stub_file_builder)
+
+    def test_file_collection_requires_builder(self):
+        with pytest.raises(ValidationError):
+            FileCollectionChannel(files=["/workspace/out.md"])
+
+
+# ======================================================================
+# AgentAction — executor
+# ======================================================================
+
+
+def _stub_executor(*, primitive, prompt) -> StubOutput:
+    return StubOutput(result="stub")
+
+
+class TestAgentActionExecutor:
+    """executor is required; product supplies the callable that runs the agent."""
+
+    def test_missing_executor_raises(self):
+        with pytest.raises(ValidationError):
+            AgentAction[StubInput, StubOutput](
+                prompt_builder=_stub_prompt_builder,
+                instructions_provider=_stub_instructions_provider,
+                response_channel=StructuredOutputChannel(),
+            )
+
+    def test_executor_accepted(self):
+        action = AgentAction[StubInput, StubOutput](
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            response_channel=StructuredOutputChannel(),
+            executor=_stub_executor,
+        )
+        assert action.executor is _stub_executor
+
+    def test_executor_is_callable(self):
+        action = AgentAction[StubInput, StubOutput](
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            response_channel=StructuredOutputChannel(),
+            executor=_stub_executor,
+        )
+        result = action.executor(primitive=action, prompt="hi")
+        assert result == StubOutput(result="stub")
+
+
+# ======================================================================
+# AgentAction — configuration fields with platform defaults
+# ======================================================================
+
+
+def _new_structured_action() -> AgentAction:
+    return AgentAction[StubInput, StubOutput](
+        prompt_builder=_stub_prompt_builder,
+        instructions_provider=_stub_instructions_provider,
+        response_channel=StructuredOutputChannel(),
+        executor=_stub_executor,
+    )
+
+
+class TestAgentActionConfigFields:
+    """AgentAction has configuration fields with platform defaults."""
+
+    def test_timeout_seconds_defaults_to_3600(self):
+        action = _new_structured_action()
+        assert action.timeout_seconds == 3600
+
+    def test_timeout_seconds_must_be_positive(self):
+        with pytest.raises(ValidationError):
+            AgentAction[StubInput, StubOutput](
+                prompt_builder=_stub_prompt_builder,
+                instructions_provider=_stub_instructions_provider,
+                response_channel=StructuredOutputChannel(),
+                executor=_stub_executor,
+                timeout_seconds=0,
+            )
+
+    def test_skip_permissions_defaults_to_false(self):
+        action = _new_structured_action()
+        assert action.skip_permissions is False
+
+    def test_visible_dirs_default_to_empty(self):
+        # Safe-by-default: nothing under /workspace is visible unless declared.
+        assert _new_structured_action().visible_dirs == []
+
+    def test_writable_dirs_default_to_empty(self):
+        # Safe-by-default: nothing under /workspace is writable unless declared.
+        assert _new_structured_action().writable_dirs == []
+
+    def test_reuse_policy_defaults_to_new_each_time(self):
+        assert _new_structured_action().reuse_policy == ContainerReusePolicy.NEW_EACH_TIME
+
+    def test_reuse_policy_accepts_all_values(self):
+        for policy in ContainerReusePolicy:
+            action = AgentAction[StubInput, StubOutput](
+                prompt_builder=_stub_prompt_builder,
+                instructions_provider=_stub_instructions_provider,
+                response_channel=StructuredOutputChannel(),
+                executor=_stub_executor,
+                reuse_policy=policy,
+            )
+            assert action.reuse_policy == policy
