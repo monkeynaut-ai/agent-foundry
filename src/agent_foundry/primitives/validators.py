@@ -12,7 +12,7 @@ no-op fallback is rejected to prevent misconfiguration.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from agent_foundry.primitives.errors import (
     InvalidPromptKeyError,
@@ -33,14 +33,22 @@ from agent_foundry.primitives.models import (
 
 # -- Registry --
 
-type ValidatorFn = Callable[[Any], None]
+type _ValidatorStorage = Callable[[Any], None]
 
-_validator_registry: dict[type[Primitive], ValidatorFn] = {}
+_validator_registry: dict[type[Primitive], _ValidatorStorage] = {}
 
 
-def register_validator(prim_type: type[Primitive], fn: ValidatorFn) -> None:
-    """Register a validator function for a primitive type."""
-    _validator_registry[prim_type] = fn
+def register_validator[P: Primitive](
+    prim_type: type[P],
+    fn: Callable[[P], None],
+) -> None:
+    """Register a validator function for a primitive type.
+
+    The function's parameter type is checked against ``prim_type`` at the
+    call site, so ``register_validator(Sequence, _validate_sequence)``
+    statically verifies ``_validate_sequence`` accepts ``Sequence``.
+    """
+    _validator_registry[prim_type] = cast(_ValidatorStorage, fn)
 
 
 def validate_primitive(prim: Primitive) -> None:
