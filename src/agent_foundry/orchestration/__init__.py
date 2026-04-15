@@ -5,9 +5,11 @@ from agent_foundry.orchestration.artifacts import (
     agent_turn_dir,
     bootstrap_run_artifacts,
 )
+from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
 
 __all__ = [
+    "LifecycleEvent",
     "LifecycleWriter",
     "agent_log_path",
     "agent_turn_dir",

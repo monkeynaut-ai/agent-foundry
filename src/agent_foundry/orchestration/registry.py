@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from agent_foundry.orchestration.env import build_container_env
+from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 
 if TYPE_CHECKING:
     from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
@@ -33,11 +34,6 @@ logger = logging.getLogger(__name__)
 
 ROLE_INSTRUCTIONS_PATH = "/home/claude/role-instructions.md"
 _ENTRYPOINT_SETUP_WAIT_SECONDS = 2.0
-
-# Wire constant for the lifecycle event emitted on first container
-# creation. Task B.5 introduces the ``LifecycleEvent`` StrEnum — when
-# that lands, replace this literal with the enum member.
-_AGENT_CONTAINER_STARTED = "agent_container_started"
 
 
 @dataclass
@@ -130,7 +126,7 @@ class AgentContainerRegistry:
             self._containers[pid] = live
             lifecycle_writer.append(
                 {
-                    "type": _AGENT_CONTAINER_STARTED,
+                    "type": LifecycleEvent.AGENT_CONTAINER_STARTED,
                     "agent_name": agent_name,
                     "container_id": handle.container_id,
                 }
