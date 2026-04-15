@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import signal
+import threading
+import uuid
+import warnings
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, TypedDict, cast
 
+from langgraph._internal._runnable import RunnableCallable
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ValidationError
 
@@ -21,6 +29,7 @@ from agent_foundry.primitives.models import (
     get_type_args,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.responders.protocol import ResponderProvider
 
 # -- Compiler registry --
 
@@ -139,18 +148,143 @@ def compile_primitive(plan: PrimitivePlan) -> Any:
     return graph.compile(**compile_kwargs)
 
 
-def run_primitive_plan(
+def run_primitive_plan_sync(
     plan: PrimitivePlan,
     initial_state: BaseModel | None = None,
     config: dict[str, Any] | None = None,
 ) -> BaseModel:
-    """Compile and execute a PrimitivePlan with typed input/output."""
+    """Legacy synchronous entry point (pre-Plan 2).
+
+    Preserved so F0 / F.3 call sites continue to work during the CS7
+    Plan 2 migration. Emits a ``DeprecationWarning``; prefer the new
+    async :func:`run_primitive_plan` which builds an
+    :class:`AgentRunContext` and wires lifecycle + registry teardown.
+    """
+    warnings.warn(
+        "run_primitive_plan_sync is deprecated; migrate to the async "
+        "run_primitive_plan entry point (CS7 Plan 2).",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     _, root_out = get_type_args(plan.root)
     graph = compile_primitive(plan)
 
     input_dict = initial_state.model_dump() if initial_state is not None else {}
     result_dict = graph.invoke(input_dict, config=config or {})
     return root_out.model_validate(result_dict)
+
+
+async def run_primitive_plan(
+    plan: PrimitivePlan,
+    *,
+    initial_state: BaseModel,
+    artifacts_dir: Path,
+    workspace_volume: str,
+    base_image_tag: str,
+    responder_provider: ResponderProvider,
+    run_id: str | None = None,
+) -> BaseModel:
+    """Execute a :class:`PrimitivePlan` with full CS7 Plan 2 wiring.
+
+    Bootstraps the run artifacts directory, builds a
+    :class:`LifecycleWriter` and :class:`AgentContainerRegistry`,
+    constructs the :class:`AgentRunContext`, installs cooperative
+    SIGINT/SIGTERM handlers (main thread only), sets the
+    ``current_run_context`` ContextVar, and invokes the compiled graph
+    via :meth:`ainvoke`.
+
+    Teardown (``finally``) always runs: the registry is shut down,
+    ``summary.txt`` is rendered, and the ContextVar + signal handlers
+    are reset — even on cancel or agent failure.
+    """
+    # Deferred imports — orchestration depends on compiler via the
+    # run-context ContextVar, so we resolve these at call time rather
+    # than at module import to keep the dependency graph acyclic.
+    from agent_foundry.orchestration.artifacts import bootstrap_run_artifacts
+    from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+    from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
+    from agent_foundry.orchestration.registry import AgentContainerRegistry
+    from agent_foundry.orchestration.run_context import (
+        AgentRunContext,
+        current_run_context,
+    )
+    from agent_foundry.orchestration.summary import render_summary
+
+    resolved_run_id = run_id if run_id is not None else uuid.uuid4().hex
+
+    run_dir = bootstrap_run_artifacts(
+        artifacts_dir=artifacts_dir,
+        run_id=resolved_run_id,
+        workspace_volume=workspace_volume,
+        base_image_tag=base_image_tag,
+    )
+
+    _, root_out = get_type_args(plan.root)
+
+    lifecycle = LifecycleWriter(run_id=resolved_run_id, path=run_dir / "lifecycle.jsonl")
+    registry = AgentContainerRegistry(
+        workspace_volume=workspace_volume,
+        base_image_tag=base_image_tag,
+    )
+    cancel = asyncio.Event()
+
+    run_ctx = AgentRunContext(
+        run_id=resolved_run_id,
+        artifacts_dir=run_dir,
+        container_registry=registry,
+        responder_provider=responder_provider,
+        lifecycle_writer=lifecycle,
+        cancel_event=cancel,
+        env={},
+    )
+
+    # Install SIGINT/SIGTERM handlers — main thread only. Signal-handler
+    # installation from a non-main thread raises ``ValueError`` on
+    # POSIX; guard explicitly so we degrade cleanly in worker threads
+    # (tests, notebook kernels) rather than crashing the run.
+    loop = asyncio.get_running_loop()
+    installed_signals: list[int] = []
+    if threading.current_thread() is threading.main_thread():
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, cancel.set)
+                installed_signals.append(sig)
+            except (NotImplementedError, RuntimeError, ValueError):
+                # NotImplementedError on Windows; RuntimeError/ValueError
+                # on loops that refuse signal handlers (uvloop edge
+                # cases, nested loops). Cancellation still works via
+                # direct ``cancel_event.set()`` from callers.
+                pass
+
+    token = current_run_context.set(run_ctx)
+    lifecycle.append({"type": LifecycleEvent.RUN_STARTED.value, "run_id": resolved_run_id})
+
+    try:
+        graph = compile_primitive(plan)
+        result_dict = await graph.ainvoke(initial_state.model_dump())
+        lifecycle.append({"type": LifecycleEvent.RUN_ENDED.value, "run_id": resolved_run_id})
+        return root_out.model_validate(result_dict)
+    finally:
+        try:
+            await registry.shutdown_all()
+        except Exception:
+            logger_msg = "registry.shutdown_all raised during teardown"
+            import logging
+
+            logging.getLogger(__name__).warning(logger_msg, exc_info=True)
+        try:
+            render_summary(run_dir)
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "render_summary raised during teardown", exc_info=True
+            )
+        for sig in installed_signals:
+            with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
+                loop.remove_signal_handler(sig)
+        current_run_context.reset(token)
+        lifecycle.close()
 
 
 # -- Per-type compilers --
@@ -245,7 +379,12 @@ def _compile_sequence(
         result = compiled_sub.invoke(scoped_input)
         return _scope_out(result, seq_out)
 
-    graph.add_node(node_id, seq_node)
+    async def seq_node_async(state: dict[str, Any]) -> dict[str, Any]:
+        scoped_input = _scope_in(state, seq_in)
+        result = await compiled_sub.ainvoke(scoped_input)
+        return _scope_out(result, seq_out)
+
+    graph.add_node(node_id, RunnableCallable(seq_node, seq_node_async, name=node_id, trace=False))
     return (node_id, node_id)
 
 
@@ -318,7 +457,11 @@ def _compile_conditional(
         result = compiled_sub.invoke(dict(state))
         return _scope_out(result, cond_out)
 
-    graph.add_node(node_id, cond_node)
+    async def cond_node_async(state: dict[str, Any]) -> dict[str, Any]:
+        result = await compiled_sub.ainvoke(dict(state))
+        return _scope_out(result, cond_out)
+
+    graph.add_node(node_id, RunnableCallable(cond_node, cond_node_async, name=node_id, trace=False))
     return (node_id, node_id)
 
 
@@ -372,7 +515,22 @@ def _compile_loop(
 
         return _scope_out(current_state, loop_out)
 
-    graph.add_node(node_id, loop_node)
+    async def loop_node_async(state: dict[str, Any]) -> dict[str, Any]:
+        model = loop_in.model_validate(state)
+        items = over_fn(model)
+        current_state = dict(state)
+
+        for i, item in enumerate(items):
+            if i >= max_iter:
+                break
+            current_state[item_key] = item
+            result = await compiled_body.ainvoke(dict(current_state))
+            updates = _scope_out(result, body_out)
+            current_state.update(updates)
+
+        return _scope_out(current_state, loop_out)
+
+    graph.add_node(node_id, RunnableCallable(loop_node, loop_node_async, name=node_id, trace=False))
     return (node_id, node_id)
 
 
@@ -420,7 +578,19 @@ def _compile_retry(
                 break
         return _scope_out(current_state, retry_out)
 
-    graph.add_node(node_id, retry_node)
+    async def retry_node_async(state: dict[str, Any]) -> dict[str, Any]:
+        current_state = dict(state)
+        for _ in range(max_attempts):
+            result = await compiled_body.ainvoke(dict(current_state))
+            current_state.update(_scope_out(result, body_out))
+            model = retry_in.model_validate(current_state)
+            if until_fn(model):
+                break
+        return _scope_out(current_state, retry_out)
+
+    graph.add_node(
+        node_id, RunnableCallable(retry_node, retry_node_async, name=node_id, trace=False)
+    )
     return (node_id, node_id)
 
 
@@ -457,7 +627,26 @@ def _compile_agent_action(
     prompt_builder = action.prompt_builder
     executor = action.executor
 
-    def node_fn(state: dict[str, Any]) -> dict[str, Any]:
+    import inspect as _inspect
+
+    # Detect async executors at compile time so we can expose the node
+    # to LangGraph as a coroutine function. ``graph.ainvoke`` awaits
+    # async node callables and runs sync ones via ``asyncio.to_thread``
+    # — giving both kinds of executors (F0 sync + Plan 2 async
+    # ``run_agent_in_container``) correct semantics without a blanket
+    # coroutine-wrap on the sync path.
+    executor_is_async = _inspect.iscoroutinefunction(executor)
+
+    def _validate_and_return(result: Any) -> dict[str, Any]:
+        if not isinstance(result, output_type):
+            raise PrimitiveCompilationError(
+                f"AgentAction {node_id}: executor returned "
+                f"{type(result).__name__}, expected {output_type.__name__}",
+                primitive_type=node_id,
+            )
+        return result.model_dump()
+
+    def _prepare(state: dict[str, Any]) -> tuple[Any, str, Any]:
         _validate_boundary(state, input_type, node_id)
         model_input = input_type.model_validate(state)
         prompt = prompt_builder(model_input)
@@ -469,18 +658,31 @@ def _compile_agent_action(
         )
 
         run_ctx = require_current_run_context()
-        result = executor(primitive=action, prompt=prompt, run_ctx=run_ctx)
+        return action, prompt, run_ctx
 
-        if not isinstance(result, output_type):
-            raise PrimitiveCompilationError(
-                f"AgentAction {node_id}: executor returned "
-                f"{type(result).__name__}, expected {output_type.__name__}",
-                primitive_type=node_id,
-            )
+    if executor_is_async:
+        async_executor = cast(
+            Callable[..., Any], executor
+        )  # typed Callable[..., BaseModel] — pyright can't see the coroutine
 
-        return result.model_dump()
+        async def node_fn_async(state: dict[str, Any]) -> dict[str, Any]:
+            primitive, prompt, run_ctx = _prepare(state)
+            result = await async_executor(primitive=primitive, prompt=prompt, run_ctx=run_ctx)
+            return _validate_and_return(result)
 
-    graph.add_node(node_id, node_fn)
+        # No sync function — attempting ``graph.invoke`` on a plan with
+        # an async AgentAction raises a clear TypeError from LangGraph
+        # pointing callers at ``ainvoke`` / ``run_primitive_plan``.
+        graph.add_node(node_id, RunnableCallable(None, node_fn_async, name=node_id, trace=False))
+    else:
+
+        def node_fn_sync(state: dict[str, Any]) -> dict[str, Any]:
+            primitive, prompt, run_ctx = _prepare(state)
+            result = executor(primitive=primitive, prompt=prompt, run_ctx=run_ctx)
+            return _validate_and_return(result)
+
+        graph.add_node(node_id, node_fn_sync)
+
     return (node_id, node_id)
 
 

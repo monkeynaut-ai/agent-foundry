@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import compile_primitive, run_primitive_plan
+from agent_foundry.compiler.primitive_compiler import (
+    compile_primitive,
+)
+from agent_foundry.compiler.primitive_compiler import (
+    run_primitive_plan_sync as run_primitive_plan,
+)
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     Conditional,
@@ -18,6 +24,13 @@ from agent_foundry.primitives.models import (
     Sequence,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
+
+# Existing sync-entry-point tests intentionally exercise the legacy
+# ``run_primitive_plan_sync`` path (aliased as ``run_primitive_plan``
+# above). Silence the intentional DeprecationWarning emitted on every
+# call so pytest's ``-W error`` configurations stay green.
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=__name__)
 
 # -- Test fixtures --
 
