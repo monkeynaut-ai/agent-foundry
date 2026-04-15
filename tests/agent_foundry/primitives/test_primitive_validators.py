@@ -526,6 +526,7 @@ def _stub_executor_for_validator(*, primitive, prompt) -> _AgentValOutput:
 def _make_agent_action(input_type, output_type):
     """Build an AgentAction with all required fields populated."""
     return AgentAction[input_type, output_type](
+        name="test-agent",
         prompt_builder=_stub_prompt_builder_for_validator,
         instructions_provider=_stub_instructions_for_validator,
         executor=_stub_executor_for_validator,

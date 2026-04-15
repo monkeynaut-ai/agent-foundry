@@ -37,6 +37,7 @@ class OutputModel(BaseModel):
 
 def _make_primitive() -> AgentAction[InputModel, OutputModel]:
     return AgentAction[InputModel, OutputModel](
+        name="test-agent",
         prompt_builder=lambda s: f"do: {s.task}",
         instructions_provider=lambda: "Be precise.",
         executor=run_agent_in_container,

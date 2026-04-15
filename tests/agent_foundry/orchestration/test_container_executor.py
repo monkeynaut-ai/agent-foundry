@@ -77,6 +77,7 @@ def _make_primitive(
     output_type: type[BaseModel] = OutputModel,
 ) -> AgentAction:
     return AgentAction[InputModel, output_type](  # type: ignore[valid-type]
+        name="test-agent",
         prompt_builder=lambda s: f"do: {s.task}",
         instructions_provider=lambda: "Be precise.",
         executor=run_agent_in_container,
@@ -376,7 +377,7 @@ async def test_file_snapshotting_on_success(monkeypatch, tmp_path) -> None:
     result = await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
     assert isinstance(result, OutputWithFile)
 
-    agent_name = type(primitive).__name__
+    agent_name = primitive.name
     snapshot = ctx.artifacts_dir / agent_name / "turns" / "0" / "collected_files" / "out.txt"
     assert snapshot.exists(), f"expected snapshot at {snapshot}"
     assert snapshot.read_text() == "hello"

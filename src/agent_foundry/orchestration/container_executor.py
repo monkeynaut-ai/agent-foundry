@@ -122,7 +122,12 @@ def _resolve_driver(live: LiveContainer, schema: dict[str, Any]) -> Driver:
 
 
 def _agent_name(primitive: AgentAction) -> str:
-    return getattr(primitive, "__name__", None) or type(primitive).__name__
+    """Return the product-declared diagnostic label for the agent.
+
+    Used for artifact directory naming, lifecycle event payloads,
+    and log prefixes. Does not participate in composition or lookup.
+    """
+    return primitive.name
 
 
 def _verify_paths(
@@ -288,10 +293,30 @@ async def run_agent_in_container(
                 }
             )
 
+            # Create the per-turn artifacts dir and persist the prompt
+            # before the turn runs so a crash mid-turn still leaves a
+            # readable trail.
+            turn_dir = agent_turn_dir(run_ctx.artifacts_dir, agent_name, turn_number)
+            try:
+                (turn_dir / "prompt.txt").write_text(current_prompt, encoding="utf-8")
+            except Exception:
+                logger.warning("failed to persist prompt.txt for turn %s", turn_number)
+
             raw, captured_sid = await driver.run_turn(
                 prompt=current_prompt,
                 resume_session_id=current_resume,
             )
+
+            # Persist the raw envelope payload as soon as we have it,
+            # regardless of outcome.
+            try:
+                import json as _json
+
+                (turn_dir / "envelope.json").write_text(
+                    _json.dumps(raw, default=str, indent=2), encoding="utf-8"
+                )
+            except Exception:
+                logger.warning("failed to persist envelope.json for turn %s", turn_number)
 
             # Capture and record the session id as soon as we have one —
             # regardless of envelope outcome — so REUSE_RESUME continuations
@@ -370,6 +395,17 @@ async def run_agent_in_container(
                     current_resume = current_session_id
                     turn_number += 1
                     continue
+
+                # Persist the success payload as output.json.
+                try:
+                    import json as _json
+
+                    (turn_dir / "output.json").write_text(
+                        _json.dumps(payload_dict, default=str, indent=2),
+                        encoding="utf-8",
+                    )
+                except Exception:
+                    logger.warning("failed to persist output.json for turn %s", turn_number)
 
                 # Success path: snapshot declared files then return.
                 await _snapshot_files(

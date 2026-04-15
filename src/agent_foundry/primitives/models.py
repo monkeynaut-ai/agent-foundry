@@ -141,7 +141,20 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     This primitive is a leaf (no children). The compiler registers a node
     that calls the prompt builder, then delegates to the agent runner.
     The runner always returns an instance of ``O`` via structured output.
+
+    The ``name`` field is a diagnostic label used for artifact directory
+    names, lifecycle event payloads, and log prefixes. It is NOT used
+    for composition or lookup — primitives reference each other by
+    Python object reference, and the AgentContainerRegistry is keyed
+    by ``id(primitive)``. Two AgentActions with the same name are
+    technically legal but will collide in artifact paths and confuse
+    logs; products are expected to pick unique, meaningful names
+    (e.g. "reviewer", "planner", "implementer").
     """
+
+    # Diagnostic label — required, no default. Used for artifact dir
+    # naming and log/event labelling; never for composition or lookup.
+    name: str = Field(min_length=1)
 
     # Product-side collaborators
     prompt_builder: Callable[[I], str]

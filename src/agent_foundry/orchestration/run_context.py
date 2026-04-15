@@ -13,11 +13,23 @@ CS7 Plan 2 Task B.1 expands the context with:
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+def _default_artifacts_dir() -> Path:
+    """Produce an ephemeral tmp directory for artifacts when none is given.
+
+    Each construction gets a unique path under the system tmp so tests
+    and ad-hoc uses can't accidentally write into the current working
+    directory. Production code (``run_primitive_plan``) always supplies
+    an explicit ``artifacts_dir``.
+    """
+    return Path(tempfile.mkdtemp(prefix="agent_foundry_run_"))
 
 
 class LifecycleWriter(Protocol):
@@ -58,7 +70,7 @@ class AgentRunContext(BaseModel):
     # with defaults so F0 call sites (and their tests) continue to work
     # unchanged; Task C-series and G.1 replace these with explicit values
     # at every real construction site.
-    artifacts_dir: Path = Field(default_factory=Path.cwd)
+    artifacts_dir: Path = Field(default_factory=_default_artifacts_dir)
     container_registry: Any
     responder_provider: Any = None
     lifecycle_writer: Any

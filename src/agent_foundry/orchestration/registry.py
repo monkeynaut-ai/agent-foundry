@@ -75,11 +75,17 @@ class AgentContainerRegistry:
         base_image_tag: str,
         docker_client_factory: Callable[[], Any] | None = None,
         manager: Any | None = None,
+        oauth_token: str | None = None,
+        inject_instructions: bool = False,
+        entrypoint_setup_wait_seconds: float = 0.0,
     ) -> None:
         self._workspace_volume = workspace_volume
         self._base_image_tag = base_image_tag
         self._docker_client_factory = docker_client_factory
         self._manager_override = manager
+        self._oauth_token = oauth_token
+        self._inject_instructions = inject_instructions
+        self._entrypoint_setup_wait_seconds = entrypoint_setup_wait_seconds
         self._containers: dict[int, LiveContainer] = {}
         self._lock = asyncio.Lock()
         self._shut_down = False
@@ -116,7 +122,21 @@ class AgentContainerRegistry:
                 None,
                 self._extra_env_for(primitive),
             )
+            # If configured to inject role instructions, write them before
+            # start so the base-image entrypoint's append block sees them
+            # on boot (matches ``create_for_invocation`` semantics).
+            if self._inject_instructions:
+                instructions_text = primitive.instructions_provider()
+                await asyncio.to_thread(
+                    manager.write_file_to_container,
+                    handle,
+                    ROLE_INSTRUCTIONS_PATH,
+                    instructions_text,
+                )
             await asyncio.to_thread(manager.start, handle)
+            if self._entrypoint_setup_wait_seconds > 0:
+                await asyncio.sleep(self._entrypoint_setup_wait_seconds)
+                await self._reload_and_verify_running(handle)
             live = LiveContainer(
                 handle=handle,
                 manager=manager,
@@ -157,6 +177,12 @@ class AgentContainerRegistry:
             self._containers.clear()
 
         for live in targets:
+            # Best-effort stop first; real containers refuse ``destroy``
+            # while still running (409 Conflict) even though the handle
+            # itself is resolvable. ``stop`` failures (fake manager,
+            # already-stopped) are swallowed so ``destroy`` still runs.
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(live.manager.stop, live.handle, 5)
             try:
                 await asyncio.to_thread(live.manager.destroy, live.handle)
             except Exception as exc:
@@ -241,12 +267,23 @@ class AgentContainerRegistry:
         return ContainerManager(client=client, default_image=self._base_image_tag)
 
     def _extra_env_for(self, primitive: AgentAction) -> dict[str, str]:
-        """Hook for primitive-specific env vars at container start time.
+        """Compose the env dict passed to ``ContainerManager.create_container``.
 
-        Base impl returns an empty dict; Phase F.3 layers in the agent
-        env (oauth token, instructions path) at turn time.
+        When the registry has been configured with ``oauth_token`` (the
+        ``run_primitive_plan`` entry path), compose the full agent env via
+        :func:`build_container_env` so the container boots with the
+        Claude Code OAuth token and the instructions-path env var the
+        entrypoint consumes. Tests that construct the registry without an
+        ``oauth_token`` (the fake-driver path) get an empty env — which
+        matches the pre-Plan-2 behavior.
         """
-        return {}
+        if self._oauth_token is None:
+            return {}
+        return build_container_env(
+            primitive,
+            oauth_token=self._oauth_token,
+            role_instructions_path=ROLE_INSTRUCTIONS_PATH,
+        )
 
     async def _reload_and_verify_running(self, handle: Any) -> None:
         """Reload container state and assert it is running.

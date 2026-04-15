@@ -222,9 +222,18 @@ async def run_primitive_plan(
     _, root_out = get_type_args(plan.root)
 
     lifecycle = LifecycleWriter(run_id=resolved_run_id, path=run_dir / "lifecycle.jsonl")
+    import os as _os
+
+    oauth_token = _os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    # Inject role instructions + entrypoint setup wait only when we have
+    # a real OAuth token — unit tests that wire a fake driver skip this
+    # path and keep their pre-Plan-2 registry shape.
     registry = AgentContainerRegistry(
         workspace_volume=workspace_volume,
         base_image_tag=base_image_tag,
+        oauth_token=oauth_token,
+        inject_instructions=oauth_token is not None,
+        entrypoint_setup_wait_seconds=2.0 if oauth_token is not None else 0.0,
     )
     cancel = asyncio.Event()
 
@@ -235,7 +244,7 @@ async def run_primitive_plan(
         responder_provider=responder_provider,
         lifecycle_writer=lifecycle,
         cancel_event=cancel,
-        env={},
+        env={"CLAUDE_CODE_OAUTH_TOKEN": oauth_token} if oauth_token else {},
     )
 
     # Install SIGINT/SIGTERM handlers — main thread only. Signal-handler
@@ -306,22 +315,60 @@ def _compile_function_action(
     arity = len(inspect.signature(fn).parameters)
 
     def node_fn(state: dict[str, Any]) -> dict[str, Any]:
-        if arity == 0:
-            result = fn()
-        else:
-            _validate_boundary(state, input_type, node_id)
-            model_input = input_type.model_validate(state)
-            if arity >= 2:
-                # Resolve ContextVar at invocation time. Deferred import
-                # avoids any risk of an orchestration -> compiler cycle.
-                from agent_foundry.orchestration.run_context import (
-                    require_current_run_context,
-                )
+        # Resolve the current ``AgentRunContext`` once — we need it to
+        # emit ``FUNCTION_ACTION_STARTED`` / ``_COMPLETED`` / ``_FAILED``
+        # lifecycle events regardless of callable arity. When no run is
+        # in progress (legacy ``run_primitive_plan_sync`` + unit tests
+        # that compile nodes without a run context), skip event emission
+        # so the compiler remains usable outside Plan 2's run path.
+        from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+        from agent_foundry.orchestration.run_context import (
+            current_run_context,
+        )
 
-                run_ctx = require_current_run_context()
-                result = fn(model_input, run_ctx)
+        ctx_opt = current_run_context.get()
+        if ctx_opt is not None:
+            ctx_opt.lifecycle_writer.append(
+                {
+                    "type": LifecycleEvent.FUNCTION_ACTION_STARTED,
+                    "node_id": node_id,
+                }
+            )
+        try:
+            if arity == 0:
+                result = fn()
             else:
-                result = fn(model_input)
+                _validate_boundary(state, input_type, node_id)
+                model_input = input_type.model_validate(state)
+                if arity >= 2:
+                    if ctx_opt is None:
+                        from agent_foundry.orchestration.run_context import (
+                            require_current_run_context,
+                        )
+
+                        run_ctx = require_current_run_context()
+                    else:
+                        run_ctx = ctx_opt
+                    result = fn(model_input, run_ctx)
+                else:
+                    result = fn(model_input)
+        except Exception as exc:
+            if ctx_opt is not None:
+                ctx_opt.lifecycle_writer.append(
+                    {
+                        "type": LifecycleEvent.FUNCTION_ACTION_FAILED,
+                        "node_id": node_id,
+                        "reason": str(exc),
+                    }
+                )
+            raise
+        if ctx_opt is not None:
+            ctx_opt.lifecycle_writer.append(
+                {
+                    "type": LifecycleEvent.FUNCTION_ACTION_COMPLETED,
+                    "node_id": node_id,
+                }
+            )
         return result.model_dump()
 
     graph.add_node(node_id, node_fn)

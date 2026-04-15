@@ -110,6 +110,7 @@ def patch_registry_manager(monkeypatch, fake_manager: FakeContainerManager):
         base_image_tag: str,
         docker_client_factory=None,
         manager=None,
+        **extra: Any,
     ) -> None:
         real_init(
             self,
@@ -117,6 +118,7 @@ def patch_registry_manager(monkeypatch, fake_manager: FakeContainerManager):
             base_image_tag=base_image_tag,
             docker_client_factory=docker_client_factory,
             manager=manager or fake_manager,
+            **extra,
         )
 
     monkeypatch.setattr(registry_mod.AgentContainerRegistry, "__init__", _patched_init)
@@ -128,6 +130,7 @@ def patch_registry_manager(monkeypatch, fake_manager: FakeContainerManager):
 
 def _agent_primitive() -> AgentAction:
     return AgentAction[PlanInput, AgentOut](
+        name="planner",
         prompt_builder=lambda s: f"do: {s.task}",
         instructions_provider=lambda: "instructions",
         executor=run_agent_in_container,

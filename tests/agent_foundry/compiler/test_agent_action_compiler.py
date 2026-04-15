@@ -95,6 +95,7 @@ class TestAgentActionCompiler:
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -114,6 +115,7 @@ class TestAgentActionCompiler:
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -130,6 +132,7 @@ class TestAgentActionCompiler:
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -150,6 +153,7 @@ class TestAgentActionCompiler:
             return WrongType(other="oops")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -173,6 +177,7 @@ class TestAgentActionCompiler:
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -204,6 +209,7 @@ class TestAgentActionCompiler_ExceptionPropagation:
             raise _ExecutorFailure("agent failed")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -250,6 +256,7 @@ class TestAgentActionCompiler_Composition:
             return AgentStepOutput(answer="42")
 
         agent_step = AgentAction[AgentStepInput, AgentStepOutput](
+            name="test-agent",
             prompt_builder=lambda s: f"Q: {s.query}",
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -303,6 +310,7 @@ class TestAgentActionCompiler_RunCtxThreading:
             return AgentOutput(answer="ok")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -352,6 +360,7 @@ class TestAgentActionCompiler_RunCtxThreading:
             return AgentOutput(answer="ok")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,

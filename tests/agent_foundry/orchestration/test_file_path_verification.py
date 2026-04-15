@@ -157,6 +157,7 @@ class _VerifyOutput(BaseModel):
 
 def _make_verify_primitive() -> AgentAction[_VerifyInput, _VerifyOutput]:
     return AgentAction[_VerifyInput, _VerifyOutput](
+        name="reviewer",
         prompt_builder=lambda s: f"do: {s.task}",
         instructions_provider=lambda: "Be precise.",
         executor=run_agent_in_container,

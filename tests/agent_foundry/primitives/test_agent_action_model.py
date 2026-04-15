@@ -66,6 +66,7 @@ class TestAgentActionRequiredFields:
 
     def test_given_all_required_fields_when_created_then_succeeds(self):
         action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor_for_required,
@@ -77,6 +78,7 @@ class TestAgentActionRequiredFields:
     def test_unparameterized_raises(self):
         with pytest.raises(ValidationError, match="must be parameterized"):
             AgentAction(
+                name="test-agent",
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
                 executor=_stub_executor_for_required,
@@ -101,6 +103,7 @@ class TestAgentActionRequiredFields:
 
     def test_get_type_args_returns_parameterized_types(self):
         action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor_for_required,
@@ -112,6 +115,7 @@ class TestAgentActionRequiredFields:
 
     def test_prompt_builder_is_callable(self):
         action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor_for_required,
@@ -122,6 +126,7 @@ class TestAgentActionRequiredFields:
 
     def test_instructions_provider_is_callable(self):
         action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor_for_required,
@@ -150,6 +155,7 @@ class TestAgentActionNoResponseChannel:
 
     def test_no_response_channel_instance_attr(self):
         action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor_for_required,
@@ -180,6 +186,7 @@ class TestAgentActionExecutor:
 
     def test_executor_accepted(self):
         action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor,
@@ -189,6 +196,7 @@ class TestAgentActionExecutor:
 
     def test_executor_is_callable(self):
         action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor,
@@ -205,6 +213,7 @@ class TestAgentActionExecutor:
 
 def _new_structured_action() -> AgentAction:
     return AgentAction[StubInput, StubOutput](
+        name="test-agent",
         prompt_builder=_stub_prompt_builder,
         instructions_provider=_stub_instructions_provider,
         executor=_stub_executor,
@@ -222,6 +231,7 @@ class TestAgentActionConfigFields:
     def test_timeout_seconds_must_be_positive(self):
         with pytest.raises(ValidationError):
             AgentAction[StubInput, StubOutput](
+                name="test-agent",
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
                 executor=_stub_executor,
@@ -252,6 +262,7 @@ class TestAgentActionConfigFields:
     def test_reuse_policy_accepts_all_values(self):
         for policy in ContainerReusePolicy:
             action = AgentAction[StubInput, StubOutput](
+                name="test-agent",
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
                 executor=_stub_executor,
