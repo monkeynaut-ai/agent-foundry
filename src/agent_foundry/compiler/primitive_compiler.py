@@ -225,15 +225,17 @@ async def run_primitive_plan(
     import os as _os
 
     oauth_token = _os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
-    # Inject role instructions + entrypoint setup wait only when we have
-    # a real OAuth token — unit tests that wire a fake driver skip this
-    # path and keep their pre-Plan-2 registry shape.
+    # Inject role instructions + wait for container health only when we
+    # have a real OAuth token — unit tests that wire a fake driver skip
+    # this path and keep their pre-Plan-2 registry shape. The base image
+    # declares a HEALTHCHECK that polls for ``/tmp/.container-ready``;
+    # the entrypoint touches that marker after all setup completes.
     registry = AgentContainerRegistry(
         workspace_volume=workspace_volume,
         base_image_tag=base_image_tag,
         oauth_token=oauth_token,
         inject_instructions=oauth_token is not None,
-        entrypoint_setup_wait_seconds=2.0 if oauth_token is not None else 0.0,
+        wait_for_health=oauth_token is not None,
     )
     cancel = asyncio.Event()
 

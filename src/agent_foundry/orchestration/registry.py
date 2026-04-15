@@ -33,7 +33,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 ROLE_INSTRUCTIONS_PATH = "/home/claude/role-instructions.md"
-_ENTRYPOINT_SETUP_WAIT_SECONDS = 2.0
+
+# Maximum seconds to wait for the container's Docker health check to
+# report ``healthy`` before raising. The base ACP image's HEALTHCHECK
+# uses ``--start-period=60s``; this timeout exceeds it so we don't race.
+# The entrypoint's setup steps (auth, lockdown, role-instructions
+# append, LSP plugin install, product-init) touch
+# ``/tmp/.container-ready`` as the final step; Docker then reports
+# ``healthy``.
+_DEFAULT_HEALTH_WAIT_TIMEOUT_SECONDS = 90.0
+_HEALTH_POLL_INTERVAL_SECONDS = 0.25
 
 
 @dataclass
@@ -77,7 +86,8 @@ class AgentContainerRegistry:
         manager: Any | None = None,
         oauth_token: str | None = None,
         inject_instructions: bool = False,
-        entrypoint_setup_wait_seconds: float = 0.0,
+        health_wait_timeout_seconds: float = _DEFAULT_HEALTH_WAIT_TIMEOUT_SECONDS,
+        wait_for_health: bool = False,
     ) -> None:
         self._workspace_volume = workspace_volume
         self._base_image_tag = base_image_tag
@@ -85,7 +95,8 @@ class AgentContainerRegistry:
         self._manager_override = manager
         self._oauth_token = oauth_token
         self._inject_instructions = inject_instructions
-        self._entrypoint_setup_wait_seconds = entrypoint_setup_wait_seconds
+        self._health_wait_timeout_seconds = health_wait_timeout_seconds
+        self._wait_for_health = wait_for_health
         self._containers: dict[int, LiveContainer] = {}
         self._lock = asyncio.Lock()
         self._shut_down = False
@@ -134,9 +145,8 @@ class AgentContainerRegistry:
                     instructions_text,
                 )
             await asyncio.to_thread(manager.start, handle)
-            if self._entrypoint_setup_wait_seconds > 0:
-                await asyncio.sleep(self._entrypoint_setup_wait_seconds)
-                await self._reload_and_verify_running(handle)
+            if self._wait_for_health:
+                await self._wait_until_healthy(handle)
             live = LiveContainer(
                 handle=handle,
                 manager=manager,
@@ -233,9 +243,7 @@ class AgentContainerRegistry:
             instructions_text,
         )
         await asyncio.to_thread(manager.start, handle)
-
-        await asyncio.sleep(_ENTRYPOINT_SETUP_WAIT_SECONDS)
-        await self._reload_and_verify_running(handle)
+        await self._wait_until_healthy(handle)
 
         return LiveContainer(handle=handle, manager=manager)
 
@@ -285,31 +293,71 @@ class AgentContainerRegistry:
             role_instructions_path=ROLE_INSTRUCTIONS_PATH,
         )
 
-    async def _reload_and_verify_running(self, handle: Any) -> None:
-        """Reload container state and assert it is running.
+    async def _wait_until_healthy(self, handle: Any) -> None:
+        """Poll the container's Docker HEALTHCHECK status until ``healthy``.
+
+        The base ACP image declares a HEALTHCHECK that tests for
+        ``/tmp/.container-ready`` — a marker file the entrypoint
+        touches as its final setup step. Polling the health state
+        (rather than sleeping a fixed interval) avoids races between
+        the host's ``exec_run`` calls and the entrypoint's setup work
+        (auth, lockdown, role-instructions append, plugin install).
 
         No-op when the handle does not expose a real Docker container
-        (e.g. test fakes) — fakes already set status on ``start()``.
+        (e.g. test fakes) — fakes start in a stable state immediately.
+        Raises ``RuntimeError`` when the container reports ``unhealthy``
+        or when the timeout elapses without reaching ``healthy``.
         """
         inner = getattr(handle, "_container", None)
         if inner is None:
             return
-        reload = getattr(inner, "reload", None)
-        if reload is not None:
-            await asyncio.to_thread(reload)
-        status = getattr(inner, "status", None)
-        if status != "running":
-            logs = ""
-            logs_fn = getattr(inner, "logs", None)
-            if logs_fn is not None:
-                try:
-                    raw = logs_fn(tail=80)
-                    logs = raw.decode(errors="replace") if isinstance(raw, bytes) else str(raw)
-                except Exception:
-                    logs = "<unable to read container logs>"
-            failed_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            raise RuntimeError(
-                f"container not running after entrypoint setup "
-                f"(status={status!r}, checked_at={failed_at}); "
-                f"logs=\n{logs}"
+
+        reload_fn = getattr(inner, "reload", None)
+        if reload_fn is None:
+            return
+
+        deadline = time.monotonic() + self._health_wait_timeout_seconds
+        last_status: str | None = None
+        while time.monotonic() < deadline:
+            await asyncio.to_thread(reload_fn)
+            attrs = getattr(inner, "attrs", None) or {}
+            health = attrs.get("State", {}).get("Health", {}) or {}
+            last_status = health.get("Status")
+            if last_status == "healthy":
+                return
+            if last_status == "unhealthy":
+                raise RuntimeError(
+                    self._format_health_failure(
+                        inner,
+                        reason=f"container reported unhealthy (health={health!r})",
+                    )
+                )
+            # ``starting`` or no HEALTHCHECK configured — keep polling.
+            # If the image has no HEALTHCHECK, ``health`` is empty and
+            # we'd loop forever; fall through to status-based readiness.
+            if not health and getattr(inner, "status", None) == "running":
+                return
+            await asyncio.sleep(_HEALTH_POLL_INTERVAL_SECONDS)
+
+        raise RuntimeError(
+            self._format_health_failure(
+                inner,
+                reason=(
+                    f"container did not become healthy within "
+                    f"{self._health_wait_timeout_seconds:.1f}s "
+                    f"(last_status={last_status!r})"
+                ),
             )
+        )
+
+    def _format_health_failure(self, inner: Any, *, reason: str) -> str:
+        logs = ""
+        logs_fn = getattr(inner, "logs", None)
+        if logs_fn is not None:
+            try:
+                raw = logs_fn(tail=80)
+                logs = raw.decode(errors="replace") if isinstance(raw, bytes) else str(raw)
+            except Exception:
+                logs = "<unable to read container logs>"
+        failed_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        return f"{reason} (checked_at={failed_at}); logs=\n{logs}"

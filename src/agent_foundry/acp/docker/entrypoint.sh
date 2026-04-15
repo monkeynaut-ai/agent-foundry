@@ -76,7 +76,15 @@ fi
 # waiting for `docker exec` calls from the host to invoke `claude`
 # directly. Used by the Plan 2 host-driven executor, which runs each
 # turn as `claude --resume <session-id> -p <prompt>` via exec_run.
+#
+# /tmp/.container-ready is the marker file consumed by the Dockerfile's
+# HEALTHCHECK. Touching it here — AFTER all setup (auth, lockdown,
+# role-instructions append, LSP plugin install, product-init hook) has
+# finished — is the signal that the container is ready to receive work.
+# Host-side code polls `container.attrs["State"]["Health"]["Status"]`
+# until it reads ``healthy``.
 if [ "${ACP_HOST_DRIVEN:-0}" = "1" ]; then
+  touch /tmp/.container-ready
   exec tail -f /dev/null
 fi
 

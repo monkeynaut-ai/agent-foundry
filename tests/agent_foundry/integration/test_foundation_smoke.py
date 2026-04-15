@@ -88,15 +88,34 @@ def test_foundation_smoke_real_claude_code() -> None:
             "--json-schema",
             json.dumps(schema),
         ]
-        # Give the entrypoint time to finish setup (plugin install, etc.)
+        # Wait for the container's Docker HEALTHCHECK to report `healthy`.
+        # The base image's HEALTHCHECK polls for `/tmp/.container-ready`,
+        # which the entrypoint touches after all setup (auth, lockdown,
+        # role-instructions append, LSP plugin install, product-init)
+        # completes. This is the signal that the container is ready to
+        # receive `docker exec` calls.
         import time as _time
 
-        _time.sleep(2)
-        handle._container.reload()
-        assert handle._container.status == "running", (
-            f"container not running; status={handle._container.status}; "
-            f"logs={handle._container.logs(tail=40).decode(errors='replace')}"
-        )
+        deadline = _time.monotonic() + 90.0
+        last_status: str | None = None
+        while _time.monotonic() < deadline:
+            handle._container.reload()
+            health = handle._container.attrs.get("State", {}).get("Health", {}) or {}
+            last_status = health.get("Status")
+            if last_status == "healthy":
+                break
+            if last_status == "unhealthy":
+                raise AssertionError(
+                    f"container reported unhealthy: health={health!r}; "
+                    f"logs={handle._container.logs(tail=40).decode(errors='replace')}"
+                )
+            _time.sleep(0.25)
+        else:
+            raise AssertionError(
+                f"container did not become healthy within 90s "
+                f"(last_status={last_status!r}); "
+                f"logs={handle._container.logs(tail=40).decode(errors='replace')}"
+            )
 
         exit_code, output = handle._container.exec_run(exec_cmd, demux=False, user="claude")
         if exit_code != 0:

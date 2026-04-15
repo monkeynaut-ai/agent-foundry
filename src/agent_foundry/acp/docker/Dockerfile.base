@@ -69,4 +69,13 @@ COPY --chown=claude:claude src/agent_foundry/acp/adapters/claude_code.py /home/c
 
 WORKDIR /workspace
 
+# HEALTHCHECK — the entrypoint touches /tmp/.container-ready after all
+# setup (auth, lockdown, role-instructions append, LSP plugin install,
+# product-init hook) completes. Host code polls the container's health
+# status to know when the container is ready to receive `docker exec`
+# calls. `--start-period=60s` gives plugin install and product-init
+# room to finish over slow networks without being counted as unhealthy.
+HEALTHCHECK --interval=1s --timeout=3s --start-period=60s --retries=3 \
+  CMD test -f /tmp/.container-ready || exit 1
+
 ENTRYPOINT ["/home/claude/entrypoint.sh"]
