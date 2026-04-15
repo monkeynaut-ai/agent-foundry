@@ -47,6 +47,10 @@ class FakeContainerManager:
         self.destroy_side_effects: dict[str, Callable[[], None]] = {}
         self.exec_script: dict[str, tuple[int, bytes]] = {}
         self.destroyed_ids: list[str] = []
+        # E.2 host-side file-path verification: always-present so tests
+        # that never trigger a read can still assert ``read_file_log == []``.
+        self.read_file_script: dict[str, list[str | None]] = {}
+        self.read_file_log: list[tuple[str, bool, int]] = []
 
     def create_container(
         self,
@@ -82,6 +86,36 @@ class FakeContainerManager:
     def exec_run(self, handle: FakeContainerHandle, cmd: str) -> tuple[int, bytes]:
         handle.exec_log.append(cmd)
         return self.exec_script.get(cmd, (0, b""))
+
+    # --- E.2 host-side file-path verification hooks --------------------------
+    #
+    # ``read_file_script`` maps a container path to a FIFO list of values.
+    # Each ``read_file_from_container(handle, path)`` call pops the head:
+    #   - ``None`` means "file not present" (matches real ContainerManager's
+    #     behavior when ``get_archive`` raises).
+    #   - ``str`` means "here is the decoded content".
+    # Once a path's script is exhausted, subsequent reads default to ``None``.
+    #
+    # ``read_file_log`` records every ``(path, result_is_none, size)`` call in
+    # order so tests can assert per-path call counts.
+    read_file_script: dict[str, list[str | None]]
+    read_file_log: list[tuple[str, bool, int]]
+
+    def read_file_from_container(self, handle: FakeContainerHandle, path: str) -> str | None:
+        # Defensive init so tests that don't opt in still work; dataclass-style
+        # init isn't used for this class so we lazily create the attrs.
+        script = getattr(self, "read_file_script", None)
+        if script is None:
+            self.read_file_script = {}
+            script = self.read_file_script
+        log = getattr(self, "read_file_log", None)
+        if log is None:
+            self.read_file_log = []
+            log = self.read_file_log
+        queue = script.get(path)
+        value: str | None = queue.pop(0) if queue else None
+        log.append((path, value is None, 0 if value is None else len(value.encode())))
+        return value
 
 
 # --- Phase B.4 docker-client factory fakes ------------------------------------
@@ -151,10 +185,28 @@ class FakeClaudeCodeAdapter:
 
     F0 only uses run_turn once per invocation and only supports
     success envelopes. F.3's inner-loop tests extend this fake.
+
+    Phase E.2 adds ``turn_script``: a FIFO list of envelope payloads returned
+    one-per-``run_turn``. Construct with either ``canned_structured_output``
+    (legacy single-response) or ``turn_script`` (multi-turn). Overflow past
+    the scripted turns raises ``AssertionError`` so tests catch runaway
+    retry loops loudly.
     """
 
-    def __init__(self, *, canned_structured_output: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        *,
+        canned_structured_output: dict[str, Any] | None = None,
+        turn_script: list[dict[str, Any]] | None = None,
+    ) -> None:
+        if canned_structured_output is None and turn_script is None:
+            raise ValueError(
+                "FakeClaudeCodeAdapter requires canned_structured_output or turn_script"
+            )
+        if canned_structured_output is not None and turn_script is not None:
+            raise ValueError("Provide canned_structured_output OR turn_script, not both")
         self._canned = canned_structured_output
+        self._turn_script: list[dict[str, Any]] = list(turn_script or [])
         self.calls: list[dict[str, Any]] = []
 
     async def run_turn(
@@ -165,4 +217,10 @@ class FakeClaudeCodeAdapter:
         resume_session_id: str | None = None,
     ) -> dict[str, Any]:
         self.calls.append({"prompt": prompt, "schema": json_schema, "resume": resume_session_id})
-        return self._canned
+        if self._canned is not None:
+            return self._canned
+        assert self._turn_script, (
+            "FakeClaudeCodeAdapter.run_turn called beyond scripted turn count "
+            f"(call #{len(self.calls)})"
+        )
+        return self._turn_script.pop(0)

@@ -105,3 +105,270 @@ class TestExecutorSpecExtraction:
         # executor uses this to short-circuit verification entirely.
         specs = walk_file_path_fields(OutputWithoutPaths.model_json_schema())
         assert specs == []
+
+
+# ---------------------------------------------------------------------------
+# Task E.2: host-side verification + bounded retry
+# ---------------------------------------------------------------------------
+#
+# Post-success envelope, the executor:
+#   1. Resolves declared paths via ``extract_paths``.
+#   2. For each path, reads through ``ContainerManager.read_file_from_container``
+#      (returns None on missing) and checks existence + size.
+#   3. Empty violations → return payload.
+#   4. Non-empty → issue ONE bounded ``--resume`` correction turn + re-verify.
+#   5. Second failure → raise ``AgentFailedError(reason="file_path_verification_failed: ...")``.
+#
+# These tests pin that loop. ``AgentFailedError`` is logically a Phase F.1
+# deliverable; Task E.2's implementer pulls it forward into
+# ``agent_foundry.orchestration.errors`` so these tests can name it.
+
+
+import pytest  # noqa: E402
+from pydantic import BaseModel  # noqa: E402
+
+from agent_foundry.orchestration import container_executor  # noqa: E402
+from agent_foundry.orchestration.container_executor import (  # noqa: E402
+    run_agent_in_container,
+)
+from agent_foundry.orchestration.errors import AgentFailedError  # noqa: E402
+from agent_foundry.orchestration.registry import AgentContainerRegistry  # noqa: E402
+from agent_foundry.orchestration.run_context import (  # noqa: E402
+    AgentRunContext,
+    NoOpLifecycleWriter,
+)
+from agent_foundry.primitives.models import (  # noqa: E402
+    AgentAction,
+    ContainerReusePolicy,
+)
+
+from .fakes import FakeClaudeCodeAdapter, FakeContainerManager  # noqa: E402
+
+
+class _VerifyInput(BaseModel):
+    task: str
+
+
+class _VerifyOutput(BaseModel):
+    """Success payload with a single AgentFilePath-marked field."""
+
+    review_path: Annotated[str, AgentFilePath()]
+
+
+def _make_verify_primitive() -> AgentAction[_VerifyInput, _VerifyOutput]:
+    return AgentAction[_VerifyInput, _VerifyOutput](
+        prompt_builder=lambda s: f"do: {s.task}",
+        instructions_provider=lambda: "Be precise.",
+        executor=run_agent_in_container,
+        reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+    )
+
+
+def _make_ctx(fake_mgr: FakeContainerManager) -> AgentRunContext:
+    registry = AgentContainerRegistry(
+        manager=fake_mgr,
+        base_image_tag="agent-foundry-base:test",
+        workspace_volume="vol-e2",
+    )
+    return AgentRunContext(
+        run_id="run-e2",
+        container_registry=registry,
+        lifecycle_writer=NoOpLifecycleWriter(),
+        env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+    )
+
+
+def _install_adapter(monkeypatch: pytest.MonkeyPatch, adapter: FakeClaudeCodeAdapter) -> None:
+    monkeypatch.setattr(container_executor, "build_adapter", lambda *_a, **_k: adapter)
+
+
+class TestExecutorFilePathVerification:
+    """E.2: host-side verification + bounded retry around SuccessOutcome."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_no_retry_when_all_paths_valid(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        adapter = FakeClaudeCodeAdapter(
+            turn_script=[
+                {
+                    "outcome": {
+                        "kind": "success",
+                        "payload": {"review_path": "/workspace/review.md"},
+                    }
+                }
+            ]
+        )
+        _install_adapter(monkeypatch, adapter)
+
+        fake_mgr = FakeContainerManager()
+        fake_mgr.read_file_script = {"/workspace/review.md": ["# review body"]}
+
+        result = await run_agent_in_container(
+            primitive=_make_verify_primitive(),
+            prompt="go",
+            run_ctx=_make_ctx(fake_mgr),
+        )
+
+        assert isinstance(result, _VerifyOutput)
+        assert result.review_path == "/workspace/review.md"
+        # Exactly one adapter turn — no retry.
+        assert len(adapter.calls) == 1
+        # One verification read for the declared path.
+        assert fake_mgr.read_file_log == [("/workspace/review.md", False, len(b"# review body"))]
+
+    @pytest.mark.asyncio
+    async def test_missing_file_retry_recovers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        adapter = FakeClaudeCodeAdapter(
+            turn_script=[
+                {
+                    "outcome": {
+                        "kind": "success",
+                        "payload": {"review_path": "/workspace/review.md"},
+                    }
+                },
+                {
+                    "outcome": {
+                        "kind": "success",
+                        "payload": {"review_path": "/workspace/review.md"},
+                    }
+                },
+            ]
+        )
+        _install_adapter(monkeypatch, adapter)
+
+        fake_mgr = FakeContainerManager()
+        # First read: missing. Second read (after correction turn): content.
+        fake_mgr.read_file_script = {"/workspace/review.md": [None, "# recovered"]}
+
+        result = await run_agent_in_container(
+            primitive=_make_verify_primitive(),
+            prompt="go",
+            run_ctx=_make_ctx(fake_mgr),
+        )
+
+        assert isinstance(result, _VerifyOutput)
+        # Two adapter turns — original plus one bounded retry.
+        assert len(adapter.calls) == 2
+        # The retry must be a ``--resume`` turn: the second call carries a
+        # non-None resume_session_id. (The executor supplies whatever id the
+        # adapter surfaces; the exact value is driver-dependent, so we only
+        # assert the retry is resumed, not fresh.)
+        assert adapter.calls[1]["resume"] is not None
+        # The correction prompt must name the violating path so the agent
+        # knows what to fix.
+        assert "/workspace/review.md" in adapter.calls[1]["prompt"]
+        # Verification ran twice on that path.
+        read_paths = [entry[0] for entry in fake_mgr.read_file_log]
+        assert read_paths.count("/workspace/review.md") == 2
+
+    @pytest.mark.asyncio
+    async def test_oversized_file_retry_recovers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        adapter = FakeClaudeCodeAdapter(
+            turn_script=[
+                {
+                    "outcome": {
+                        "kind": "success",
+                        "payload": {"review_path": "/workspace/review.md"},
+                    }
+                },
+                {
+                    "outcome": {
+                        "kind": "success",
+                        "payload": {"review_path": "/workspace/review.md"},
+                    }
+                },
+            ]
+        )
+        _install_adapter(monkeypatch, adapter)
+
+        # Default limit is PLATFORM_DEFAULT_MAX_FILE_BYTES (10MB). First read
+        # blows past it; retry fits.
+        oversized = "x" * (PLATFORM_DEFAULT_MAX_FILE_BYTES + 1)
+        fake_mgr = FakeContainerManager()
+        fake_mgr.read_file_script = {"/workspace/review.md": [oversized, "compact body"]}
+
+        result = await run_agent_in_container(
+            primitive=_make_verify_primitive(),
+            prompt="go",
+            run_ctx=_make_ctx(fake_mgr),
+        )
+
+        assert isinstance(result, _VerifyOutput)
+        assert len(adapter.calls) == 2
+        assert adapter.calls[1]["resume"] is not None
+        # Correction prompt should reference the oversized path.
+        assert "/workspace/review.md" in adapter.calls[1]["prompt"]
+
+    @pytest.mark.asyncio
+    async def test_missing_file_retry_still_fails_raises_agent_failed_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        adapter = FakeClaudeCodeAdapter(
+            turn_script=[
+                {
+                    "outcome": {
+                        "kind": "success",
+                        "payload": {"review_path": "/workspace/review.md"},
+                    }
+                },
+                {
+                    "outcome": {
+                        "kind": "success",
+                        "payload": {"review_path": "/workspace/review.md"},
+                    }
+                },
+            ]
+        )
+        _install_adapter(monkeypatch, adapter)
+
+        fake_mgr = FakeContainerManager()
+        # Both reads missing — bounded retry exhausted.
+        fake_mgr.read_file_script = {"/workspace/review.md": [None, None]}
+
+        with pytest.raises(AgentFailedError) as excinfo:
+            await run_agent_in_container(
+                primitive=_make_verify_primitive(),
+                prompt="go",
+                run_ctx=_make_ctx(fake_mgr),
+            )
+
+        assert "file_path_verification_failed" in excinfo.value.reason
+        # Exactly two adapter turns — original + one retry. No unbounded loop.
+        assert len(adapter.calls) == 2
+        # Container was still torn down in finally.
+        assert fake_mgr.handles[0].status == "destroyed"
+
+    @pytest.mark.asyncio
+    async def test_failure_outcome_skips_verification_and_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        adapter = FakeClaudeCodeAdapter(
+            turn_script=[
+                {
+                    "outcome": {
+                        "kind": "failed",
+                        "reason": "unresolvable ambiguity",
+                    }
+                }
+            ]
+        )
+        _install_adapter(monkeypatch, adapter)
+
+        fake_mgr = FakeContainerManager()
+        # If the executor were to verify on failure envelopes, it would hit
+        # this script. The test asserts it does NOT.
+        fake_mgr.read_file_script = {"/workspace/review.md": ["should-not-read"]}
+
+        with pytest.raises(AgentFailedError) as excinfo:
+            await run_agent_in_container(
+                primitive=_make_verify_primitive(),
+                prompt="go",
+                run_ctx=_make_ctx(fake_mgr),
+            )
+
+        assert "unresolvable ambiguity" in excinfo.value.reason
+        # No verification reads on non-success envelopes.
+        assert fake_mgr.read_file_log == []
+        # Only the initial turn — no retry for FailureOutcome.
+        assert len(adapter.calls) == 1

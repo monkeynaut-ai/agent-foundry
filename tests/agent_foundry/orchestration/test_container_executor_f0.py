@@ -83,12 +83,20 @@ async def test_run_agent_in_container_happy_path(patch_adapter) -> None:
 async def test_run_agent_in_container_non_success_raises_not_implemented(
     monkeypatch,
 ) -> None:
-    # Adapter returns a failure envelope; F0 must reject it.
+    # Adapter returns a clarification envelope; F0 / E.2 must reject it
+    # (clarification + permission handling lands in Phase F.3).
     from agent_foundry.orchestration import container_executor as ce
 
     def factory(*a: Any, **kw: Any) -> FakeClaudeCodeAdapter:
         return FakeClaudeCodeAdapter(
-            canned_structured_output={"outcome": {"kind": "failed", "reason": "nope"}},
+            canned_structured_output={
+                "outcome": {
+                    "kind": "clarification_needed",
+                    "question": "what?",
+                    "options": [],
+                    "blocking": True,
+                }
+            },
         )
 
     monkeypatch.setattr(ce, "build_adapter", factory)
