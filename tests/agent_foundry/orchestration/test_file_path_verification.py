@@ -178,8 +178,42 @@ def _make_ctx(fake_mgr: FakeContainerManager) -> AgentRunContext:
     )
 
 
+class _AdapterAsDriver:
+    """Bridge the legacy FakeClaudeCodeAdapter surface onto the F.3 Driver
+    contract (``run_turn(*, prompt, resume_session_id) -> (envelope, sid)``).
+
+    Invented here so the E.2 verification tests keep their existing
+    scripted-adapter ergonomics while the executor now speaks the new
+    driver signature.
+    """
+
+    def __init__(self, adapter: FakeClaudeCodeAdapter, schema: dict) -> None:
+        self._adapter = adapter
+        self._schema = schema
+
+    async def run_turn(
+        self, *, prompt: str, resume_session_id: str | None = None
+    ) -> tuple[dict, str | None]:
+        envelope = await self._adapter.run_turn(
+            prompt=prompt,
+            json_schema=self._schema,
+            resume_session_id=resume_session_id,
+        )
+        return envelope, "sess-e2"
+
+
 def _install_adapter(monkeypatch: pytest.MonkeyPatch, adapter: FakeClaudeCodeAdapter) -> None:
-    monkeypatch.setattr(container_executor, "build_adapter", lambda *_a, **_k: adapter)
+    container_executor.set_driver_factory(lambda live, schema: _AdapterAsDriver(adapter, schema))
+
+    def _reset() -> None:
+        container_executor.set_driver_factory(None)
+
+    monkeypatch.setattr(
+        container_executor, "set_driver_factory", container_executor.set_driver_factory
+    )
+    import atexit
+
+    atexit.register(_reset)
 
 
 class TestExecutorFilePathVerification:
@@ -336,8 +370,10 @@ class TestExecutorFilePathVerification:
         assert "file_path_verification_failed" in excinfo.value.reason
         # Exactly two adapter turns — original + one retry. No unbounded loop.
         assert len(adapter.calls) == 2
-        # Container was still torn down in finally.
-        assert fake_mgr.handles[0].status == "destroyed"
+        # Under the F.3 contract the container is kept alive for reuse
+        # across invocations and only destroyed by ``registry.shutdown_all``,
+        # so at this point it is still ``running``.
+        assert fake_mgr.handles[0].status == "running"
 
     @pytest.mark.asyncio
     async def test_failure_outcome_skips_verification_and_raises(

@@ -1,0 +1,429 @@
+"""F.3 inner-turn-loop tests for :func:`run_agent_in_container`.
+
+The F0 happy-path suite lives in ``test_container_executor_f0.py``; this
+file targets the F.3 full-loop behavior:
+
+  * responder round-trip for ``ClarificationOutcome`` / ``PermissionOutcome``
+  * reuse-policy dispatch (``REUSE_RESUME`` vs ``REUSE_NEW_SESSION``)
+  * session-id recording on ``LiveContainer``
+  * lifecycle event emission
+  * file snapshotting on success
+  * cancel_event check between turns
+  * max 20 responder iterations per invocation
+  * ``AgentFailedError`` paths (``FailureOutcome``, responder raises)
+
+All tests inject a scripted ``FakeClaudeCodeDriver`` via the F.3
+``set_driver_factory`` module-level seam.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+from typing import Annotated, Any
+
+import pytest
+from pydantic import BaseModel
+
+from agent_foundry.models.markers import AgentFilePath
+from agent_foundry.orchestration import container_executor
+from agent_foundry.orchestration.artifacts import bootstrap_run_artifacts
+from agent_foundry.orchestration.container_executor import run_agent_in_container
+from agent_foundry.orchestration.errors import AgentFailedError
+from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+from agent_foundry.orchestration.registry import AgentContainerRegistry
+from agent_foundry.orchestration.run_context import AgentRunContext
+from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
+from agent_foundry.responders.protocol import static_provider
+
+from .fakes import (
+    FakeClaudeCodeDriver,
+    FakeContainerManager,
+    FakeResponder,
+)
+
+# --- Shared fixtures & helpers ----------------------------------------------
+
+
+class CapturingLifecycleWriter:
+    """In-memory lifecycle writer capturing every ``append`` call."""
+
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def append(self, event: dict[str, Any]) -> None:
+        self.events.append(dict(event))
+
+    def types(self) -> list[str]:
+        return [e.get("type") for e in self.events]
+
+
+class InputModel(BaseModel):
+    task: str
+
+
+class OutputModel(BaseModel):
+    answer: str
+
+
+class OutputWithFile(BaseModel):
+    out_path: Annotated[str, AgentFilePath()]
+    note: str
+
+
+def _make_primitive(
+    *,
+    reuse_policy: ContainerReusePolicy = ContainerReusePolicy.REUSE_NEW_SESSION,
+    output_type: type[BaseModel] = OutputModel,
+) -> AgentAction:
+    return AgentAction[InputModel, output_type](  # type: ignore[valid-type]
+        prompt_builder=lambda s: f"do: {s.task}",
+        instructions_provider=lambda: "Be precise.",
+        executor=run_agent_in_container,
+        reuse_policy=reuse_policy,
+    )
+
+
+def _success_env(answer: str = "42") -> dict[str, Any]:
+    return {"outcome": {"kind": "success", "payload": {"answer": answer}}}
+
+
+def _clarification_env(question: str = "which branch?") -> dict[str, Any]:
+    return {
+        "outcome": {
+            "kind": "clarification_needed",
+            "question": question,
+            "options": [],
+            "blocking": True,
+        }
+    }
+
+
+def _permission_env() -> dict[str, Any]:
+    return {
+        "outcome": {
+            "kind": "permission_needed",
+            "action": "delete /workspace/cache",
+            "risk_level": "medium",
+            "why_needed": "stale cache is blocking the build",
+        }
+    }
+
+
+def _failure_env(reason: str = "cannot proceed") -> dict[str, Any]:
+    return {"outcome": {"kind": "failed", "reason": reason, "attempted_approaches": []}}
+
+
+def _make_ctx(
+    *,
+    tmp_path: Path,
+    responder: Any | None = None,
+    writer: Any | None = None,
+    cancel_event: asyncio.Event | None = None,
+    registry: AgentContainerRegistry | None = None,
+    run_id: str = "run-f3",
+) -> tuple[AgentRunContext, AgentContainerRegistry, CapturingLifecycleWriter]:
+    writer = writer or CapturingLifecycleWriter()
+    fake_mgr = FakeContainerManager()
+    if registry is None:
+        registry = AgentContainerRegistry(
+            manager=fake_mgr,
+            base_image_tag="agent-foundry-base:test",
+            workspace_volume="vol-f3",
+        )
+    # Bootstrap per-run artifacts dir so file-snapshotting tests work end-to-end.
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = bootstrap_run_artifacts(
+        artifacts_dir=artifacts_dir,
+        run_id=run_id,
+        workspace_volume="vol-f3",
+        base_image_tag="agent-foundry-base:test",
+    )
+    ctx = AgentRunContext(
+        run_id=run_id,
+        artifacts_dir=run_dir,
+        container_registry=registry,
+        responder_provider=(static_provider(responder) if responder is not None else None),
+        lifecycle_writer=writer,
+        cancel_event=cancel_event or asyncio.Event(),
+        env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+    )
+    return ctx, registry, writer
+
+
+def _install_driver(
+    monkeypatch: pytest.MonkeyPatch,
+    driver: FakeClaudeCodeDriver,
+) -> None:
+    """Wire the scripted driver via the F.3 ``set_driver_factory`` seam."""
+    set_factory = getattr(container_executor, "set_driver_factory", None)
+    if set_factory is not None:
+        set_factory(lambda live, schema: driver)
+        monkeypatch.setattr(
+            container_executor,
+            "_DEFAULT_DRIVER_FACTORY",
+            lambda live, schema: driver,
+            raising=False,
+        )
+
+        def _reset() -> None:
+            set_factory(None)
+
+        monkeypatch.setattr(container_executor, "set_driver_factory", set_factory)
+        # Ensure teardown resets the seam.
+        import atexit
+
+        atexit.register(_reset)
+    else:
+        # Fall back to the F0 ``build_adapter`` seam; the tests still
+        # exercise the contract but will RED until F.3 lands the driver
+        # seam and refactors the executor.
+        monkeypatch.setattr(
+            container_executor,
+            "build_adapter",
+            lambda live: driver,
+            raising=False,
+        )
+
+
+# --- Tests -------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_clarification_round_trip(monkeypatch, tmp_path) -> None:
+    """ClarificationOutcome -> responder answer -> resumed success turn."""
+    driver = FakeClaudeCodeDriver(
+        turn_script=[_clarification_env("rebase or merge?"), _success_env("merged")],
+        session_ids=["sess-fake-123", "sess-fake-123"],
+    )
+    _install_driver(monkeypatch, driver)
+    responder = FakeResponder(answers=["rebase"])
+    ctx, _, writer = _make_ctx(tmp_path=tmp_path, responder=responder)
+
+    primitive = _make_primitive()
+    result = await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+
+    assert isinstance(result, OutputModel)
+    assert result.answer == "merged"
+    # Responder was called once.
+    assert len(responder.calls) == 1
+    # Second driver call's prompt is the responder's answer.
+    assert len(driver.calls) == 2
+    assert "rebase" in driver.calls[1]["prompt"]
+    assert driver.calls[1]["resume"] == "sess-fake-123"
+    # Lifecycle saw responder_requested + responder_answered.
+    assert LifecycleEvent.RESPONDER_REQUESTED in writer.types()
+    assert LifecycleEvent.RESPONDER_ANSWERED in writer.types()
+
+
+@pytest.mark.asyncio
+async def test_permission_round_trip(monkeypatch, tmp_path) -> None:
+    """PermissionOutcome -> responder 'allow' -> resumed success turn."""
+    driver = FakeClaudeCodeDriver(
+        turn_script=[_permission_env(), _success_env("done")],
+        session_ids=["sess-perm", "sess-perm"],
+    )
+    _install_driver(monkeypatch, driver)
+    responder = FakeResponder(answers=["allow"])
+    ctx, _, writer = _make_ctx(tmp_path=tmp_path, responder=responder)
+
+    primitive = _make_primitive()
+    result = await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+
+    assert isinstance(result, OutputModel)
+    assert result.answer == "done"
+    assert len(responder.calls) == 1
+    assert "allow" in driver.calls[1]["prompt"]
+    assert driver.calls[1]["resume"] == "sess-perm"
+    assert LifecycleEvent.RESPONDER_REQUESTED in writer.types()
+    assert LifecycleEvent.RESPONDER_ANSWERED in writer.types()
+
+
+@pytest.mark.asyncio
+async def test_failure_outcome_raises_agent_failed(monkeypatch, tmp_path) -> None:
+    driver = FakeClaudeCodeDriver(turn_script=[_failure_env("cannot proceed")])
+    _install_driver(monkeypatch, driver)
+    ctx, _, writer = _make_ctx(tmp_path=tmp_path)
+
+    primitive = _make_primitive()
+    with pytest.raises(AgentFailedError) as excinfo:
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    assert "cannot proceed" in excinfo.value.reason
+    assert LifecycleEvent.AGENT_INVOCATION_FAILED in writer.types()
+
+
+@pytest.mark.asyncio
+async def test_responder_exception_wrapped_as_agent_failed(monkeypatch, tmp_path) -> None:
+    driver = FakeClaudeCodeDriver(turn_script=[_clarification_env()])
+    _install_driver(monkeypatch, driver)
+    responder = FakeResponder(raise_on_call=TimeoutError("responder timed out"))
+    ctx, _, writer = _make_ctx(tmp_path=tmp_path, responder=responder)
+
+    primitive = _make_primitive()
+    with pytest.raises(AgentFailedError) as excinfo:
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    assert "responder failed" in excinfo.value.reason
+    assert LifecycleEvent.AGENT_INVOCATION_FAILED in writer.types()
+
+
+@pytest.mark.asyncio
+async def test_cancel_event_between_turns(monkeypatch, tmp_path) -> None:
+    """cancel_event.set() between turns -> AgentFailedError('cancelled')."""
+    cancel = asyncio.Event()
+    responder = FakeResponder(answers=["whatever"])
+
+    # First turn returns clarification; responder side-effects by setting
+    # the cancel event so the loop bails before driver.run_turn #2.
+    async def _set_and_answer(request: Any, context: Any) -> Any:
+        cancel.set()
+        from agent_foundry.responders.models import ResponderResponse
+
+        return ResponderResponse(answer="whatever")
+
+    responder.respond = _set_and_answer  # type: ignore[method-assign]
+
+    driver = FakeClaudeCodeDriver(turn_script=[_clarification_env(), _success_env()])
+    _install_driver(monkeypatch, driver)
+    ctx, _, _ = _make_ctx(tmp_path=tmp_path, responder=responder, cancel_event=cancel)
+
+    primitive = _make_primitive()
+    with pytest.raises(AgentFailedError) as excinfo:
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    assert "cancel" in excinfo.value.reason.lower()
+
+
+@pytest.mark.asyncio
+async def test_reuse_resume_passes_session_id_on_second_call(monkeypatch, tmp_path) -> None:
+    """REUSE_RESUME: second invocation gets the first call's captured session id."""
+    driver = FakeClaudeCodeDriver(
+        turn_script=[_success_env("first"), _success_env("second")],
+        session_ids=["sess-carry-1", "sess-carry-2"],
+    )
+    _install_driver(monkeypatch, driver)
+    ctx, _registry, _ = _make_ctx(tmp_path=tmp_path)
+
+    primitive = _make_primitive(reuse_policy=ContainerReusePolicy.REUSE_RESUME)
+    r1 = await run_agent_in_container(primitive=primitive, prompt="go 1", run_ctx=ctx)
+    r2 = await run_agent_in_container(primitive=primitive, prompt="go 2", run_ctx=ctx)
+
+    assert r1.answer == "first"  # type: ignore[attr-defined]
+    assert r2.answer == "second"  # type: ignore[attr-defined]
+    # First invocation passed resume=None; second passed the captured sid.
+    assert driver.calls[0]["resume"] is None
+    assert driver.calls[1]["resume"] == "sess-carry-1"
+
+
+@pytest.mark.asyncio
+async def test_reuse_new_session_never_resumes(monkeypatch, tmp_path) -> None:
+    """REUSE_NEW_SESSION: second invocation passes resume=None regardless."""
+    driver = FakeClaudeCodeDriver(
+        turn_script=[_success_env("a"), _success_env("b")],
+        session_ids=["sess-1", "sess-2"],
+    )
+    _install_driver(monkeypatch, driver)
+    ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+
+    primitive = _make_primitive(reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION)
+    await run_agent_in_container(primitive=primitive, prompt="go 1", run_ctx=ctx)
+    await run_agent_in_container(primitive=primitive, prompt="go 2", run_ctx=ctx)
+
+    assert driver.calls[0]["resume"] is None
+    assert driver.calls[1]["resume"] is None
+
+
+@pytest.mark.asyncio
+async def test_max_responder_loops_exceeded(monkeypatch, tmp_path) -> None:
+    """25 consecutive clarifications -> AgentFailedError on iteration 21."""
+    driver = FakeClaudeCodeDriver(
+        turn_script=[_clarification_env() for _ in range(25)],
+        session_ids=["sess-loop"],
+    )
+    _install_driver(monkeypatch, driver)
+    responder = FakeResponder(answers=["answer"] * 25)
+    ctx, _, _ = _make_ctx(tmp_path=tmp_path, responder=responder)
+
+    primitive = _make_primitive()
+    with pytest.raises(AgentFailedError) as excinfo:
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    assert "responder loop exceeded max iterations" in excinfo.value.reason
+    # Bound is 20 — should have invoked the driver no more than 21 times.
+    assert len(driver.calls) <= 21
+
+
+@pytest.mark.asyncio
+async def test_file_snapshotting_on_success(monkeypatch, tmp_path) -> None:
+    """SuccessOutcome with AgentFilePath field -> file copied into turn dir."""
+    env_payload = {
+        "outcome": {
+            "kind": "success",
+            "payload": {"out_path": "/workspace/out.txt", "note": "ok"},
+        }
+    }
+    driver = FakeClaudeCodeDriver(
+        turn_script=[env_payload],
+        session_ids=["sess-snap"],
+    )
+    _install_driver(monkeypatch, driver)
+    ctx, registry, _ = _make_ctx(tmp_path=tmp_path)
+    # Seed the fake manager's copy_from_container script.
+    fake_mgr: FakeContainerManager = registry._manager_override  # type: ignore[assignment]
+    fake_mgr.copy_file_script = {"/workspace/out.txt": "hello"}
+    # Also seed read_file_from_container so E.2 verification passes.
+    fake_mgr.read_file_script = {"/workspace/out.txt": ["hello"]}
+
+    primitive = _make_primitive(output_type=OutputWithFile)
+    result = await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    assert isinstance(result, OutputWithFile)
+
+    agent_name = type(primitive).__name__
+    snapshot = ctx.artifacts_dir / agent_name / "turns" / "0" / "collected_files" / "out.txt"
+    assert snapshot.exists(), f"expected snapshot at {snapshot}"
+    assert snapshot.read_text() == "hello"
+
+
+@pytest.mark.asyncio
+async def test_session_id_recorded_on_live_container(monkeypatch, tmp_path) -> None:
+    """After the first successful turn, LiveContainer.session_id == captured sid."""
+    driver = FakeClaudeCodeDriver(
+        turn_script=[_success_env()],
+        session_ids=["sess-fake-123"],
+    )
+    _install_driver(monkeypatch, driver)
+    ctx, registry, _ = _make_ctx(tmp_path=tmp_path)
+
+    primitive = _make_primitive(reuse_policy=ContainerReusePolicy.REUSE_RESUME)
+    await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+
+    live = registry._containers.get(id(primitive))
+    assert live is not None, "primitive should have been registered"
+    assert live.session_id == "sess-fake-123"
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_event_sequence_on_success(monkeypatch, tmp_path) -> None:
+    """Full success run emits the expected lifecycle event sequence in order."""
+    driver = FakeClaudeCodeDriver(
+        turn_script=[_success_env()],
+        session_ids=["sess-evt"],
+    )
+    _install_driver(monkeypatch, driver)
+    ctx, _, writer = _make_ctx(tmp_path=tmp_path)
+
+    primitive = _make_primitive()
+    await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+
+    types = writer.types()
+    expected = [
+        LifecycleEvent.AGENT_INVOCATION_STARTED,
+        LifecycleEvent.TURN_STARTED,
+        LifecycleEvent.TURN_COMPLETED,
+        LifecycleEvent.AGENT_INVOCATION_COMPLETED,
+    ]
+    # Verify each expected event appears and their relative order holds.
+    idx = -1
+    for event in expected:
+        assert event in types, f"missing lifecycle event: {event} (got {types})"
+        new_idx = types.index(event, idx + 1)
+        assert new_idx > idx, f"event {event} out of order in {types}"
+        idx = new_idx

@@ -1,6 +1,13 @@
-from __future__ import annotations
+"""F0 happy-path executor smoke tests.
 
-from typing import Any
+Migrated to the F.3 driver contract: the adapter now returns
+``(envelope_dict, session_id)`` and is installed via the
+``set_driver_factory`` seam. Clarification / permission outcomes are
+handled by the F.3 inner loop (see ``test_container_executor.py``);
+the legacy "raises NotImplementedError" check has been retired.
+"""
+
+from __future__ import annotations
 
 import pytest
 from pydantic import BaseModel
@@ -17,7 +24,7 @@ from agent_foundry.primitives.models import (
     ContainerReusePolicy,
 )
 
-from .fakes import FakeClaudeCodeAdapter, FakeContainerManager
+from .fakes import FakeClaudeCodeDriver, FakeContainerManager
 
 
 class InputModel(BaseModel):
@@ -37,28 +44,32 @@ def _make_primitive() -> AgentAction[InputModel, OutputModel]:
     )
 
 
-@pytest.fixture
-def patch_adapter(monkeypatch) -> list[FakeClaudeCodeAdapter]:
-    holder: list[FakeClaudeCodeAdapter] = []
+def _install_driver(monkeypatch: pytest.MonkeyPatch, driver: FakeClaudeCodeDriver) -> None:
+    container_executor.set_driver_factory(lambda live, schema: driver)
 
-    def factory(*a: Any, **kw: Any) -> FakeClaudeCodeAdapter:
-        adapter = FakeClaudeCodeAdapter(
-            canned_structured_output={
-                "outcome": {
-                    "kind": "success",
-                    "payload": {"answer": "42"},
-                }
-            },
-        )
-        holder.append(adapter)
-        return adapter
+    def _reset() -> None:
+        container_executor.set_driver_factory(None)
 
-    monkeypatch.setattr(container_executor, "build_adapter", factory)
-    return holder
+    monkeypatch.setattr(
+        container_executor,
+        "set_driver_factory",
+        container_executor.set_driver_factory,
+    )
+    import atexit
+
+    atexit.register(_reset)
 
 
 @pytest.mark.asyncio
-async def test_run_agent_in_container_happy_path(patch_adapter) -> None:
+async def test_run_agent_in_container_happy_path(monkeypatch) -> None:
+    driver = FakeClaudeCodeDriver(
+        turn_script=[
+            {"outcome": {"kind": "success", "payload": {"answer": "42"}}},
+        ],
+        session_ids=["sess-f0"],
+    )
+    _install_driver(monkeypatch, driver)
+
     fake_mgr = FakeContainerManager()
     registry = AgentContainerRegistry(
         manager=fake_mgr,
@@ -75,31 +86,35 @@ async def test_run_agent_in_container_happy_path(patch_adapter) -> None:
     result = await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
     assert isinstance(result, OutputModel)
     assert result.answer == "42"
-    # Container was created and destroyed.
-    assert fake_mgr.handles[0].status == "destroyed"
+    # Container was created and is running; the F.3 lifecycle keeps the
+    # container alive for subsequent invocations (destroyed by
+    # registry.shutdown_all at end of run).
+    assert fake_mgr.handles[0].status == "running"
+    # Driver contract: new F.3 shape records per-call args.
+    assert len(driver.calls) == 1
+    assert driver.calls[0]["resume"] is None
 
 
 @pytest.mark.asyncio
-async def test_run_agent_in_container_non_success_raises_not_implemented(
+async def test_run_agent_in_container_failure_outcome_raises(
     monkeypatch,
 ) -> None:
-    # Adapter returns a clarification envelope; F0 / E.2 must reject it
-    # (clarification + permission handling lands in Phase F.3).
-    from agent_foundry.orchestration import container_executor as ce
+    """FailureOutcome surfaces as AgentFailedError (F.3 contract)."""
+    from agent_foundry.orchestration.errors import AgentFailedError
 
-    def factory(*a: Any, **kw: Any) -> FakeClaudeCodeAdapter:
-        return FakeClaudeCodeAdapter(
-            canned_structured_output={
+    driver = FakeClaudeCodeDriver(
+        turn_script=[
+            {
                 "outcome": {
-                    "kind": "clarification_needed",
-                    "question": "what?",
-                    "options": [],
-                    "blocking": True,
+                    "kind": "failed",
+                    "reason": "cannot proceed",
+                    "attempted_approaches": [],
                 }
-            },
-        )
-
-    monkeypatch.setattr(ce, "build_adapter", factory)
+            }
+        ],
+        session_ids=["sess-f0-fail"],
+    )
+    _install_driver(monkeypatch, driver)
 
     fake_mgr = FakeContainerManager()
     registry = AgentContainerRegistry(
@@ -114,6 +129,6 @@ async def test_run_agent_in_container_non_success_raises_not_implemented(
         env={"CLAUDE_CODE_OAUTH_TOKEN": "t"},
     )
     primitive = _make_primitive()
-    with pytest.raises(NotImplementedError, match=r"Phase F\.3"):
+    with pytest.raises(AgentFailedError) as excinfo:
         await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
-    assert fake_mgr.handles[0].status == "destroyed"  # finally ran
+    assert "cannot proceed" in excinfo.value.reason

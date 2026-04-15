@@ -48,23 +48,28 @@ class _HostDrivenAdapter:
     Runs ``claude -p <prompt> --output-format stream-json --verbose
     --json-schema <schema>`` inside the given container via docker
     exec (as user ``claude``) and returns the first StructuredOutput
-    tool-use input parsed from the stream. This is a test-only
-    stand-in for the Phase F.3 ExecRunDriver.
+    tool-use input parsed from the stream plus the captured session id.
+    Test-only stand-in for the Phase F.3 ``ExecRunDriver``.
+
+    Implements the F.3 ``Driver`` protocol:
+    ``run_turn(*, prompt, resume_session_id) -> (envelope_dict, session_id)``.
+    The schema is captured once at construction rather than passed per
+    turn (matches the F.3 factory signature).
     """
 
-    def __init__(self, live: LiveContainer) -> None:
+    def __init__(self, live: LiveContainer, json_schema: dict[str, Any]) -> None:
         self._live = live
+        self._schema = json_schema
 
     async def run_turn(
         self,
         *,
         prompt: str,
-        json_schema: dict[str, Any],
         resume_session_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], str | None]:
         import asyncio
 
-        def _do_exec() -> dict[str, Any]:
+        def _do_exec() -> tuple[dict[str, Any], str | None]:
             cmd = [
                 "claude",
                 "-p",
@@ -73,8 +78,10 @@ class _HostDrivenAdapter:
                 "stream-json",
                 "--verbose",
                 "--json-schema",
-                json.dumps(json_schema),
+                json.dumps(self._schema),
             ]
+            if resume_session_id:
+                cmd.extend(["--resume", resume_session_id])
             exit_code, output = self._live.handle._container.exec_run(
                 cmd, demux=False, user="claude"
             )
@@ -85,6 +92,8 @@ class _HostDrivenAdapter:
                     f"stdout/stderr: {output.decode(errors='replace')}\n\n"
                     f"container logs: {logs}"
                 )
+            envelope: dict[str, Any] | None = None
+            session_id: str | None = None
             for raw_line in output.decode().splitlines():
                 line = raw_line.strip()
                 if not line:
@@ -93,14 +102,18 @@ class _HostDrivenAdapter:
                     evt = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if evt.get("type") == "assistant":
+                if evt.get("type") == "system" and evt.get("subtype") == "init":
+                    session_id = evt.get("session_id") or session_id
+                elif evt.get("type") == "assistant":
                     for block in evt.get("message", {}).get("content", []):
                         if (
                             block.get("type") == "tool_use"
                             and block.get("name") == "StructuredOutput"
                         ):
-                            return block.get("input")
-            raise AssertionError("no StructuredOutput tool use captured")
+                            envelope = block.get("input")
+            if envelope is None:
+                raise AssertionError("no StructuredOutput tool use captured")
+            return envelope, session_id
 
         return await asyncio.to_thread(_do_exec)
 
@@ -135,12 +148,20 @@ async def test_f0_end_to_end_real_claude_code(monkeypatch) -> None:
         env={"CLAUDE_CODE_OAUTH_TOKEN": oauth_token},
     )
 
-    # Inject the F0 host-driven adapter in place of the Phase F.3 stub.
+    # Inject the host-driven adapter via the F.3 driver-factory seam.
+    container_executor.set_driver_factory(lambda live, schema: _HostDrivenAdapter(live, schema))
     monkeypatch.setattr(
         container_executor,
-        "build_adapter",
-        lambda live: _HostDrivenAdapter(live),
+        "set_driver_factory",
+        container_executor.set_driver_factory,
     )
+
+    def _reset_driver() -> None:
+        container_executor.set_driver_factory(None)
+
+    import atexit
+
+    atexit.register(_reset_driver)
 
     primitive = AgentAction[AnalysisInput, AnalysisOutput](
         prompt_builder=lambda s: f"Write a one-line headline about {s.topic}.",

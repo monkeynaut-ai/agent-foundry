@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -100,6 +101,35 @@ class FakeContainerManager:
     # order so tests can assert per-path call counts.
     read_file_script: dict[str, list[str | None]]
     read_file_log: list[tuple[str, bool, int]]
+
+    # --- F.3 host-to-host file copy hook -------------------------------------
+    #
+    # ``copy_file_script`` maps a container path to the string contents the
+    # fake should write to the host target path. Missing keys produce a
+    # ``False`` return (nothing copied). ``copy_file_log`` records every
+    # ``(container_path, host_path, copied)`` call in order so F.3 snapshot
+    # tests can assert on both the per-path request and the final file.
+    copy_file_script: dict[str, str]
+    copy_file_log: list[tuple[str, str, bool]]
+
+    def copy_from_container(
+        self, handle: FakeContainerHandle, container_path: str, host_path: Path
+    ) -> bool:
+        script = getattr(self, "copy_file_script", None)
+        if script is None:
+            self.copy_file_script = {}
+            script = self.copy_file_script
+        log = getattr(self, "copy_file_log", None)
+        if log is None:
+            self.copy_file_log = []
+            log = self.copy_file_log
+        content = script.get(container_path)
+        copied = content is not None
+        if copied:
+            host_path.parent.mkdir(parents=True, exist_ok=True)
+            host_path.write_text(content)
+        log.append((container_path, str(host_path), copied))
+        return copied
 
     def read_file_from_container(self, handle: FakeContainerHandle, path: str) -> str | None:
         # Defensive init so tests that don't opt in still work; dataclass-style
@@ -224,3 +254,88 @@ class FakeClaudeCodeAdapter:
             f"(call #{len(self.calls)})"
         )
         return self._turn_script.pop(0)
+
+
+# --- Phase F.3 fakes ---------------------------------------------------------
+
+
+class FakeClaudeCodeDriver:
+    """Scripted F.3-shape driver: returns ``(envelope_dict, session_id)`` tuples.
+
+    F.3's executor talks to a ``Driver`` whose ``run_turn(*, prompt,
+    resume_session_id)`` returns a tuple of the parsed envelope dict plus
+    the session id captured from the stream-json ``SystemInitEvent``.
+
+    Parameters
+    ----------
+    turn_script:
+        FIFO list of envelope-dict payloads returned one per ``run_turn``.
+    session_ids:
+        FIFO list of session ids matched up with ``turn_script`` positionally.
+        If shorter than ``turn_script``, the last value repeats.
+    """
+
+    def __init__(
+        self,
+        *,
+        turn_script: list[dict[str, Any]],
+        session_ids: list[str | None] | None = None,
+    ) -> None:
+        if not turn_script:
+            raise ValueError("FakeClaudeCodeDriver requires non-empty turn_script")
+        self._turn_script: list[dict[str, Any]] = list(turn_script)
+        self._session_ids: list[str | None] = list(
+            session_ids if session_ids is not None else ["sess-fake-123"]
+        )
+        self.calls: list[dict[str, Any]] = []
+
+    async def run_turn(
+        self,
+        *,
+        prompt: str,
+        resume_session_id: str | None = None,
+    ) -> tuple[dict[str, Any], str | None]:
+        self.calls.append({"prompt": prompt, "resume": resume_session_id})
+        assert self._turn_script, (
+            "FakeClaudeCodeDriver.run_turn called beyond scripted turn count "
+            f"(call #{len(self.calls)})"
+        )
+        envelope = self._turn_script.pop(0)
+        if len(self._session_ids) > 1:
+            sid = self._session_ids.pop(0)
+        else:
+            sid = self._session_ids[0] if self._session_ids else None
+        return envelope, sid
+
+
+class FakeResponder:
+    """Scripted responder for F.3 tests.
+
+    ``answers`` is a FIFO list of answer strings returned one per
+    ``respond()`` call. If ``raise_on_call`` is set, the responder raises
+    that exception on the first call (used for the "responder failed"
+    test case).
+    """
+
+    def __init__(
+        self,
+        *,
+        answers: list[str] | None = None,
+        raise_on_call: BaseException | None = None,
+    ) -> None:
+        self._answers: list[str] = list(answers or [])
+        self._raise = raise_on_call
+        self.calls: list[dict[str, Any]] = []
+
+    async def respond(self, request: Any, context: Any) -> Any:
+        self.calls.append({"request": request, "context": context})
+        if self._raise is not None:
+            raise self._raise
+        # Import here to avoid a hard import at module load; keeps the
+        # fakes module import-light for non-responder tests.
+        from agent_foundry.responders.models import ResponderResponse
+
+        assert self._answers, (
+            f"FakeResponder.respond called beyond scripted answer count (call #{len(self.calls)})"
+        )
+        return ResponderResponse(answer=self._answers.pop(0))
