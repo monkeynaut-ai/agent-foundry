@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+# ``AgentRunContext`` is imported at module load because ``FunctionAction``
+# references it in a forward ref string and Pydantic must resolve the
+# annotation during ``model_rebuild``. ``orchestration.run_context`` has
+# no dependency on ``primitives``, so this is safe (no cycle).
+from agent_foundry.orchestration.run_context import AgentRunContext
 
 
 class ContainerReusePolicy(StrEnum):
@@ -98,12 +105,14 @@ class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     file generation, or any non-AI transformation.
     """
 
-    function: Callable[..., BaseModel]
+    function: Callable[[Any, AgentRunContext], BaseModel]
     """The callable invoked by the compiled node.
 
-    Contract will be tightened to ``Callable[[I, AgentRunContext], O]``
-    in Phase B Task B.1 Step 5 once AgentRunContext is available in the
-    primitives forward-reference namespace.
+    Signature is ``(state, run_ctx) -> O``. The ``state`` position is
+    typed ``Any`` for now; Task G.1 narrows it to ``I`` when the
+    compiler narrows node-gen to the state model. One-arg callables
+    remain supported at runtime via the compiler's arity-probe during
+    the migration window (see Task G.1).
     """
 
 

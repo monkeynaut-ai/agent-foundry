@@ -163,7 +163,11 @@ def _compile_function_action(
 
     node_id = prefix
     input_type, _ = get_type_args(action)
-    fn = action.function
+    # ``FunctionAction.function`` is annotated ``(state, run_ctx) -> O`` post
+    # Task B.1; the real 2-arg wiring lands in Task G.1. Until then the
+    # arity probe + ``...`` cast preserves the 0-/1-arg runtime contract
+    # without fighting the stricter annotation.
+    fn = cast(Callable[..., BaseModel], action.function)
     takes_input = len(inspect.signature(fn).parameters) > 0
 
     def node_fn(state: dict[str, Any]) -> dict[str, Any]:
