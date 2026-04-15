@@ -157,35 +157,16 @@ def _install_driver(
     monkeypatch: pytest.MonkeyPatch,
     driver: FakeClaudeCodeDriver,
 ) -> None:
-    """Wire the scripted driver via the F.3 ``set_driver_factory`` seam."""
-    set_factory = getattr(container_executor, "set_driver_factory", None)
-    if set_factory is not None:
-        set_factory(lambda live, schema: driver)
-        monkeypatch.setattr(
-            container_executor,
-            "_DEFAULT_DRIVER_FACTORY",
-            lambda live, schema: driver,
-            raising=False,
-        )
+    """Replace the production ``_run_claude_turn`` helper with the scripted fake.
 
-        def _reset() -> None:
-            set_factory(None)
-
-        monkeypatch.setattr(container_executor, "set_driver_factory", set_factory)
-        # Ensure teardown resets the seam.
-        import atexit
-
-        atexit.register(_reset)
-    else:
-        # Fall back to the F0 ``build_adapter`` seam; the tests still
-        # exercise the contract but will RED until F.3 lands the driver
-        # seam and refactors the executor.
-        monkeypatch.setattr(
-            container_executor,
-            "build_adapter",
-            lambda live: driver,
-            raising=False,
-        )
+    ``FakeRunTurn`` / ``FakeClaudeCodeDriver`` is an awaitable callable
+    matching the signature of :func:`container_executor._run_claude_turn`.
+    Monkeypatching the module-level default at that symbol is equivalent
+    to passing ``run_turn=<fake>`` to :func:`run_agent_in_container` and
+    works for the indirect path via ``run_primitive_plan`` where the
+    kwarg cannot be threaded through the compiler.
+    """
+    monkeypatch.setattr(container_executor, "_run_claude_turn", driver)
 
 
 # --- Tests -------------------------------------------------------------------

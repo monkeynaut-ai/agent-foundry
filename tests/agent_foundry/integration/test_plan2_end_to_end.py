@@ -42,10 +42,8 @@ from pydantic import BaseModel
 
 from agent_foundry.compiler.primitive_compiler import run_primitive_plan
 from agent_foundry.models.markers import AgentFilePath
-from agent_foundry.orchestration import container_executor
 from agent_foundry.orchestration.container_executor import run_agent_in_container
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
-from agent_foundry.orchestration.registry import LiveContainer
 from agent_foundry.primitives.models import (
     AgentAction,
     ContainerReusePolicy,
@@ -86,110 +84,6 @@ class StateB(BaseModel):
 class StateC(BaseModel):
     headline: str
     verified: bool
-
-
-# --- Host-driven driver (real claude via docker exec) -----------------------
-
-
-class _HostDrivenDriver:
-    """Drive a real ``claude`` inside the live container via ``docker exec``.
-
-    Captures the first ``StructuredOutput`` tool-use input from the
-    stream-json output plus the session id from the ``system/init``
-    event. Mirrors the F0.5 integration harness; we keep it local to
-    the test rather than pulling in the orchestration.claude_cmd
-    driver (not wired as a default yet).
-    """
-
-    def __init__(self, live: LiveContainer, json_schema: dict[str, Any]) -> None:
-        self._live = live
-        self._schema = json_schema
-
-    async def run_turn(
-        self,
-        *,
-        prompt: str,
-        resume_session_id: str | None = None,
-    ) -> tuple[dict[str, Any], str | None]:
-        import asyncio
-
-        def _do_exec() -> tuple[dict[str, Any], str | None]:
-            cmd = [
-                "claude",
-                "-p",
-                prompt,
-                "--output-format",
-                "stream-json",
-                "--verbose",
-                "--json-schema",
-                json.dumps(self._schema),
-            ]
-            if resume_session_id:
-                cmd.extend(["--resume", resume_session_id])
-            exit_code, output = self._live.handle._container.exec_run(
-                cmd, demux=False, user="claude"
-            )
-            if exit_code != 0:
-                logs = self._live.handle._container.logs(tail=80).decode(errors="replace")
-                raise AssertionError(
-                    f"claude exec failed (exit={exit_code}):\n"
-                    f"stdout/stderr: {output.decode(errors='replace')}\n\n"
-                    f"container logs: {logs}"
-                )
-            envelope: dict[str, Any] | None = None
-            session_id: str | None = None
-            fallback_texts: list[str] = []
-            for raw_line in output.decode().splitlines():
-                line = raw_line.strip()
-                if not line:
-                    continue
-                try:
-                    evt = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if evt.get("type") == "system" and evt.get("subtype") == "init":
-                    session_id = evt.get("session_id") or session_id
-                elif evt.get("type") == "assistant":
-                    for block in evt.get("message", {}).get("content", []):
-                        if (
-                            block.get("type") == "tool_use"
-                            and block.get("name") == "StructuredOutput"
-                        ):
-                            envelope = block.get("input")
-                        elif block.get("type") == "text":
-                            fallback_texts.append(block.get("text", ""))
-            # Fallback: if claude returned the envelope as a ```json …```
-            # text block rather than a ``StructuredOutput`` tool_use (which
-            # it sometimes does despite the forced-tool ``--json-schema``
-            # flag), parse it out of the last assistant text block.
-            if envelope is None and fallback_texts:
-                import re as _re
-
-                combined = "\n".join(fallback_texts)
-                match = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", combined, flags=_re.DOTALL)
-                if match is not None:
-                    try:
-                        parsed = json.loads(match.group(1))
-                    except json.JSONDecodeError:
-                        parsed = None
-                    if isinstance(parsed, dict):
-                        # Wrap a bare payload dict in the SuccessOutcome
-                        # envelope shape if needed.
-                        if "outcome" in parsed:
-                            envelope = parsed
-                        else:
-                            envelope = {"outcome": {"kind": "success", "payload": parsed}}
-            if envelope is None:
-                logs = self._live.handle._container.logs(tail=40).decode(errors="replace")
-                raise AssertionError(
-                    "no StructuredOutput tool use captured\n"
-                    f"--- claude stdout ({len(output)} bytes) ---\n"
-                    f"{output.decode(errors='replace')}\n"
-                    f"--- container logs ---\n{logs}"
-                )
-            return envelope, session_id
-
-        return await asyncio.to_thread(_do_exec)
 
 
 # --- Responder that fails loudly if called ---------------------------------
@@ -281,26 +175,23 @@ async def test_plan2_end_to_end_real_claude_code(tmp_path: Path) -> None:
     seq = Sequence[StateA, StateC](steps=[agent, fn])
     plan = PrimitivePlan(root=seq)
 
-    # --- Wire the host-driven driver via the Plan 2 seam ------------------
-
-    container_executor.set_driver_factory(lambda live, schema: _HostDrivenDriver(live, schema))
+    # The executor's default ``_run_claude_turn`` helper shells out to
+    # the real ``claude`` CLI inside the live container. No test seam
+    # needed — this end-to-end run exercises the production transport.
 
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
     run_id = f"run-{uuid.uuid4().hex[:8]}"
 
-    try:
-        result = await run_primitive_plan(
-            plan,
-            initial_state=StateA(topic="archipelago"),
-            artifacts_dir=artifacts_dir,
-            workspace_volume=workspace_volume,
-            base_image_tag=base_image,
-            responder_provider=static_provider(_UnusedResponder()),
-            run_id=run_id,
-        )
-    finally:
-        container_executor.set_driver_factory(None)
+    result = await run_primitive_plan(
+        plan,
+        initial_state=StateA(topic="archipelago"),
+        artifacts_dir=artifacts_dir,
+        workspace_volume=workspace_volume,
+        base_image_tag=base_image,
+        responder_provider=static_provider(_UnusedResponder()),
+        run_id=run_id,
+    )
 
     # --- Final state ------------------------------------------------------
 

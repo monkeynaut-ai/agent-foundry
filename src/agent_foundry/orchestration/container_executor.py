@@ -17,19 +17,22 @@ Extends the E.2 scope with:
   * cancel-event check between turns
   * max 20 responder iterations per invocation
 
-Tests inject a scripted ``FakeClaudeCodeDriver`` via the module-level
-``set_driver_factory`` seam. The production factory (not wired here)
-lives in :mod:`agent_foundry.orchestration.claude_cmd` and shells out
-to ``handle._container.exec_run``.
+The per-turn mechanics — shelling out to ``claude`` inside the live
+container via ``handle._container.exec_run`` and parsing stream-json —
+live in the module-level helper :func:`_run_claude_turn`. Tests inject
+a scripted fake by passing ``run_turn=<fake>`` as a keyword argument
+to :func:`run_agent_in_container`; no global test seam is required.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 import uuid
-from collections.abc import Callable
-from typing import Any, Protocol
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
@@ -66,59 +69,110 @@ logger = logging.getLogger(__name__)
 MAX_RESPONDER_ITERATIONS = 20
 
 
-class Driver(Protocol):
-    async def run_turn(
-        self, *, prompt: str, resume_session_id: str | None
-    ) -> tuple[dict[str, Any], str | None]: ...
+# Contract for the ``run_turn`` callable threaded through
+# :func:`run_agent_in_container`. Tests inject fakes matching this
+# signature via the ``run_turn=`` keyword argument.
+RunTurn = Callable[
+    ...,
+    Awaitable[tuple[dict[str, Any], str | None]],
+]
 
 
-DriverFactory = Callable[[LiveContainer, dict[str, Any]], Driver]
+async def _run_claude_turn(
+    live: LiveContainer,
+    *,
+    prompt: str,
+    resume_session_id: str | None,
+    schema: dict[str, Any],
+) -> tuple[dict[str, Any], str | None]:
+    """Invoke ``claude`` once inside the live container and return the
+    parsed envelope dict plus the captured session id.
 
+    This is the production helper that :func:`run_agent_in_container`
+    calls by default. It shells out via
+    ``handle._container.exec_run(['claude', '-p', prompt, ...])``,
+    runs the blocking call in a worker thread, and parses the
+    stream-json output for:
 
-_DEFAULT_DRIVER_FACTORY: DriverFactory | None = None
+      * the ``system/init`` event (session id)
+      * the assistant ``StructuredOutput`` tool_use (envelope payload)
+      * a fallback: a ```json …``` code block in an assistant text
+        message, which Claude Code sometimes emits instead of the
+        synthetic ``StructuredOutput`` tool call despite the
+        ``--json-schema`` flag.
 
-
-def set_driver_factory(factory: DriverFactory | None) -> None:
-    """Test hook — replace the production driver factory with a fake.
-
-    Production default (``None``) will use the ``ExecRunDriver`` once
-    that lands in :mod:`agent_foundry.orchestration.claude_cmd`. Tests
-    call this with a lambda returning a scripted
-    :class:`FakeClaudeCodeDriver` and reset with ``None`` in teardown.
+    Raises ``RuntimeError`` if claude exits non-zero or no envelope
+    can be extracted.
     """
-    global _DEFAULT_DRIVER_FACTORY
-    _DEFAULT_DRIVER_FACTORY = factory
 
+    def _do_exec() -> tuple[dict[str, Any], str | None]:
+        cmd = [
+            "claude",
+            "-p",
+            prompt,
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--json-schema",
+            json.dumps(schema),
+        ]
+        if resume_session_id:
+            cmd.extend(["--resume", resume_session_id])
+        exit_code, output = live.handle._container.exec_run(cmd, demux=False, user="claude")
+        if exit_code != 0:
+            logs = live.handle._container.logs(tail=80).decode(errors="replace")
+            raise RuntimeError(
+                f"claude exec failed (exit={exit_code}):\n"
+                f"stdout/stderr: {output.decode(errors='replace')}\n\n"
+                f"container logs: {logs}"
+            )
+        envelope: dict[str, Any] | None = None
+        session_id: str | None = None
+        fallback_texts: list[str] = []
+        for raw_line in output.decode().splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                evt = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if evt.get("type") == "system" and evt.get("subtype") == "init":
+                session_id = evt.get("session_id") or session_id
+            elif evt.get("type") == "assistant":
+                for block in evt.get("message", {}).get("content", []):
+                    if block.get("type") == "tool_use" and block.get("name") == "StructuredOutput":
+                        envelope = block.get("input")
+                    elif block.get("type") == "text":
+                        fallback_texts.append(block.get("text", ""))
+        # Fallback: if claude returned the envelope as a ```json …``` text
+        # block rather than a ``StructuredOutput`` tool_use (which it
+        # sometimes does despite the forced-tool ``--json-schema`` flag),
+        # parse it out of the assistant text.
+        if envelope is None and fallback_texts:
+            combined = "\n".join(fallback_texts)
+            match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", combined, flags=re.DOTALL)
+            if match is not None:
+                try:
+                    parsed = json.loads(match.group(1))
+                except json.JSONDecodeError:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    if "outcome" in parsed:
+                        envelope = parsed
+                    else:
+                        envelope = {"outcome": {"kind": "success", "payload": parsed}}
+        if envelope is None:
+            logs = live.handle._container.logs(tail=40).decode(errors="replace")
+            raise RuntimeError(
+                "no StructuredOutput tool use captured\n"
+                f"--- claude stdout ({len(output)} bytes) ---\n"
+                f"{output.decode(errors='replace')}\n"
+                f"--- container logs ---\n{logs}"
+            )
+        return envelope, session_id
 
-def build_adapter(live: LiveContainer) -> Any:
-    """Legacy seam preserved for F0-era tests.
-
-    Production wiring now flows through :func:`set_driver_factory`.
-    F0.5's `_HostDrivenAdapter` (integration test) still patches this
-    symbol to drop in a host-driven driver for a real container.
-    """
-    raise NotImplementedError(
-        "Production driver wiring is installed via set_driver_factory. "
-        "Tests may also monkeypatch container_executor.build_adapter for "
-        "the legacy seam (returns a Driver-shaped object)."
-    )
-
-
-def _resolve_driver(live: LiveContainer, schema: dict[str, Any]) -> Driver:
-    """Pick a driver instance for this invocation.
-
-    Order of precedence:
-      1. ``_DEFAULT_DRIVER_FACTORY`` installed via
-         :func:`set_driver_factory` (new F.3 seam, and what the F.3
-         tests wire).
-      2. ``build_adapter(live)`` if the F0/F0.5 monkeypatch path has
-         swapped in something callable (legacy seam).
-    """
-    if _DEFAULT_DRIVER_FACTORY is not None:
-        return _DEFAULT_DRIVER_FACTORY(live, schema)
-    # Fall back to the legacy build_adapter path. If the caller has not
-    # monkeypatched it, this will raise NotImplementedError.
-    return build_adapter(live)  # type: ignore[return-value]
+    return await asyncio.to_thread(_do_exec)
 
 
 def _agent_name(primitive: AgentAction) -> str:
@@ -221,12 +275,22 @@ async def run_agent_in_container(
     primitive: AgentAction,
     prompt: str,
     run_ctx: AgentRunContext,
+    run_turn: RunTurn | None = None,
 ) -> BaseModel:
     """Execute one invocation of an AgentAction in its container.
 
     Full F.3 inner-loop semantics — see module docstring for the event
     set and retry/responder/cancel bounds.
+
+    The ``run_turn`` kwarg is the per-turn transport: a callable matching
+    the signature of :func:`_run_claude_turn`. Passing ``None`` (the
+    default) resolves to the current module-level ``_run_claude_turn``
+    at call time — so tests that go through the compiler (where the
+    kwarg cannot be threaded) can ``monkeypatch.setattr(container_executor,
+    "_run_claude_turn", fake)`` and have it take effect.
     """
+    if run_turn is None:
+        run_turn = _run_claude_turn
     _input_type, output_type = get_type_args(primitive)
     envelope_type = AgentTurnEnvelope[output_type]  # type: ignore[valid-type]
     schema = to_claude_code_schema(envelope_type)
@@ -256,8 +320,6 @@ async def run_agent_in_container(
             "invocation": invocation,
         }
     )
-
-    driver = _resolve_driver(live, schema)
 
     current_prompt = prompt
     current_resume: str | None = _initial_resume_session_id(primitive, live)
@@ -302,9 +364,11 @@ async def run_agent_in_container(
             except Exception:
                 logger.warning("failed to persist prompt.txt for turn %s", turn_number)
 
-            raw, captured_sid = await driver.run_turn(
+            raw, captured_sid = await run_turn(
+                live,
                 prompt=current_prompt,
                 resume_session_id=current_resume,
+                schema=schema,
             )
 
             # Persist the raw envelope payload as soon as we have it,

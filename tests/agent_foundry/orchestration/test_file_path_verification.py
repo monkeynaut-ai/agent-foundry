@@ -179,42 +179,32 @@ def _make_ctx(fake_mgr: FakeContainerManager) -> AgentRunContext:
     )
 
 
-class _AdapterAsDriver:
-    """Bridge the legacy FakeClaudeCodeAdapter surface onto the F.3 Driver
-    contract (``run_turn(*, prompt, resume_session_id) -> (envelope, sid)``).
+def _install_adapter(monkeypatch: pytest.MonkeyPatch, adapter: FakeClaudeCodeAdapter) -> None:
+    """Wrap the scripted adapter as a ``run_turn`` callable and install it.
 
-    Invented here so the E.2 verification tests keep their existing
-    scripted-adapter ergonomics while the executor now speaks the new
-    driver signature.
+    The E.2 verification tests were written against the older
+    ``FakeClaudeCodeAdapter`` shape (``run_turn(*, prompt, json_schema,
+    resume_session_id) -> envelope``). The current executor calls
+    ``_run_claude_turn(live, *, prompt, resume_session_id, schema) ->
+    (envelope, session_id)``. This helper adapts the former to the
+    latter so the existing tests keep their scripting ergonomics.
     """
 
-    def __init__(self, adapter: FakeClaudeCodeAdapter, schema: dict) -> None:
-        self._adapter = adapter
-        self._schema = schema
-
-    async def run_turn(
-        self, *, prompt: str, resume_session_id: str | None = None
+    async def _fake_run_turn(
+        live: object,
+        *,
+        prompt: str,
+        resume_session_id: str | None,
+        schema: dict,
     ) -> tuple[dict, str | None]:
-        envelope = await self._adapter.run_turn(
+        envelope = await adapter.run_turn(
             prompt=prompt,
-            json_schema=self._schema,
+            json_schema=schema,
             resume_session_id=resume_session_id,
         )
         return envelope, "sess-e2"
 
-
-def _install_adapter(monkeypatch: pytest.MonkeyPatch, adapter: FakeClaudeCodeAdapter) -> None:
-    container_executor.set_driver_factory(lambda live, schema: _AdapterAsDriver(adapter, schema))
-
-    def _reset() -> None:
-        container_executor.set_driver_factory(None)
-
-    monkeypatch.setattr(
-        container_executor, "set_driver_factory", container_executor.set_driver_factory
-    )
-    import atexit
-
-    atexit.register(_reset)
+    monkeypatch.setattr(container_executor, "_run_claude_turn", _fake_run_turn)
 
 
 class TestExecutorFilePathVerification:

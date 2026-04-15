@@ -75,22 +75,17 @@ def fake_manager() -> FakeContainerManager:
 
 @pytest.fixture
 def install_driver(monkeypatch):
-    """Install a scripted driver via the ``set_driver_factory`` seam.
+    """Install a scripted ``run_turn`` for the duration of a test.
 
-    Returns a callable that takes a ``FakeClaudeCodeDriver`` and wires
-    it for the duration of the test. Teardown resets the seam.
+    Returns a callable that takes a ``FakeClaudeCodeDriver``
+    (awaitable-callable matching ``_run_claude_turn``) and monkeypatches
+    it onto the module. Teardown restores the original symbol.
     """
 
-    installed: list[None] = []
-
     def _install(driver: FakeClaudeCodeDriver) -> None:
-        container_executor.set_driver_factory(lambda live, schema: driver)
-        installed.append(None)
+        monkeypatch.setattr(container_executor, "_run_claude_turn", driver)
 
     yield _install
-
-    if installed:
-        container_executor.set_driver_factory(None)
 
 
 @pytest.fixture

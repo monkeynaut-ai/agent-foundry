@@ -46,19 +46,8 @@ def _make_primitive() -> AgentAction[InputModel, OutputModel]:
 
 
 def _install_driver(monkeypatch: pytest.MonkeyPatch, driver: FakeClaudeCodeDriver) -> None:
-    container_executor.set_driver_factory(lambda live, schema: driver)
-
-    def _reset() -> None:
-        container_executor.set_driver_factory(None)
-
-    monkeypatch.setattr(
-        container_executor,
-        "set_driver_factory",
-        container_executor.set_driver_factory,
-    )
-    import atexit
-
-    atexit.register(_reset)
+    """Swap the module-level ``_run_claude_turn`` for a scripted fake."""
+    monkeypatch.setattr(container_executor, "_run_claude_turn", driver)
 
 
 @pytest.mark.asyncio

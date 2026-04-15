@@ -259,17 +259,22 @@ class FakeClaudeCodeAdapter:
 # --- Phase F.3 fakes ---------------------------------------------------------
 
 
-class FakeClaudeCodeDriver:
-    """Scripted F.3-shape driver: returns ``(envelope_dict, session_id)`` tuples.
+class FakeRunTurn:
+    """Scripted ``run_turn`` callable for :func:`run_agent_in_container`.
 
-    F.3's executor talks to a ``Driver`` whose ``run_turn(*, prompt,
-    resume_session_id)`` returns a tuple of the parsed envelope dict plus
-    the session id captured from the stream-json ``SystemInitEvent``.
+    Matches the signature of :func:`container_executor._run_claude_turn`:
+    ``async def(live, *, prompt, resume_session_id, schema) ->
+    (envelope_dict, session_id)``.
+
+    Tests pass an instance as ``run_turn=`` to ``run_agent_in_container``
+    (or :func:`install_fake_run_turn` for the indirect path via
+    ``run_primitive_plan``). The instance exposes ``calls`` for
+    assertions about the prompt / resume id each turn saw.
 
     Parameters
     ----------
     turn_script:
-        FIFO list of envelope-dict payloads returned one per ``run_turn``.
+        FIFO list of envelope-dict payloads returned one per invocation.
     session_ids:
         FIFO list of session ids matched up with ``turn_script`` positionally.
         If shorter than ``turn_script``, the last value repeats.
@@ -282,23 +287,24 @@ class FakeClaudeCodeDriver:
         session_ids: list[str | None] | None = None,
     ) -> None:
         if not turn_script:
-            raise ValueError("FakeClaudeCodeDriver requires non-empty turn_script")
+            raise ValueError("FakeRunTurn requires non-empty turn_script")
         self._turn_script: list[dict[str, Any]] = list(turn_script)
         self._session_ids: list[str | None] = list(
             session_ids if session_ids is not None else ["sess-fake-123"]
         )
         self.calls: list[dict[str, Any]] = []
 
-    async def run_turn(
+    async def __call__(
         self,
+        live: Any,
         *,
         prompt: str,
-        resume_session_id: str | None = None,
+        resume_session_id: str | None,
+        schema: dict[str, Any],
     ) -> tuple[dict[str, Any], str | None]:
         self.calls.append({"prompt": prompt, "resume": resume_session_id})
         assert self._turn_script, (
-            "FakeClaudeCodeDriver.run_turn called beyond scripted turn count "
-            f"(call #{len(self.calls)})"
+            f"FakeRunTurn called beyond scripted turn count (call #{len(self.calls)})"
         )
         envelope = self._turn_script.pop(0)
         if len(self._session_ids) > 1:
@@ -306,6 +312,10 @@ class FakeClaudeCodeDriver:
         else:
             sid = self._session_ids[0] if self._session_ids else None
         return envelope, sid
+
+
+# Back-compat alias — some tests still refer to the old name.
+FakeClaudeCodeDriver = FakeRunTurn
 
 
 class FakeResponder:
