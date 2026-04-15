@@ -50,8 +50,14 @@ if [ -n "$ACP_ROLE_INSTRUCTIONS_PATH" ] && [ -f "$ACP_ROLE_INSTRUCTIONS_PATH" ];
   cat "$ACP_ROLE_INSTRUCTIONS_PATH" >> /home/claude/.claude/CLAUDE.md
 fi
 echo "=== CLAUDE.md after role append ===" >&2
-cat /home/claude/.claude/CLAUDE.md >&2
-echo "=== end CLAUDE.md ===" >&2
+if [ -f /home/claude/.claude/CLAUDE.md ]; then
+  cat /home/claude/.claude/CLAUDE.md >&2
+  echo "=== end CLAUDE.md ===" >&2
+else
+  echo "ERROR: /home/claude/.claude/CLAUDE.md does not exist. The base image is malformed or was built incorrectly." >&2
+  echo "=== end CLAUDE.md ===" >&2
+  exit 1
+fi
 
 # ── LSP plugins ──
 # Install language server plugins baked into the base image.
@@ -63,6 +69,15 @@ gosu claude claude plugin install pyright-lsp@claude-plugins-official --scope us
 # Source product init script if it exists (products drop this in via Dockerfile)
 if [ -f /home/claude/product-init.sh ]; then
   gosu claude sh -c '. /home/claude/product-init.sh'
+fi
+
+# ── Host-driven mode ──
+# When ACP_HOST_DRIVEN=1 the container finishes setup and idles,
+# waiting for `docker exec` calls from the host to invoke `claude`
+# directly. Used by the Plan 2 host-driven executor, which runs each
+# turn as `claude --resume <session-id> -p <prompt>` via exec_run.
+if [ "${ACP_HOST_DRIVEN:-0}" = "1" ]; then
+  exec tail -f /dev/null
 fi
 
 # ── Adapter launch ──
