@@ -14,6 +14,7 @@ from agent_foundry.primitives.errors import (
 from agent_foundry.primitives.models import (
     AgentAction,
     Conditional,
+    ContainerReusePolicy,
     FunctionAction,
     GateAction,
     Loop,
@@ -530,6 +531,7 @@ def _make_agent_action(input_type, output_type):
         instructions_provider=_stub_instructions_for_validator,
         response_channel=StructuredOutputChannel(),
         executor=_stub_executor_for_validator,
+        reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )
 
 

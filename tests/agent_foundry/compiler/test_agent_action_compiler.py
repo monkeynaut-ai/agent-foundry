@@ -11,6 +11,7 @@ from agent_foundry.compiler.primitive_compiler import compile_primitive
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     AgentAction,
+    ContainerReusePolicy,
     StructuredOutputChannel,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
@@ -65,6 +66,7 @@ class TestAgentActionCompiler:
             instructions_provider=_stub_instructions,
             response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
         graph = compile_primitive(plan)
@@ -84,6 +86,7 @@ class TestAgentActionCompiler:
             instructions_provider=_stub_instructions,
             response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
         graph = compile_primitive(plan)
@@ -100,6 +103,7 @@ class TestAgentActionCompiler:
             instructions_provider=_stub_instructions,
             response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
         graph = compile_primitive(plan)
@@ -120,6 +124,7 @@ class TestAgentActionCompiler:
             instructions_provider=_stub_instructions,
             response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
         graph = compile_primitive(plan)
@@ -150,6 +155,7 @@ class TestAgentActionCompiler:
                 builder=_builder,
             ),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
         graph = compile_primitive(plan)
@@ -174,6 +180,7 @@ class TestAgentActionCompiler:
             instructions_provider=_stub_instructions,
             response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             # visible_dirs and writable_dirs default to empty.
         )
         plan = PrimitivePlan(root=action)
@@ -205,6 +212,7 @@ class TestAgentActionCompiler_ExceptionPropagation:
             instructions_provider=_stub_instructions,
             response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
         graph = compile_primitive(plan)
@@ -251,6 +259,7 @@ class TestAgentActionCompiler_Composition:
             instructions_provider=_stub_instructions,
             response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         annotate_step = FunctionAction[SeqMid, SeqOutput](
             function=lambda s: SeqOutput(

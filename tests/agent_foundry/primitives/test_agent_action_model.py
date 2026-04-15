@@ -30,9 +30,6 @@ class StubOutput(BaseModel):
 class TestContainerReusePolicy:
     """ContainerReusePolicy enumerates supported reuse modes."""
 
-    def test_has_new_each_time(self):
-        assert ContainerReusePolicy.NEW_EACH_TIME.value == "new_each_time"
-
     def test_has_reuse_resume(self):
         assert ContainerReusePolicy.REUSE_RESUME.value == "reuse_resume"
 
@@ -40,7 +37,13 @@ class TestContainerReusePolicy:
         assert ContainerReusePolicy.REUSE_NEW_SESSION.value == "reuse_new_session"
 
     def test_is_str_enum(self):
-        assert ContainerReusePolicy.NEW_EACH_TIME == "new_each_time"
+        assert ContainerReusePolicy.REUSE_RESUME == "reuse_resume"
+
+    def test_container_reuse_policy_has_exactly_two_members(self):
+        assert set(ContainerReusePolicy) == {
+            ContainerReusePolicy.REUSE_RESUME,
+            ContainerReusePolicy.REUSE_NEW_SESSION,
+        }
 
 
 # ======================================================================
@@ -69,6 +72,7 @@ class TestAgentActionRequiredFields:
             instructions_provider=_stub_instructions_provider,
             response_channel=StructuredOutputChannel(),
             executor=_stub_executor_for_required,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         assert callable(action.prompt_builder)
         assert callable(action.instructions_provider)
@@ -80,6 +84,7 @@ class TestAgentActionRequiredFields:
                 instructions_provider=_stub_instructions_provider,
                 response_channel=StructuredOutputChannel(),
                 executor=_stub_executor_for_required,
+                reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             )
 
     def test_missing_prompt_builder_raises(self):
@@ -88,6 +93,7 @@ class TestAgentActionRequiredFields:
                 instructions_provider=_stub_instructions_provider,
                 response_channel=StructuredOutputChannel(),
                 executor=_stub_executor_for_required,
+                reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             )
 
     def test_missing_instructions_provider_raises(self):
@@ -96,6 +102,7 @@ class TestAgentActionRequiredFields:
                 prompt_builder=_stub_prompt_builder,
                 response_channel=StructuredOutputChannel(),
                 executor=_stub_executor_for_required,
+                reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             )
 
     def test_get_type_args_returns_parameterized_types(self):
@@ -104,6 +111,7 @@ class TestAgentActionRequiredFields:
             instructions_provider=_stub_instructions_provider,
             response_channel=StructuredOutputChannel(),
             executor=_stub_executor_for_required,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         input_type, output_type = get_type_args(action)
         assert input_type is StubInput
@@ -115,6 +123,7 @@ class TestAgentActionRequiredFields:
             instructions_provider=_stub_instructions_provider,
             response_channel=StructuredOutputChannel(),
             executor=_stub_executor_for_required,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         result = action.prompt_builder(StubInput(value="hello"))
         assert result == "prompt: hello"
@@ -125,6 +134,7 @@ class TestAgentActionRequiredFields:
             instructions_provider=_stub_instructions_provider,
             response_channel=StructuredOutputChannel(),
             executor=_stub_executor_for_required,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         text = action.instructions_provider()
         assert text.startswith("# Agent instructions")
@@ -147,6 +157,7 @@ class TestAgentActionResponseChannel:
             AgentAction[StubInput, StubOutput](
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
+                reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             )
 
     def test_structured_output_channel_accepted(self):
@@ -155,6 +166,7 @@ class TestAgentActionResponseChannel:
             instructions_provider=_stub_instructions_provider,
             response_channel=StructuredOutputChannel(),
             executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         assert isinstance(action.response_channel, StructuredOutputChannel)
 
@@ -167,6 +179,7 @@ class TestAgentActionResponseChannel:
                 builder=_stub_file_builder,
             ),
             executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         assert isinstance(action.response_channel, FileCollectionChannel)
         assert action.response_channel.files == ["/workspace/out.md"]
@@ -199,6 +212,7 @@ class TestAgentActionExecutor:
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
                 response_channel=StructuredOutputChannel(),
+                reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             )
 
     def test_executor_accepted(self):
@@ -207,6 +221,7 @@ class TestAgentActionExecutor:
             instructions_provider=_stub_instructions_provider,
             response_channel=StructuredOutputChannel(),
             executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         assert action.executor is _stub_executor
 
@@ -216,6 +231,7 @@ class TestAgentActionExecutor:
             instructions_provider=_stub_instructions_provider,
             response_channel=StructuredOutputChannel(),
             executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         result = action.executor(primitive=action, prompt="hi")
         assert result == StubOutput(result="stub")
@@ -232,6 +248,7 @@ def _new_structured_action() -> AgentAction:
         instructions_provider=_stub_instructions_provider,
         response_channel=StructuredOutputChannel(),
         executor=_stub_executor,
+        reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )
 
 
@@ -250,6 +267,7 @@ class TestAgentActionConfigFields:
                 response_channel=StructuredOutputChannel(),
                 executor=_stub_executor,
                 timeout_seconds=0,
+                reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             )
 
     def test_skip_permissions_defaults_to_false(self):
@@ -264,8 +282,14 @@ class TestAgentActionConfigFields:
         # Safe-by-default: nothing under /workspace is writable unless declared.
         assert _new_structured_action().writable_dirs == []
 
-    def test_reuse_policy_defaults_to_new_each_time(self):
-        assert _new_structured_action().reuse_policy == ContainerReusePolicy.NEW_EACH_TIME
+    def test_reuse_policy_is_required(self):
+        with pytest.raises(ValidationError, match="reuse_policy"):
+            AgentAction[StubInput, StubOutput](
+                prompt_builder=_stub_prompt_builder,
+                instructions_provider=_stub_instructions_provider,
+                response_channel=StructuredOutputChannel(),
+                executor=_stub_executor,
+            )
 
     def test_reuse_policy_accepts_all_values(self):
         for policy in ContainerReusePolicy:

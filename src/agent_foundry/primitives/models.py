@@ -12,14 +12,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class ContainerReusePolicy(StrEnum):
     """Policy for whether and how an AgentAction reuses containers across invocations.
 
-    - NEW_EACH_TIME: Each invocation creates a fresh container, destroyed after.
     - REUSE_RESUME: Subsequent invocations reuse the same container with the
       agent session resumed (same conversation context).
     - REUSE_NEW_SESSION: Subsequent invocations reuse the container but start
       a fresh agent session (no conversation history, filesystem state persists).
     """
 
-    NEW_EACH_TIME = "new_each_time"
     REUSE_RESUME = "reuse_resume"
     REUSE_NEW_SESSION = "reuse_new_session"
 
@@ -214,8 +212,9 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     visible_dirs: list[str] = Field(default_factory=list)
     writable_dirs: list[str] = Field(default_factory=list)
 
-    # Container reuse
-    reuse_policy: ContainerReusePolicy = ContainerReusePolicy.NEW_EACH_TIME
+    # Container reuse — required, no default. Product must explicitly choose
+    # how containers are reused across invocations.
+    reuse_policy: ContainerReusePolicy
 
 
 def get_type_args(prim: Primitive) -> tuple[type[BaseModel], type[BaseModel]]:
