@@ -12,7 +12,6 @@ from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     AgentAction,
     ContainerReusePolicy,
-    StructuredOutputChannel,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
 
@@ -64,7 +63,6 @@ class TestAgentActionCompiler:
         action = AgentAction[AgentInput, AgentOutput](
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
@@ -84,7 +82,6 @@ class TestAgentActionCompiler:
         action = AgentAction[AgentInput, AgentOutput](
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
@@ -101,7 +98,6 @@ class TestAgentActionCompiler:
         action = AgentAction[AgentInput, AgentOutput](
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
@@ -122,7 +118,6 @@ class TestAgentActionCompiler:
         action = AgentAction[AgentInput, AgentOutput](
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
@@ -131,38 +126,6 @@ class TestAgentActionCompiler:
 
         with pytest.raises(PrimitiveCompilationError, match="AgentOutput"):
             graph.invoke({"query": "hello"})
-
-    def test_compiler_is_agnostic_to_response_channel(self):
-        """The compiler must not branch on response_channel — that's executor-internal.
-
-        Confirm by compiling an AgentAction that uses FileCollectionChannel
-        and verifying it behaves identically to the StructuredOutputChannel
-        cases above: executor is called, result is merged into state.
-        """
-        from agent_foundry.primitives.models import FileCollectionChannel
-
-        def _executor(*, primitive, prompt):
-            return AgentOutput(answer="42")
-
-        def _builder(files: dict[str, str]) -> AgentOutput:
-            return AgentOutput(answer=files.get("/workspace/out.md", ""))
-
-        action = AgentAction[AgentInput, AgentOutput](
-            prompt_builder=_record_prompt_builder,
-            instructions_provider=_stub_instructions,
-            response_channel=FileCollectionChannel(
-                files=["/workspace/out.md"],
-                builder=_builder,
-            ),
-            executor=_executor,
-            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
-        )
-        plan = PrimitivePlan(root=action)
-        graph = compile_primitive(plan)
-
-        result = graph.invoke({"query": "hello"})
-
-        assert result["answer"] == "42"
 
     def test_compiles_with_empty_lockdown_dirs(self):
         """Empty visible_dirs/writable_dirs are a valid configuration.
@@ -178,7 +141,6 @@ class TestAgentActionCompiler:
         action = AgentAction[AgentInput, AgentOutput](
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             # visible_dirs and writable_dirs default to empty.
@@ -210,7 +172,6 @@ class TestAgentActionCompiler_ExceptionPropagation:
         action = AgentAction[AgentInput, AgentOutput](
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
@@ -257,7 +218,6 @@ class TestAgentActionCompiler_Composition:
         agent_step = AgentAction[AgentStepInput, AgentStepOutput](
             prompt_builder=lambda s: f"Q: {s.query}",
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )

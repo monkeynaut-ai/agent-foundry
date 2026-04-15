@@ -452,17 +452,11 @@ class TestPublicAPI:
 
         assert ContainerReusePolicy is not None
 
-    def test_response_channels_importable_from_package(self):
-        from agent_foundry.primitives import (
-            FileCollectionChannel,
-            StructuredOutputChannel,
-        )
+    def test_response_channels_not_exported_from_package(self):
+        """Task A.2 removed response channel types from the primitives surface."""
+        import agent_foundry.primitives as primitives
 
-        assert StructuredOutputChannel is not None
-        assert FileCollectionChannel is not None
-
-    def test_response_channel_kind_importable_from_package(self):
-        from agent_foundry.primitives import ResponseChannelKind
-
-        assert ResponseChannelKind.STRUCTURED_OUTPUT == "structured_output"
-        assert ResponseChannelKind.FILE_COLLECTION == "file_collection"
+        assert not hasattr(primitives, "StructuredOutputChannel")
+        assert not hasattr(primitives, "FileCollectionChannel")
+        assert not hasattr(primitives, "ResponseChannel")
+        assert not hasattr(primitives, "ResponseChannelKind")

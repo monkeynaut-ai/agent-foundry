@@ -26,7 +26,6 @@ from agent_foundry.orchestration.run_context import (
 from agent_foundry.primitives.models import (
     AgentAction,
     ContainerReusePolicy,
-    StructuredOutputChannel,
 )
 
 # Load .env from the repo root so CLAUDE_CODE_OAUTH_TOKEN is available
@@ -150,7 +149,6 @@ async def test_f0_end_to_end_real_claude_code(monkeypatch) -> None:
             "single `headline` field. Be concise."
         ),
         executor=run_agent_in_container,
-        response_channel=StructuredOutputChannel(),
         reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )
 

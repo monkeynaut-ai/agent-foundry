@@ -15,7 +15,6 @@ from agent_foundry.orchestration.run_context import (
 from agent_foundry.primitives.models import (
     AgentAction,
     ContainerReusePolicy,
-    StructuredOutputChannel,
 )
 
 from .fakes import FakeClaudeCodeAdapter, FakeContainerManager
@@ -34,7 +33,6 @@ def _make_primitive() -> AgentAction[InputModel, OutputModel]:
         prompt_builder=lambda s: f"do: {s.task}",
         instructions_provider=lambda: "Be precise.",
         executor=run_agent_in_container,
-        response_channel=StructuredOutputChannel(),
         reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )
 

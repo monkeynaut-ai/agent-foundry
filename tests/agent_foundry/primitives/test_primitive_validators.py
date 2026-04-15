@@ -21,7 +21,6 @@ from agent_foundry.primitives.models import (
     Primitive,
     Retry,
     Sequence,
-    StructuredOutputChannel,
 )
 from agent_foundry.primitives.validators import register_validator, validate_primitive
 
@@ -529,7 +528,6 @@ def _make_agent_action(input_type, output_type):
     return AgentAction[input_type, output_type](
         prompt_builder=_stub_prompt_builder_for_validator,
         instructions_provider=_stub_instructions_for_validator,
-        response_channel=StructuredOutputChannel(),
         executor=_stub_executor_for_validator,
         reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )

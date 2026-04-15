@@ -8,8 +8,6 @@ from pydantic import BaseModel, ValidationError
 from agent_foundry.primitives.models import (
     AgentAction,
     ContainerReusePolicy,
-    FileCollectionChannel,
-    StructuredOutputChannel,
     get_type_args,
 )
 
@@ -70,7 +68,6 @@ class TestAgentActionRequiredFields:
         action = AgentAction[StubInput, StubOutput](
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
-            response_channel=StructuredOutputChannel(),
             executor=_stub_executor_for_required,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
@@ -82,7 +79,6 @@ class TestAgentActionRequiredFields:
             AgentAction(
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
-                response_channel=StructuredOutputChannel(),
                 executor=_stub_executor_for_required,
                 reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             )
@@ -91,7 +87,6 @@ class TestAgentActionRequiredFields:
         with pytest.raises(ValidationError):
             AgentAction[StubInput, StubOutput](
                 instructions_provider=_stub_instructions_provider,
-                response_channel=StructuredOutputChannel(),
                 executor=_stub_executor_for_required,
                 reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             )
@@ -100,7 +95,6 @@ class TestAgentActionRequiredFields:
         with pytest.raises(ValidationError):
             AgentAction[StubInput, StubOutput](
                 prompt_builder=_stub_prompt_builder,
-                response_channel=StructuredOutputChannel(),
                 executor=_stub_executor_for_required,
                 reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             )
@@ -109,7 +103,6 @@ class TestAgentActionRequiredFields:
         action = AgentAction[StubInput, StubOutput](
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
-            response_channel=StructuredOutputChannel(),
             executor=_stub_executor_for_required,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
@@ -121,7 +114,6 @@ class TestAgentActionRequiredFields:
         action = AgentAction[StubInput, StubOutput](
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
-            response_channel=StructuredOutputChannel(),
             executor=_stub_executor_for_required,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
@@ -132,7 +124,6 @@ class TestAgentActionRequiredFields:
         action = AgentAction[StubInput, StubOutput](
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
-            response_channel=StructuredOutputChannel(),
             executor=_stub_executor_for_required,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
@@ -141,57 +132,30 @@ class TestAgentActionRequiredFields:
 
 
 # ======================================================================
-# AgentAction — response channels
+# AgentAction — no response channel (structured output only)
 # ======================================================================
 
 
-def _stub_file_builder(files: dict[str, str]) -> StubOutput:
-    return StubOutput(result=files.get("/workspace/out.md", ""))
+class TestAgentActionNoResponseChannel:
+    """After Task A.2 AgentAction no longer carries a response_channel field.
 
+    Every agent uses structured output; the channel abstraction is gone.
+    """
 
-class TestAgentActionResponseChannel:
-    """response_channel is required; product must choose structured or file."""
+    def test_response_channel_not_in_model_fields(self):
+        assert "response_channel" not in AgentAction.model_fields
 
-    def test_missing_response_channel_raises(self):
-        with pytest.raises(ValidationError):
-            AgentAction[StubInput, StubOutput](
-                prompt_builder=_stub_prompt_builder,
-                instructions_provider=_stub_instructions_provider,
-                reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
-            )
+    def test_no_response_channel_class_attr(self):
+        assert not hasattr(AgentAction, "response_channel")
 
-    def test_structured_output_channel_accepted(self):
+    def test_no_response_channel_instance_attr(self):
         action = AgentAction[StubInput, StubOutput](
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
-            response_channel=StructuredOutputChannel(),
-            executor=_stub_executor,
+            executor=_stub_executor_for_required,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        assert isinstance(action.response_channel, StructuredOutputChannel)
-
-    def test_file_collection_channel_accepted(self):
-        action = AgentAction[StubInput, StubOutput](
-            prompt_builder=_stub_prompt_builder,
-            instructions_provider=_stub_instructions_provider,
-            response_channel=FileCollectionChannel(
-                files=["/workspace/out.md"],
-                builder=_stub_file_builder,
-            ),
-            executor=_stub_executor,
-            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
-        )
-        assert isinstance(action.response_channel, FileCollectionChannel)
-        assert action.response_channel.files == ["/workspace/out.md"]
-        assert callable(action.response_channel.builder)
-
-    def test_file_collection_requires_files(self):
-        with pytest.raises(ValidationError):
-            FileCollectionChannel(builder=_stub_file_builder)
-
-    def test_file_collection_requires_builder(self):
-        with pytest.raises(ValidationError):
-            FileCollectionChannel(files=["/workspace/out.md"])
+        assert not hasattr(action, "response_channel")
 
 
 # ======================================================================
@@ -211,7 +175,6 @@ class TestAgentActionExecutor:
             AgentAction[StubInput, StubOutput](
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
-                response_channel=StructuredOutputChannel(),
                 reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             )
 
@@ -219,7 +182,6 @@ class TestAgentActionExecutor:
         action = AgentAction[StubInput, StubOutput](
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
-            response_channel=StructuredOutputChannel(),
             executor=_stub_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
@@ -229,7 +191,6 @@ class TestAgentActionExecutor:
         action = AgentAction[StubInput, StubOutput](
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
-            response_channel=StructuredOutputChannel(),
             executor=_stub_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
@@ -246,7 +207,6 @@ def _new_structured_action() -> AgentAction:
     return AgentAction[StubInput, StubOutput](
         prompt_builder=_stub_prompt_builder,
         instructions_provider=_stub_instructions_provider,
-        response_channel=StructuredOutputChannel(),
         executor=_stub_executor,
         reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )
@@ -264,7 +224,6 @@ class TestAgentActionConfigFields:
             AgentAction[StubInput, StubOutput](
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
-                response_channel=StructuredOutputChannel(),
                 executor=_stub_executor,
                 timeout_seconds=0,
                 reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
@@ -287,7 +246,6 @@ class TestAgentActionConfigFields:
             AgentAction[StubInput, StubOutput](
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
-                response_channel=StructuredOutputChannel(),
                 executor=_stub_executor,
             )
 
@@ -296,7 +254,6 @@ class TestAgentActionConfigFields:
             action = AgentAction[StubInput, StubOutput](
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
-                response_channel=StructuredOutputChannel(),
                 executor=_stub_executor,
                 reuse_policy=policy,
             )
