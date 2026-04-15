@@ -14,6 +14,7 @@ from agent_foundry.responders.protocol import (
     ResponderProvider,
     static_provider,
 )
+from agent_foundry.responders.stdin import StdinResponder
 
 __all__ = [
     "ClarificationRequest",
@@ -24,6 +25,7 @@ __all__ = [
     "ResponderProvider",
     "ResponderRequest",
     "ResponderResponse",
+    "StdinResponder",
     "build_request_from_outcome",
     "static_provider",
 ]
