@@ -351,7 +351,7 @@ async def test_plan2_end_to_end_real_claude_code(tmp_path: Path) -> None:
 
     # --- Per-turn artifacts ----------------------------------------------
 
-    agent_name = type(agent).__name__  # e.g. ``AgentAction[StateA, StateB]``
+    agent_name = agent.name  # product-declared diagnostic label
     turn0 = run_dir / agent_name / "turns" / "0"
     assert turn0.is_dir(), f"expected turn dir {turn0}"
     assert (turn0 / "prompt.txt").is_file()
