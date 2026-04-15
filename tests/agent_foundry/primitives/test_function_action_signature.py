@@ -13,7 +13,6 @@ arities accepted by the Pydantic model).
 
 from __future__ import annotations
 
-import pytest
 from pydantic import BaseModel
 
 from agent_foundry.orchestration.run_context import AgentRunContext
@@ -66,7 +65,6 @@ def test_function_action_function_annotation_resolves():
 # current AgentRunContext at invocation time.
 
 
-@pytest.mark.xfail(reason="compiler re-wiring lands in Task G.1", strict=True)
 def test_function_action_two_arg_callable_receives_run_ctx_from_compiled_node(
     tmp_path,
 ):

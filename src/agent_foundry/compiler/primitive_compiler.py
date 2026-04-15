@@ -164,19 +164,30 @@ def _compile_function_action(
     node_id = prefix
     input_type, _ = get_type_args(action)
     # ``FunctionAction.function`` is annotated ``(state, run_ctx) -> O`` post
-    # Task B.1; the real 2-arg wiring lands in Task G.1. Until then the
-    # arity probe + ``...`` cast preserves the 0-/1-arg runtime contract
-    # without fighting the stricter annotation.
+    # Task B.1. Task G.1 widens the arity probe so 2-arg callables receive
+    # the current ``AgentRunContext`` pulled from the ``current_run_context``
+    # ContextVar at invocation time; 1-arg and 0-arg callables remain
+    # supported for migration.
     fn = cast(Callable[..., BaseModel], action.function)
-    takes_input = len(inspect.signature(fn).parameters) > 0
+    arity = len(inspect.signature(fn).parameters)
 
     def node_fn(state: dict[str, Any]) -> dict[str, Any]:
-        if takes_input:
+        if arity == 0:
+            result = fn()
+        else:
             _validate_boundary(state, input_type, node_id)
             model_input = input_type.model_validate(state)
-            result = fn(model_input)
-        else:
-            result = fn()
+            if arity >= 2:
+                # Resolve ContextVar at invocation time. Deferred import
+                # avoids any risk of an orchestration -> compiler cycle.
+                from agent_foundry.orchestration.run_context import (
+                    require_current_run_context,
+                )
+
+                run_ctx = require_current_run_context()
+                result = fn(model_input, run_ctx)
+            else:
+                result = fn(model_input)
         return result.model_dump()
 
     graph.add_node(node_id, node_fn)
@@ -451,7 +462,14 @@ def _compile_agent_action(
         model_input = input_type.model_validate(state)
         prompt = prompt_builder(model_input)
 
-        result = executor(primitive=action, prompt=prompt)
+        # Resolve ContextVar at invocation time. Deferred import avoids
+        # any risk of an orchestration -> compiler cycle.
+        from agent_foundry.orchestration.run_context import (
+            require_current_run_context,
+        )
+
+        run_ctx = require_current_run_context()
+        result = executor(primitive=action, prompt=prompt, run_ctx=run_ctx)
 
         if not isinstance(result, output_type):
             raise PrimitiveCompilationError(
