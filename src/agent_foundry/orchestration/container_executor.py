@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from agent_foundry.acp.agent_turn_envelope import AgentTurnEnvelope, TurnOutcomeKind
 from agent_foundry.acp.schema_tools import to_claude_code_schema
+from agent_foundry.models.markers import walk_file_path_fields
 from agent_foundry.orchestration.registry import LiveContainer
 from agent_foundry.orchestration.run_context import AgentRunContext
 from agent_foundry.primitives.models import AgentAction, get_type_args
@@ -53,6 +54,13 @@ async def run_agent_in_container(
     _input_type, output_type = get_type_args(primitive)
     envelope_type = AgentTurnEnvelope[output_type]  # type: ignore[valid-type]
     schema = to_claude_code_schema(envelope_type)
+    # Walk the output model's schema directly (not the envelope schema):
+    # only SuccessOutcome.payload carries agent-written file paths, and
+    # walk_file_path_fields does not descend into oneOf branches. Captured
+    # here once per invocation so Task E.2's host-side verification pass
+    # can consume the specs after every successful turn.
+    file_path_specs = walk_file_path_fields(output_type.model_json_schema())
+    del file_path_specs  # E.2 consumes this; E.1 is wiring only.
     instructions_text = primitive.instructions_provider()
 
     oauth_token = run_ctx.env["CLAUDE_CODE_OAUTH_TOKEN"]
