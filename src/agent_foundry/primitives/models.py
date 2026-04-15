@@ -98,7 +98,13 @@ class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     file generation, or any non-AI transformation.
     """
 
-    function: Callable[[I], O]
+    function: Callable[..., BaseModel]
+    """The callable invoked by the compiled node.
+
+    Contract will be tightened to ``Callable[[I, AgentRunContext], O]``
+    in Phase B Task B.1 Step 5 once AgentRunContext is available in the
+    primitives forward-reference namespace.
+    """
 
 
 class GateAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
