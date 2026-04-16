@@ -4,7 +4,7 @@ build-backend = "pdm.backend"
 
 [project]
 name = "agent-foundry"
-version = "0.4.0"
+version = "0.5.0"
 description = "Default template for PDM package"
 authors = [
     {name = "Mark Norman", email = "mark@marknorman.com"},
