@@ -23,12 +23,16 @@ _INSPECT_SCRIPT_TEMPLATE = """\
 # Inspect the workspace volume for run {run_id}.
 # The volume is retained after the run so this script works as long as
 # the volume has not been pruned manually.
+#
+# ``--entrypoint bash`` bypasses the base image's entrypoint (which
+# requires auth and runs the full setup sequence). We just want a
+# shell on the volume, not a running agent.
 set -euo pipefail
 docker run --rm -it \\
+  --entrypoint bash \\
   -v "{workspace_volume}:/workspace" \\
   --workdir /workspace \\
-  "{base_image_tag}" \\
-  bash
+  "{base_image_tag}"
 """
 
 
