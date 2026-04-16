@@ -1,4 +1,4 @@
-"""Tests for StdinResponder (CS7 Plan 2, Task C.3).
+"""Tests for StdinResponder.
 
 The StdinResponder prompts on stdout with a format that discloses the
 agent identity and turn position, and reads a single line from stdin

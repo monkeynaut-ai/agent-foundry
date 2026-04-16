@@ -12,7 +12,7 @@ from agent_foundry.orchestration.run_context import (
 )
 
 
-def test_agent_run_context_has_required_f0_fields() -> None:
+def test_agent_run_context_has_required_core_fields() -> None:
     ctx = AgentRunContext(
         run_id="run-1",
         container_registry=object(),
@@ -40,20 +40,20 @@ def test_agent_run_context_env_is_required() -> None:
         )
 
 
-# -- CS7 Plan 2 Task B.1 --
-# These tests pin the full AgentRunContext shape that Task B.1 introduces:
-# artifacts_dir, responder_provider, cancel_event, frozen=True, and the
-# module-level ContextVar + require_current_run_context() helper.
+# -- Full AgentRunContext shape --
+# These tests pin the full AgentRunContext shape: artifacts_dir,
+# responder_provider, cancel_event, frozen=True, and the module-level
+# ContextVar + require_current_run_context() helper.
 
 
 def _responder_provider_stub() -> object:
-    """Stand-in for ResponderProvider until Task C.1 lands the protocol."""
+    """Stand-in ResponderProvider for context-shape tests."""
     return object()
 
 
-def test_agent_run_context_accepts_full_b1_fields(tmp_path: Path) -> None:
+def test_agent_run_context_accepts_full_fields(tmp_path: Path) -> None:
     ctx = AgentRunContext(
-        run_id="run-b1",
+        run_id="run-full",
         artifacts_dir=tmp_path,
         container_registry=object(),
         responder_provider=_responder_provider_stub(),
@@ -61,14 +61,14 @@ def test_agent_run_context_accepts_full_b1_fields(tmp_path: Path) -> None:
         cancel_event=asyncio.Event(),
         env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
     )
-    assert ctx.run_id == "run-b1"
+    assert ctx.run_id == "run-full"
     assert ctx.artifacts_dir == tmp_path
     assert isinstance(ctx.cancel_event, asyncio.Event)
 
 
 def test_agent_run_context_cancel_event_starts_unset(tmp_path: Path) -> None:
     ctx = AgentRunContext(
-        run_id="run-b1",
+        run_id="run-full",
         artifacts_dir=tmp_path,
         container_registry=object(),
         responder_provider=_responder_provider_stub(),
@@ -81,7 +81,7 @@ def test_agent_run_context_cancel_event_starts_unset(tmp_path: Path) -> None:
 
 def test_agent_run_context_is_frozen(tmp_path: Path) -> None:
     ctx = AgentRunContext(
-        run_id="run-b1",
+        run_id="run-full",
         artifacts_dir=tmp_path,
         container_registry=object(),
         responder_provider=_responder_provider_stub(),
@@ -99,7 +99,7 @@ def test_agent_run_context_frozen_permits_cancel_event_mutation(
     # frozen=True blocks attribute reassignment but NOT mutation of mutable
     # field values. This is load-bearing — the cancel_event must be settable.
     ctx = AgentRunContext(
-        run_id="run-b1",
+        run_id="run-full",
         artifacts_dir=tmp_path,
         container_registry=object(),
         responder_provider=_responder_provider_stub(),

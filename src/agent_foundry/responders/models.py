@@ -1,4 +1,4 @@
-"""Responder request/response models (CS7 Plan 2, Task C.1).
+"""Responder request/response models.
 
 These models define the boundary contract between agent turn outcomes
 (ClarificationOutcome, PermissionOutcome) and the human-in-the-loop

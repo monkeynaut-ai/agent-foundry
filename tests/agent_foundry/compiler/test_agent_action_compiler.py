@@ -48,10 +48,10 @@ def reset_recorded_prompts():
 def _default_run_context(tmp_path):
     """Provide a default ``AgentRunContext`` for compiler tests.
 
-    Task G.1 makes the compiled node resolve ``current_run_context``
-    at invocation time, so every ``graph.invoke`` in this file needs
-    an active context. Tests that care about the run_ctx value set
-    their own via ``current_run_context.set(...)`` — that inner ``set``
+    The compiled node resolves ``current_run_context`` at invocation
+    time, so every ``graph.invoke`` in this file needs an active
+    context. Tests that care about the run_ctx value set their own via
+    ``current_run_context.set(...)`` — that inner ``set``
     shadows this fixture's default until ``reset``.
     """
     import asyncio
@@ -169,8 +169,8 @@ class TestAgentActionCompiler:
         """Empty visible_dirs/writable_dirs are a valid configuration.
 
         Safe-by-default invariant: empty dirs means no access, not
-        no-compilation. Plan 2 implementers must not add a guard that
-        rejects empty dirs.
+        no-compilation. Implementers must not add a guard that rejects
+        empty dirs.
         """
 
         def _executor(*, primitive, prompt, run_ctx):
@@ -281,12 +281,12 @@ class TestAgentActionCompiler_Composition:
 
 
 # ======================================================================
-# CS7 Plan 2 Task G.1 — run_ctx threading through _compile_agent_action
+# run_ctx threading through _compile_agent_action
 # ======================================================================
 
 
 class TestAgentActionCompiler_RunCtxThreading:
-    """Task G.1: the AgentAction compiled node must call
+    """The AgentAction compiled node must call
     ``action.executor(primitive=action, prompt=<built>, run_ctx=<ctx>)``,
     where ``run_ctx`` is pulled from the ``current_run_context``
     ContextVar at invocation time (not capture/compile time).

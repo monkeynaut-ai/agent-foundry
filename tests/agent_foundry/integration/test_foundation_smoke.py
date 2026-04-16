@@ -1,9 +1,9 @@
 """Foundation smoke test — proves base ACP image + ContainerManager +
 host-driven `docker exec` of `claude --json-schema` + stream-json
 parsing + AgentTurnEnvelope validation work end-to-end against real
-Claude Code. If this fails, Plan 2 cannot proceed.
+Claude Code. If this fails, the orchestration stack cannot run.
 
-This test exercises the exact transport Plan 2's executor uses
+This test exercises the exact transport the container executor uses
 (docker exec). It does not exercise the in-container adapter or WS
 server — those are legacy paths retained for docker_worker/ agents.
 """
@@ -58,7 +58,7 @@ def test_foundation_smoke_real_claude_code() -> None:
     role_instructions_path = "/home/claude/role-instructions.md"
     role_instructions = (
         "# Foundation smoke test role\n\n"
-        "You are a probe used by Agent Foundry's Plan 2 foundation smoke test. "
+        "You are a probe used by Agent Foundry's foundation smoke test. "
         "When asked, emit exactly the structured output the caller requests.\n"
     )
 
@@ -72,7 +72,7 @@ def test_foundation_smoke_real_claude_code() -> None:
     )
     try:
         # Inject role instructions before starting so the entrypoint's
-        # append block has something to work with (matching Plan 2's
+        # append block has something to work with (matching the
         # AgentContainerRegistry flow).
         manager.write_file_to_container(handle, role_instructions_path, role_instructions)
         manager.start(handle)

@@ -1,4 +1,4 @@
-"""Tests for responder request/response models (CS7 Plan 2, Task C.1)."""
+"""Tests for responder request/response models."""
 
 from __future__ import annotations
 

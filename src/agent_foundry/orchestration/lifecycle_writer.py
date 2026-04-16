@@ -1,9 +1,9 @@
 """Append-only JSONL writer for run lifecycle events.
 
-CS7 Plan 2 Task B.2. Provides :class:`LifecycleWriter`, which auto-stamps
-every record with ``ts`` (ISO 8601 UTC) and ``run_id``, is safe to call
-from multiple threads, and flushes per record so a crashed process still
-leaves a readable partial log.
+Provides :class:`LifecycleWriter`, which auto-stamps every record with
+``ts`` (ISO 8601 UTC) and ``run_id``, is safe to call from multiple
+threads, and flushes per record so a crashed process still leaves a
+readable partial log.
 """
 
 from __future__ import annotations

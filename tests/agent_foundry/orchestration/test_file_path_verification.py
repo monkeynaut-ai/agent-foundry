@@ -1,15 +1,16 @@
 """Tests for host-side AgentFilePath verification in the container executor.
 
-Task E.1 (this file, initial version):
-    Pin the behavior of extracting ``FilePathFieldSpec`` entries from the
-    agent's output-model JSON schema — the schema the container executor
-    walks via ``walk_file_path_fields`` to drive host-side verification
-    after every successful turn. Only ``SuccessOutcome[O]``'s payload can
-    carry agent-written file paths, so the executor walks the output
-    model's schema to collect specs.
+Two layers:
 
-Task E.2 (future) will extend this file with verification + retry tests that
-exercise the full executor loop once host-side wiring exists.
+* Schema extraction: pin the behavior of extracting ``FilePathFieldSpec``
+  entries from the agent's output-model JSON schema — the schema the
+  container executor walks via ``walk_file_path_fields`` to drive
+  host-side verification after every successful turn. Only
+  ``SuccessOutcome[O]``'s payload can carry agent-written file paths, so
+  the executor walks the output model's schema to collect specs.
+
+* Full executor loop: host-side verification + bounded retry exercised
+  end-to-end against a scripted adapter.
 """
 
 from __future__ import annotations
@@ -55,7 +56,7 @@ class OutputWithoutPaths(BaseModel):
 
 
 class TestExecutorSpecExtraction:
-    """E.1: extracting FilePathFieldSpec list from the output-model schema.
+    """Extract FilePathFieldSpec list from the output-model schema.
 
     The executor will walk the output model ``O`` (i.e., the type parameter
     of ``AgentTurnEnvelope[O]``) to obtain the ``list[FilePathFieldSpec]``
@@ -70,7 +71,7 @@ class TestExecutorSpecExtraction:
 
     def test_envelope_schema_builds_for_output_model(self) -> None:
         # Pin that we can construct the schema the executor passes to
-        # --json-schema. The E.2 verification logic doesn't need this
+        # --json-schema. The verification logic doesn't need this
         # schema (it walks the output model directly) but building it
         # is part of the executor's per-invocation setup.
         envelope_schema = to_claude_code_schema(AgentTurnEnvelope[OutputWithPath])
@@ -108,7 +109,7 @@ class TestExecutorSpecExtraction:
 
 
 # ---------------------------------------------------------------------------
-# Task E.2: host-side verification + bounded retry
+# Host-side verification + bounded retry
 # ---------------------------------------------------------------------------
 #
 # Post-success envelope, the executor:
@@ -118,10 +119,6 @@ class TestExecutorSpecExtraction:
 #   3. Empty violations → return payload.
 #   4. Non-empty → issue ONE bounded ``--resume`` correction turn + re-verify.
 #   5. Second failure → raise ``AgentFailedError(reason="file_path_verification_failed: ...")``.
-#
-# These tests pin that loop. ``AgentFailedError`` is logically a Phase F.1
-# deliverable; Task E.2's implementer pulls it forward into
-# ``agent_foundry.orchestration.errors`` so these tests can name it.
 
 
 import pytest  # noqa: E402
@@ -169,10 +166,10 @@ def _make_ctx(fake_mgr: FakeContainerManager) -> AgentRunContext:
     registry = AgentContainerRegistry(
         manager=fake_mgr,
         base_image_tag="agent-foundry-base:test",
-        workspace_volume="vol-e2",
+        workspace_volume="vol-verify",
     )
     return AgentRunContext(
-        run_id="run-e2",
+        run_id="run-verify",
         container_registry=registry,
         lifecycle_writer=NoOpLifecycleWriter(),
         env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
@@ -182,12 +179,12 @@ def _make_ctx(fake_mgr: FakeContainerManager) -> AgentRunContext:
 def _install_adapter(monkeypatch: pytest.MonkeyPatch, adapter: FakeClaudeCodeAdapter) -> None:
     """Wrap the scripted adapter as a ``run_turn`` callable and install it.
 
-    The E.2 verification tests were written against the older
-    ``FakeClaudeCodeAdapter`` shape (``run_turn(*, prompt, json_schema,
-    resume_session_id) -> envelope``). The current executor calls
+    These verification tests use the older ``FakeClaudeCodeAdapter``
+    shape (``run_turn(*, prompt, json_schema, resume_session_id) ->
+    envelope``). The current executor calls
     ``_run_claude_turn(live, *, prompt, resume_session_id, schema) ->
     (envelope, session_id)``. This helper adapts the former to the
-    latter so the existing tests keep their scripting ergonomics.
+    latter so the tests keep their scripting ergonomics.
     """
 
     async def _fake_run_turn(
@@ -202,13 +199,13 @@ def _install_adapter(monkeypatch: pytest.MonkeyPatch, adapter: FakeClaudeCodeAda
             json_schema=schema,
             resume_session_id=resume_session_id,
         )
-        return envelope, "sess-e2"
+        return envelope, "sess-verify"
 
     monkeypatch.setattr(container_executor, "_run_claude_turn", _fake_run_turn)
 
 
 class TestExecutorFilePathVerification:
-    """E.2: host-side verification + bounded retry around SuccessOutcome."""
+    """Host-side verification + bounded retry around SuccessOutcome."""
 
     @pytest.mark.asyncio
     async def test_happy_path_no_retry_when_all_paths_valid(
@@ -364,7 +361,7 @@ class TestExecutorFilePathVerification:
         assert "file_path_verification_failed" in excinfo.value.reason
         # Exactly two adapter turns — original + one retry. No unbounded loop.
         assert len(adapter.calls) == 2
-        # Under the F.3 contract the container is kept alive for reuse
+        # Under the current contract the container is kept alive for reuse
         # across invocations and only destroyed by ``registry.shutdown_all``,
         # so at this point it is still ``running``.
         assert fake_mgr.handles[0].status == "running"

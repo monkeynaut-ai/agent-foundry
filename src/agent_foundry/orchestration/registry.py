@@ -1,15 +1,16 @@
 """AgentContainerRegistry — one container per AgentAction per run.
 
-Phase B.4 shape: lazy, identity-keyed ``get_or_create``; synchronous
-``record_session_id``; idempotent, failure-tolerant ``shutdown_all``;
-emits ``agent_container_started`` lifecycle events on first creation.
+Two APIs:
 
-The F0 helper pair (``create_for_invocation`` / ``destroy``) is preserved
-as a thin wrapper around the underlying :class:`ContainerManager` so the
-F0 executor (``container_executor.run_agent_in_container``) continues to
-work unchanged. It bypasses the ``_containers`` identity map — F0
-semantics are one-container-per-invocation, destroyed in the executor's
-``finally``. The new B.4 API is the path future phases will use.
+* Primary: lazy, identity-keyed ``get_or_create``; synchronous
+  ``record_session_id``; idempotent, failure-tolerant ``shutdown_all``;
+  emits ``agent_container_started`` lifecycle events on first creation.
+
+* Legacy helper pair (``create_for_invocation`` / ``destroy``): a thin
+  wrapper around the underlying :class:`ContainerManager` with
+  one-container-per-invocation semantics. It bypasses the
+  ``_containers`` identity map; callers are expected to destroy in a
+  ``finally`` block.
 """
 
 from __future__ import annotations
@@ -50,9 +51,9 @@ class LiveContainer:
     """One container bound to one AgentAction for the duration of one run.
 
     The ``primitive_id`` / ``agent_name`` / ``created_at`` fields are
-    populated by :meth:`AgentContainerRegistry.get_or_create`. The F0
-    ``create_for_invocation`` path leaves them at their defaults — it
-    does not register the container in the identity map.
+    populated by :meth:`AgentContainerRegistry.get_or_create`. The
+    legacy ``create_for_invocation`` path leaves them at their defaults
+    — it does not register the container in the identity map.
     """
 
     handle: Any
@@ -71,10 +72,10 @@ class AgentContainerRegistry:
     tolerates per-container destroy failures — each failure is logged
     at WARNING and execution continues.
 
-    Accepts either ``docker_client_factory`` (new B.4 path — builds its
-    own :class:`ContainerManager`) or a pre-built ``manager`` (F0 compat
-    path used by ``create_for_invocation``). At least one must be
-    provided before :meth:`get_or_create` is called.
+    Accepts either ``docker_client_factory`` (the primary path — builds
+    its own :class:`ContainerManager`) or a pre-built ``manager`` (the
+    legacy path used by ``create_for_invocation``). At least one must
+    be provided before :meth:`get_or_create` is called.
     """
 
     def __init__(
@@ -102,7 +103,7 @@ class AgentContainerRegistry:
         self._shut_down = False
 
     # ------------------------------------------------------------------
-    # Phase B.4 API
+    # Primary API
     # ------------------------------------------------------------------
 
     async def get_or_create(
@@ -205,7 +206,7 @@ class AgentContainerRegistry:
                 )
 
     # ------------------------------------------------------------------
-    # F0 compat path — thin wrapper preserved for container_executor.py
+    # Legacy create_for_invocation / destroy helpers
     # ------------------------------------------------------------------
 
     async def create_for_invocation(
@@ -215,13 +216,13 @@ class AgentContainerRegistry:
         oauth_token: str,
         instructions_text: str,
     ) -> LiveContainer:
-        """F0 helper: create a fresh container per invocation.
+        """Legacy helper: create a fresh container per invocation.
 
         Writes the role instructions file, starts the container, waits
         for the entrypoint setup, and returns an un-registered
-        :class:`LiveContainer`. Phase B.4's ``get_or_create`` is the
-        primary path; this helper remains so the F0 executor can keep
-        its one-shot semantics without wiring a lifecycle writer.
+        :class:`LiveContainer`. ``get_or_create`` is the primary path;
+        this helper remains for one-shot invocation semantics without
+        wiring a lifecycle writer.
         """
         manager = self._manager_override or await asyncio.to_thread(self._build_manager)
         env = build_container_env(
@@ -248,7 +249,7 @@ class AgentContainerRegistry:
         return LiveContainer(handle=handle, manager=manager)
 
     async def destroy(self, live: LiveContainer) -> None:
-        """F0 helper: stop (best-effort) and destroy a single container."""
+        """Legacy helper: stop (best-effort) and destroy a single container."""
         with contextlib.suppress(Exception):
             await asyncio.to_thread(live.manager.stop, live.handle, 5)
         await asyncio.to_thread(live.manager.destroy, live.handle)
@@ -282,8 +283,7 @@ class AgentContainerRegistry:
         :func:`build_container_env` so the container boots with the
         Claude Code OAuth token and the instructions-path env var the
         entrypoint consumes. Tests that construct the registry without an
-        ``oauth_token`` (the fake-driver path) get an empty env — which
-        matches the pre-Plan-2 behavior.
+        ``oauth_token`` (the fake-driver path) get an empty env.
         """
         if self._oauth_token is None:
             return {}

@@ -153,16 +153,16 @@ def run_primitive_plan_sync(
     initial_state: BaseModel | None = None,
     config: dict[str, Any] | None = None,
 ) -> BaseModel:
-    """Legacy synchronous entry point (pre-Plan 2).
+    """Legacy synchronous entry point.
 
-    Preserved so F0 / F.3 call sites continue to work during the CS7
-    Plan 2 migration. Emits a ``DeprecationWarning``; prefer the new
-    async :func:`run_primitive_plan` which builds an
-    :class:`AgentRunContext` and wires lifecycle + registry teardown.
+    Preserved for call sites that do not build an
+    :class:`AgentRunContext`. Emits a ``DeprecationWarning``; prefer the
+    async :func:`run_primitive_plan` which builds the context and wires
+    lifecycle + registry teardown.
     """
     warnings.warn(
         "run_primitive_plan_sync is deprecated; migrate to the async "
-        "run_primitive_plan entry point (CS7 Plan 2).",
+        "run_primitive_plan entry point.",
         DeprecationWarning,
         stacklevel=2,
     )
@@ -184,7 +184,7 @@ async def run_primitive_plan(
     responder_provider: ResponderProvider,
     run_id: str | None = None,
 ) -> BaseModel:
-    """Execute a :class:`PrimitivePlan` with full CS7 Plan 2 wiring.
+    """Execute a :class:`PrimitivePlan` with full orchestration wiring.
 
     Bootstraps the run artifacts directory, builds a
     :class:`LifecycleWriter` and :class:`AgentContainerRegistry`,
@@ -227,7 +227,7 @@ async def run_primitive_plan(
     oauth_token = _os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
     # Inject role instructions + wait for container health only when we
     # have a real OAuth token — unit tests that wire a fake driver skip
-    # this path and keep their pre-Plan-2 registry shape. The base image
+    # this path and keep their minimal registry shape. The base image
     # declares a HEALTHCHECK that polls for ``/tmp/.container-ready``;
     # the entrypoint touches that marker after all setup completes.
     registry = AgentContainerRegistry(
@@ -308,11 +308,10 @@ def _compile_function_action(
 
     node_id = prefix
     input_type, _ = get_type_args(action)
-    # ``FunctionAction.function`` is annotated ``(state, run_ctx) -> O`` post
-    # Task B.1. Task G.1 widens the arity probe so 2-arg callables receive
-    # the current ``AgentRunContext`` pulled from the ``current_run_context``
-    # ContextVar at invocation time; 1-arg and 0-arg callables remain
-    # supported for migration.
+    # ``FunctionAction.function`` is annotated ``(state, run_ctx) -> O``.
+    # Two-arg callables receive the current ``AgentRunContext`` pulled
+    # from the ``current_run_context`` ContextVar at invocation time;
+    # 1-arg and 0-arg callables remain supported for back-compat.
     fn = cast(Callable[..., BaseModel], action.function)
     arity = len(inspect.signature(fn).parameters)
 
@@ -322,7 +321,7 @@ def _compile_function_action(
         # lifecycle events regardless of callable arity. When no run is
         # in progress (legacy ``run_primitive_plan_sync`` + unit tests
         # that compile nodes without a run context), skip event emission
-        # so the compiler remains usable outside Plan 2's run path.
+        # so the compiler remains usable outside the async run path.
         from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
         from agent_foundry.orchestration.run_context import (
             current_run_context,
@@ -681,9 +680,8 @@ def _compile_agent_action(
     # Detect async executors at compile time so we can expose the node
     # to LangGraph as a coroutine function. ``graph.ainvoke`` awaits
     # async node callables and runs sync ones via ``asyncio.to_thread``
-    # — giving both kinds of executors (F0 sync + Plan 2 async
-    # ``run_agent_in_container``) correct semantics without a blanket
-    # coroutine-wrap on the sync path.
+    # — giving both sync and async executors correct semantics without
+    # a blanket coroutine-wrap on the sync path.
     executor_is_async = _inspect.iscoroutinefunction(executor)
 
     def _validate_and_return(result: Any) -> dict[str, Any]:

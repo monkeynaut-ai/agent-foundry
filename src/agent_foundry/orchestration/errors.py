@@ -1,8 +1,4 @@
-"""Orchestration error types.
-
-Task F.1 scope pulled forward into Task E.2 because host-side file-path
-verification (E.2) raises :class:`AgentFailedError` on exhausted retries.
-"""
+"""Orchestration error types."""
 
 from __future__ import annotations
 

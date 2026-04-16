@@ -1,6 +1,6 @@
-"""Task H.1 end-to-end integration test.
+"""End-to-end integration test for the orchestration stack.
 
-Drives the full Plan 2 stack against the real ``acp-cc-worker:latest``
+Drives the full orchestration stack against the real ``acp-cc-worker:latest``
 base image and real Claude Code via ``CLAUDE_CODE_OAUTH_TOKEN`` from
 ``.env``. The plan under test is a ``Sequence[StateA, StateC]`` of
 
@@ -74,7 +74,7 @@ class StateB(BaseModel):
     verifies this file exists inside the container after the agent
     turn and snapshots it into ``collected_files/``. ``headline`` is a
     plain string so the model covers both the marked and unmarked
-    field cases the plan calls out in H.1.
+    field cases.
     """
 
     headline: str
@@ -108,7 +108,7 @@ class _UnusedResponder:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_plan2_end_to_end_real_claude_code(tmp_path: Path) -> None:
+async def test_end_to_end_real_claude_code(tmp_path: Path) -> None:
     # Fail loudly — not skip — when the OAuth token is missing.
     oauth_token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
     assert oauth_token  # used implicitly by ``run_primitive_plan`` via os.environ
@@ -135,13 +135,13 @@ async def test_plan2_end_to_end_real_claude_code(tmp_path: Path) -> None:
     # reliably causes the CLI to end with a text block instead of the
     # synthetic StructuredOutput tool_use — which then fails
     # StructuredOutput capture. Keeping the turn tool-free mirrors the
-    # Phase 0 foundation smoke test.
+    # foundation smoke test.
     note_path_in_container = "/home/claude/.claude/CLAUDE.md"
 
     def _instructions() -> str:
         return (
-            "# Role — Plan 2 headline probe\n\n"
-            "You are a probe used by Agent Foundry's Plan 2 integration test. "
+            "# Role — headline probe\n\n"
+            "You are a probe used by Agent Foundry's end-to-end integration test. "
             "When asked, emit exactly the structured output the caller requests.\n"
         )
 
@@ -160,12 +160,12 @@ async def test_plan2_end_to_end_real_claude_code(tmp_path: Path) -> None:
     )
 
     def _finalize(state: StateB, run_ctx: Any) -> StateC:
-        # Emit a domain event so H.1 can assert the lifecycle_writer
+        # Emit a domain event so the test can assert the lifecycle_writer
         # pass-through into FunctionAction callables works end-to-end.
         run_ctx.lifecycle_writer.append_run_event(
             {
                 "type": LifecycleEvent.DOMAIN.value,
-                "kind": "plan2_h1_verification",
+                "kind": "end_to_end_verification",
                 "note_path": state.note_path,
             }
         )
@@ -236,7 +236,7 @@ async def test_plan2_end_to_end_real_claude_code(tmp_path: Path) -> None:
         cursor = found + 1
     # Domain event carries the payload we sent.
     domain_records = [r for r in records if r["type"] == LifecycleEvent.DOMAIN.value]
-    assert any(r.get("kind") == "plan2_h1_verification" for r in domain_records), (
+    assert any(r.get("kind") == "end_to_end_verification" for r in domain_records), (
         f"domain event payload missing expected kind: {domain_records}"
     )
 
@@ -275,9 +275,8 @@ async def test_plan2_end_to_end_real_claude_code(tmp_path: Path) -> None:
     #
     # Scope the orphan check to containers that mounted this run's
     # workspace volume. Filtering by ``ancestor=base_image`` catches
-    # sibling integration tests (e.g. the F0 test in
-    # ``test_f0_agent_action_end_to_end.py``) that share the base image
-    # and run in parallel under ``pdm test-integration``.
+    # sibling integration tests that share the base image and run in
+    # parallel under ``pdm test-integration``.
     residual = client.containers.list(all=True, filters={"volume": workspace_volume})
     assert not residual, (
         f"orphan containers remain for volume {workspace_volume}: {[c.name for c in residual]}"

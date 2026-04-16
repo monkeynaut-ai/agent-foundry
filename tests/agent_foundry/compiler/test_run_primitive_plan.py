@@ -1,4 +1,4 @@
-"""Task G.2: end-to-end tests for the async ``run_primitive_plan`` entry point.
+"""End-to-end tests for the async ``run_primitive_plan`` entry point.
 
 The async entry point builds an ``AgentRunContext`` from explicit
 parameters, installs signal handlers (best-effort), sets the

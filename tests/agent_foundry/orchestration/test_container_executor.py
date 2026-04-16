@@ -1,8 +1,8 @@
-"""F.3 inner-turn-loop tests for :func:`run_agent_in_container`.
+"""Inner-turn-loop tests for :func:`run_agent_in_container`.
 
-The F0 happy-path suite lives in ``test_container_executor_f0.py``; this
-file targets the F.3 full-loop behavior:
+Covers:
 
+  * happy-path success envelopes
   * responder round-trip for ``ClarificationOutcome`` / ``PermissionOutcome``
   * reuse-policy dispatch (``REUSE_RESUME`` vs ``REUSE_NEW_SESSION``)
   * session-id recording on ``LiveContainer``
@@ -12,7 +12,7 @@ file targets the F.3 full-loop behavior:
   * max 20 responder iterations per invocation
   * ``AgentFailedError`` paths (``FailureOutcome``, responder raises)
 
-All tests inject a scripted ``FakeClaudeCodeDriver`` via the F.3
+All tests inject a scripted ``FakeClaudeCodeDriver`` via the
 ``set_driver_factory`` module-level seam.
 """
 
@@ -351,7 +351,7 @@ async def test_file_snapshotting_on_success(monkeypatch, tmp_path) -> None:
     # Seed the fake manager's copy_from_container script.
     fake_mgr: FakeContainerManager = registry._manager_override  # type: ignore[assignment]
     fake_mgr.copy_file_script = {"/workspace/out.txt": "hello"}
-    # Also seed read_file_from_container so E.2 verification passes.
+    # Also seed read_file_from_container so host-side file-path verification passes.
     fake_mgr.read_file_script = {"/workspace/out.txt": ["hello"]}
 
     primitive = _make_primitive(output_type=OutputWithFile)
@@ -409,3 +409,95 @@ async def test_lifecycle_event_sequence_on_success(monkeypatch, tmp_path) -> Non
         new_idx = types.index(event, idx + 1)
         assert new_idx > idx, f"event {event} out of order in {types}"
         idx = new_idx
+
+
+# --- Happy-path smoke tests --------------------------------------------------
+#
+# These use the minimal ``NoOpLifecycleWriter`` + no artifacts directory and
+# the simpler ``OutputModel`` (no file-path fields). They predate the full
+# inner-loop suite above and cover the two smallest driver contracts:
+# a single-turn success and a single-turn failure.
+
+
+def _make_smoke_primitive() -> AgentAction[InputModel, OutputModel]:
+    return AgentAction[InputModel, OutputModel](
+        name="test-agent",
+        prompt_builder=lambda s: f"do: {s.task}",
+        instructions_provider=lambda: "Be precise.",
+        executor=run_agent_in_container,
+        reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_agent_in_container_happy_path(monkeypatch) -> None:
+    from agent_foundry.orchestration.run_context import NoOpLifecycleWriter
+
+    driver = FakeClaudeCodeDriver(
+        turn_script=[
+            {"outcome": {"kind": "success", "payload": {"answer": "42"}}},
+        ],
+        session_ids=["sess-smoke"],
+    )
+    _install_driver(monkeypatch, driver)
+
+    fake_mgr = FakeContainerManager()
+    registry = AgentContainerRegistry(
+        manager=fake_mgr,
+        base_image_tag="agent-foundry-base:test",
+        workspace_volume="vol-smoke",
+    )
+    ctx = AgentRunContext(
+        run_id="run-smoke",
+        container_registry=registry,
+        lifecycle_writer=NoOpLifecycleWriter(),
+        env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+    )
+    primitive = _make_smoke_primitive()
+    result = await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    assert isinstance(result, OutputModel)
+    assert result.answer == "42"
+    # Container was created and is running; the lifecycle keeps the
+    # container alive for subsequent invocations (destroyed by
+    # registry.shutdown_all at end of run).
+    assert fake_mgr.handles[0].status == "running"
+    # Driver contract: records per-call args.
+    assert len(driver.calls) == 1
+    assert driver.calls[0]["resume"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_agent_in_container_failure_outcome_raises(monkeypatch) -> None:
+    """FailureOutcome surfaces as AgentFailedError."""
+    from agent_foundry.orchestration.run_context import NoOpLifecycleWriter
+
+    driver = FakeClaudeCodeDriver(
+        turn_script=[
+            {
+                "outcome": {
+                    "kind": "failed",
+                    "reason": "cannot proceed",
+                    "attempted_approaches": [],
+                }
+            }
+        ],
+        session_ids=["sess-smoke-fail"],
+    )
+    _install_driver(monkeypatch, driver)
+
+    fake_mgr = FakeContainerManager()
+    registry = AgentContainerRegistry(
+        manager=fake_mgr,
+        base_image_tag="x",
+        workspace_volume="v",
+    )
+    ctx = AgentRunContext(
+        run_id="r",
+        container_registry=registry,
+        lifecycle_writer=NoOpLifecycleWriter(),
+        env={"CLAUDE_CODE_OAUTH_TOKEN": "t"},
+    )
+    primitive = _make_smoke_primitive()
+    with pytest.raises(AgentFailedError) as excinfo:
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    assert "cannot proceed" in excinfo.value.reason

@@ -1,4 +1,4 @@
-"""Tests for CS7 Plan 2 Task B.3: artifacts directory bootstrap.
+"""Tests for the artifacts directory bootstrap.
 
 Covers ``bootstrap_run_artifacts``, ``agent_turn_dir``, and
 ``agent_log_path`` in ``agent_foundry.orchestration.artifacts``.
