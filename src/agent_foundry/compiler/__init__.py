@@ -1,13 +1,7 @@
 """Primitive compiler for Agent Foundry."""
 
-from agent_foundry.compiler.primitive_compiler import (
-    register_compiler,
-    run_primitive_plan,
-    run_primitive_plan_sync,
-)
+from agent_foundry.compiler.primitive_compiler import register_compiler
 
 __all__ = [
     "register_compiler",
-    "run_primitive_plan",
-    "run_primitive_plan_sync",
 ]

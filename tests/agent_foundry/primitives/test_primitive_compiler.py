@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from agent_foundry.compiler.primitive_compiler import (
     _compile_primitive,
 )
-from agent_foundry.compiler.primitive_compiler import (
+from agent_foundry.orchestration.runner import (
     run_primitive_plan_sync as run_primitive_plan,
 )
 from agent_foundry.primitives.errors import PrimitiveCompilationError

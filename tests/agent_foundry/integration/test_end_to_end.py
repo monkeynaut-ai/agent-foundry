@@ -41,10 +41,10 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from agent_foundry import runtime
-from agent_foundry.compiler.primitive_compiler import run_primitive_plan
 from agent_foundry.models.markers import AgentFilePath
 from agent_foundry.orchestration.container_executor import run_agent_in_container
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+from agent_foundry.orchestration.runner import run_primitive_plan
 from agent_foundry.primitives.models import (
     AgentAction,
     ContainerReusePolicy,

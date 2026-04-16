@@ -160,7 +160,7 @@ async def test_happy_path_runs_end_to_end(
     """One AgentAction + one FunctionAction run; final state has x==2;
     lifecycle.jsonl contains RUN_STARTED and RUN_ENDED; summary.txt written.
     """
-    from agent_foundry.compiler.primitive_compiler import run_primitive_plan
+    from agent_foundry.orchestration.runner import run_primitive_plan
 
     driver = FakeClaudeCodeDriver(turn_script=[_success_env(x=1)])
     install_driver(driver)
@@ -198,7 +198,7 @@ async def test_explicit_run_id_honored(
     install_driver,
     patch_registry_manager,
 ):
-    from agent_foundry.compiler.primitive_compiler import run_primitive_plan
+    from agent_foundry.orchestration.runner import run_primitive_plan
 
     driver = FakeClaudeCodeDriver(turn_script=[_success_env(x=1)])
     install_driver(driver)
@@ -225,7 +225,7 @@ async def test_implicit_run_id_unique_per_invocation(
     install_driver,
     patch_registry_manager,
 ):
-    from agent_foundry.compiler.primitive_compiler import run_primitive_plan
+    from agent_foundry.orchestration.runner import run_primitive_plan
 
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
@@ -266,9 +266,9 @@ async def test_cancel_mid_run_propagates_and_cleans_up(
     ``AgentFailedError('cancelled')`` to propagate; ``shutdown_all`` and
     ``render_summary`` still run in the finally block.
     """
-    from agent_foundry.compiler.primitive_compiler import run_primitive_plan
     from agent_foundry.orchestration import registry as registry_mod
     from agent_foundry.orchestration.run_context import current_run_context
+    from agent_foundry.orchestration.runner import run_primitive_plan
 
     driver = FakeClaudeCodeDriver(turn_script=[_success_env(x=1)])
     install_driver(driver)
@@ -323,7 +323,7 @@ async def test_exception_mid_run_propagates_and_cleans_up(
     """Executor raises (FailureOutcome) → AgentFailedError propagates;
     teardown still runs: registry destroyed + summary.txt written.
     """
-    from agent_foundry.compiler.primitive_compiler import run_primitive_plan
+    from agent_foundry.orchestration.runner import run_primitive_plan
 
     driver = FakeClaudeCodeDriver(turn_script=[_failure_env("boom")])
     install_driver(driver)
