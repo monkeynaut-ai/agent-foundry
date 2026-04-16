@@ -239,8 +239,11 @@ class TestExecutorFilePathVerification:
         assert result.review_path == "/workspace/review.md"
         # Exactly one adapter turn — no retry.
         assert len(adapter.calls) == 1
-        # One verification read for the declared path.
-        assert fake_mgr.read_file_log == [("/workspace/review.md", False, len(b"# review body"))]
+        # One verification read for the declared path (the executor also
+        # snapshots /home/claude/.claude/CLAUDE.md at invocation end;
+        # filter that out).
+        verification_reads = [r for r in fake_mgr.read_file_log if r[0] == "/workspace/review.md"]
+        assert verification_reads == [("/workspace/review.md", False, len(b"# review body"))]
 
     @pytest.mark.asyncio
     async def test_missing_file_retry_recovers(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -395,7 +398,10 @@ class TestExecutorFilePathVerification:
             )
 
         assert "unresolvable ambiguity" in excinfo.value.reason
-        # No verification reads on non-success envelopes.
-        assert fake_mgr.read_file_log == []
+        # No verification reads on non-success envelopes (the executor
+        # still snapshots /home/claude/.claude/CLAUDE.md at invocation
+        # end; filter that out of the assertion).
+        verification_reads = [r for r in fake_mgr.read_file_log if not r[0].endswith("CLAUDE.md")]
+        assert verification_reads == []
         # Only the initial turn — no retry for FailureOutcome.
         assert len(adapter.calls) == 1

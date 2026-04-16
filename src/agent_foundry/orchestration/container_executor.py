@@ -184,6 +184,64 @@ def _agent_name(primitive: AgentAction) -> str:
     return primitive.name
 
 
+def _snapshot_container_artifacts(
+    live: LiveContainer,
+    run_dir: Any,
+    agent_name: str,
+) -> None:
+    """Persist container logs and the rendered CLAUDE.md to the host.
+
+    Called at the end of every ``run_agent_in_container`` invocation.
+    Both writes are best-effort — failures log a warning and do not
+    propagate, because this runs in a ``finally`` block that must not
+    shadow the primary exception (if any).
+
+    - ``<run_dir>/<agent>/container.log`` : full container stdout +
+      stderr captured so far. Overwritten each invocation; captures
+      everything from container start through the most recent turn.
+    - ``<run_dir>/<agent>/CLAUDE.md`` : the merged role-instructions
+      file the agent actually sees (base image CLAUDE.md + appended
+      role instructions). Overwritten each invocation. The content is
+      ephemeral inside the container filesystem (which is destroyed at
+      run teardown), so this snapshot is the only postmortem record.
+    """
+    from agent_foundry.orchestration.artifacts import agent_log_path
+
+    # --- container.log ---
+    try:
+        inner = getattr(live.handle, "_container", None)
+        logs_fn = getattr(inner, "logs", None)
+        if logs_fn is not None:
+            raw = logs_fn(stdout=True, stderr=True, timestamps=False)
+            if isinstance(raw, bytes):
+                log_path = agent_log_path(run_dir, agent_name)
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_path.write_bytes(raw)
+    except Exception as exc:
+        logger.warning(
+            "failed to snapshot container.log for agent %s: %s",
+            agent_name,
+            exc,
+        )
+
+    # --- CLAUDE.md ---
+    try:
+        manager = live.manager
+        read_fn = getattr(manager, "read_file_from_container", None)
+        if read_fn is not None:
+            content = read_fn(live.handle, "/home/claude/.claude/CLAUDE.md")
+            if isinstance(content, str):
+                agent_dir = run_dir / agent_name
+                agent_dir.mkdir(parents=True, exist_ok=True)
+                (agent_dir / "CLAUDE.md").write_text(content, encoding="utf-8")
+    except Exception as exc:
+        logger.warning(
+            "failed to snapshot CLAUDE.md for agent %s: %s",
+            agent_name,
+            exc,
+        )
+
+
 def _verify_paths(
     manager: Any,
     handle: Any,
@@ -591,3 +649,11 @@ async def run_agent_in_container(
             agent_name=agent_name,
             invocation=invocation,
         ) from exc
+    finally:
+        # Best-effort snapshot of the container's logs + rendered
+        # CLAUDE.md into the run's artifacts dir. Runs after every
+        # invocation — success, failure, or cancellation — so a
+        # postmortem always has both artifacts available even if the
+        # agent crashed. The container filesystem is ephemeral; this
+        # is the only durable record.
+        _snapshot_container_artifacts(live, run_ctx.artifacts_dir, agent_name)
