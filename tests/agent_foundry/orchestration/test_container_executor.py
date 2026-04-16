@@ -51,11 +51,14 @@ class CapturingLifecycleWriter:
     def __init__(self) -> None:
         self.events: list[dict[str, Any]] = []
 
-    def append(self, event: dict[str, Any]) -> None:
-        self.events.append(dict(event))
+    def append(self, event_type: LifecycleEvent, **fields: Any) -> None:
+        self.events.append({"type": event_type, **fields})
 
-    def types(self) -> list[str]:
-        return [e.get("type") for e in self.events]
+    def append_run_event(self, kind: str, **fields: Any) -> None:
+        self.append(LifecycleEvent.DOMAIN, kind=kind, **fields)
+
+    def types(self) -> list[LifecycleEvent]:
+        return [e["type"] for e in self.events]
 
 
 class InputModel(BaseModel):

@@ -28,13 +28,12 @@ Agent Foundry writes an append-only event stream to `<run_dir>/lifecycle.jsonl` 
 **Domain events** — open-schema, product-defined. Products emit their own events via `run_ctx.lifecycle_writer.append_run_event(...)` from within a `FunctionAction`'s function or any other code that has access to the `AgentRunContext`. The convention is:
 
 ```python
-run_ctx.lifecycle_writer.append_run_event({
-    "type": LifecycleEvent.DOMAIN.value,        # wire constant "domain"
-    "kind": "<product-chosen-subtype>",          # e.g. "step_committed"
+run_ctx.lifecycle_writer.append_run_event(
+    "step_committed",                            # product-chosen kind subtype
     # ...any additional fields the product wants to record...
-})
+)
 ```
 
-`LifecycleEvent.DOMAIN` (= `"domain"`) is the **escape hatch** that lets a product extend the lifecycle stream with its own vocabulary without needing to modify Agent Foundry's enum. Consumers of the jsonl (e.g., a product-specific summary renderer) filter by `type == "domain"` and route on the `kind` subfield. Downstream examples: Archipelago's planned `summary.txt` renderer that groups a run's activity by change set and step — each boundary is emitted as a `DOMAIN` event with a `kind` like `"change_set_started"` or `"step_completed"`.
+The helper stamps `type=LifecycleEvent.DOMAIN` (= `"domain"`) itself; products only supply the kind and extra fields. `DOMAIN` is the **escape hatch** that lets a product extend the lifecycle stream with its own vocabulary without needing to modify Agent Foundry's enum. Consumers of the jsonl (e.g., a product-specific summary renderer) filter by `type == "domain"` and route on the `kind` subfield. Downstream examples: Archipelago's planned `summary.txt` renderer that groups a run's activity by change set and step — each boundary is emitted as a `DOMAIN` event with a `kind` like `"change_set_started"` or `"step_completed"`.
 
 Rule of thumb: if the event describes something the platform does (start a container, run a turn, invoke a function), that's a platform event — emitted automatically. If the event describes something the *product* does (commit a change set, escalate to a human, mark a review cycle complete), that's a `DOMAIN` event — the product emits it explicitly.

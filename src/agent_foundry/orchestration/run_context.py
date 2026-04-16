@@ -17,9 +17,12 @@ import asyncio
 import tempfile
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 
 
 def _default_artifacts_dir() -> Path:
@@ -34,17 +37,24 @@ def _default_artifacts_dir() -> Path:
 
 
 class LifecycleWriter(Protocol):
-    def append(self, event: dict[str, Any]) -> None: ...
+    """Protocol for lifecycle event sinks.
 
-
-class NoOpLifecycleWriter:
-    """Satisfies the LifecycleWriter protocol by discarding all events.
-
-    The real append-only jsonl writer lives in
+    The concrete append-only jsonl writer lives in
     :mod:`agent_foundry.orchestration.lifecycle_writer`.
     """
 
-    def append(self, event: dict[str, Any]) -> None:
+    def append(self, event_type: LifecycleEvent, **fields: Any) -> None: ...
+
+    def append_run_event(self, kind: str, **fields: Any) -> None: ...
+
+
+class NoOpLifecycleWriter:
+    """Satisfies the LifecycleWriter protocol by discarding all events."""
+
+    def append(self, event_type: LifecycleEvent, **fields: Any) -> None:
+        return None
+
+    def append_run_event(self, kind: str, **fields: Any) -> None:
         return None
 
 

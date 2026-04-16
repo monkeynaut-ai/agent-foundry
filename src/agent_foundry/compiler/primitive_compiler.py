@@ -268,12 +268,12 @@ async def run_primitive_plan(
                 pass
 
     token = current_run_context.set(run_ctx)
-    lifecycle.append({"type": LifecycleEvent.RUN_STARTED.value, "run_id": resolved_run_id})
+    lifecycle.append(LifecycleEvent.RUN_STARTED, run_id=resolved_run_id)
 
     try:
         graph = compile_primitive(plan)
         result_dict = await graph.ainvoke(initial_state.model_dump())
-        lifecycle.append({"type": LifecycleEvent.RUN_ENDED.value, "run_id": resolved_run_id})
+        lifecycle.append(LifecycleEvent.RUN_ENDED, run_id=resolved_run_id)
         return root_out.model_validate(result_dict)
     finally:
         try:
@@ -330,10 +330,8 @@ def _compile_function_action(
         ctx_opt = current_run_context.get()
         if ctx_opt is not None:
             ctx_opt.lifecycle_writer.append(
-                {
-                    "type": LifecycleEvent.FUNCTION_ACTION_STARTED,
-                    "node_id": node_id,
-                }
+                LifecycleEvent.FUNCTION_ACTION_STARTED,
+                node_id=node_id,
             )
         try:
             if arity == 0:
@@ -356,19 +354,15 @@ def _compile_function_action(
         except Exception as exc:
             if ctx_opt is not None:
                 ctx_opt.lifecycle_writer.append(
-                    {
-                        "type": LifecycleEvent.FUNCTION_ACTION_FAILED,
-                        "node_id": node_id,
-                        "reason": str(exc),
-                    }
+                    LifecycleEvent.FUNCTION_ACTION_FAILED,
+                    node_id=node_id,
+                    reason=str(exc),
                 )
             raise
         if ctx_opt is not None:
             ctx_opt.lifecycle_writer.append(
-                {
-                    "type": LifecycleEvent.FUNCTION_ACTION_COMPLETED,
-                    "node_id": node_id,
-                }
+                LifecycleEvent.FUNCTION_ACTION_COMPLETED,
+                node_id=node_id,
             )
         return result.model_dump()
 

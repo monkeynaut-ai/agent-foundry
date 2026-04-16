@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.run_context import (
     AgentRunContext,
     NoOpLifecycleWriter,
@@ -26,8 +27,8 @@ def test_agent_run_context_has_required_core_fields() -> None:
 def test_no_op_lifecycle_writer_accepts_append_and_discards() -> None:
     writer = NoOpLifecycleWriter()
     # Must not raise; must not persist anywhere visible.
-    writer.append({"type": "anything", "payload": {"x": 1}})
-    writer.append({"type": "other"})
+    writer.append(LifecycleEvent.RUN_STARTED, payload={"x": 1})
+    writer.append(LifecycleEvent.RUN_ENDED)
     # No public read surface — the whole point is that it's a sink.
 
 

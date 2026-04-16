@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
 
 
@@ -23,7 +24,7 @@ def _read_lines(path: Path) -> list[str]:
 def test_append_writes_jsonl_line_with_autostamps(tmp_path: Path) -> None:
     writer = LifecycleWriter(run_id="run-abc", path=tmp_path / "lifecycle.jsonl")
     try:
-        writer.append({"type": "test", "foo": 1})
+        writer.append(LifecycleEvent.RUN_STARTED, foo=1)
     finally:
         writer.close()
 
@@ -31,7 +32,7 @@ def test_append_writes_jsonl_line_with_autostamps(tmp_path: Path) -> None:
     assert len(lines) == 1
     record = json.loads(lines[0])
     assert record["run_id"] == "run-abc"
-    assert record["type"] == "test"
+    assert record["type"] == LifecycleEvent.RUN_STARTED.value
     assert record["foo"] == 1
     # ts is ISO 8601 parseable.
     parsed = datetime.fromisoformat(record["ts"])
@@ -42,27 +43,29 @@ def test_append_empty_event_still_has_ts_and_run_id(tmp_path: Path) -> None:
     path = tmp_path / "lifecycle.jsonl"
     writer = LifecycleWriter(run_id="run-empty", path=path)
     try:
-        writer.append({})
+        writer.append(LifecycleEvent.RUN_STARTED)
     finally:
         writer.close()
 
     [line] = _read_lines(path)
     record = json.loads(line)
-    assert set(record.keys()) == {"ts", "run_id"}
+    assert set(record.keys()) == {"ts", "run_id", "type"}
     assert record["run_id"] == "run-empty"
+    assert record["type"] == LifecycleEvent.RUN_STARTED.value
 
 
 def test_append_run_event_is_public_alias(tmp_path: Path) -> None:
     path = tmp_path / "lifecycle.jsonl"
     writer = LifecycleWriter(run_id="run-alias", path=path)
     try:
-        writer.append_run_event({"type": "domain", "n": 7})
+        writer.append_run_event("my_kind", n=7)
     finally:
         writer.close()
 
     [line] = _read_lines(path)
     record = json.loads(line)
-    assert record["type"] == "domain"
+    assert record["type"] == LifecycleEvent.DOMAIN.value
+    assert record["kind"] == "my_kind"
     assert record["n"] == 7
     assert record["run_id"] == "run-alias"
 
@@ -73,13 +76,13 @@ def test_append_is_flushed_and_readable_from_another_handle(
     path = tmp_path / "lifecycle.jsonl"
     writer = LifecycleWriter(run_id="run-flush", path=path)
     try:
-        writer.append({"type": "early"})
+        writer.append(LifecycleEvent.RUN_STARTED)
         # Separate handle — must see the line immediately (flushed per append).
         with path.open("r", encoding="utf-8") as reader:
             content = reader.read()
         assert content.count("\n") == 1
         record = json.loads(content.strip())
-        assert record["type"] == "early"
+        assert record["type"] == LifecycleEvent.RUN_STARTED.value
     finally:
         writer.close()
 
@@ -93,7 +96,7 @@ def test_concurrent_appends_produce_no_interleaving(tmp_path: Path) -> None:
 
     def worker(idx: int) -> None:
         barrier.wait()
-        writer.append({"type": "thread-event", "idx": idx})
+        writer.append(LifecycleEvent.TURN_STARTED, idx=idx)
 
     threads = [threading.Thread(target=worker, args=(i,)) for i in range(N)]
     try:
@@ -110,7 +113,7 @@ def test_concurrent_appends_produce_no_interleaving(tmp_path: Path) -> None:
     for line in lines:
         record = json.loads(line)  # Must parse — no interleaving.
         assert record["run_id"] == "run-threads"
-        assert record["type"] == "thread-event"
+        assert record["type"] == LifecycleEvent.TURN_STARTED.value
         seen_indices.add(record["idx"])
     assert seen_indices == set(range(N))
 
@@ -119,9 +122,9 @@ def test_partial_log_survives_mid_write_truncation(tmp_path: Path) -> None:
     path = tmp_path / "lifecycle.jsonl"
     writer = LifecycleWriter(run_id="run-crash", path=path)
     try:
-        writer.append({"type": "first", "n": 1})
-        writer.append({"type": "second", "n": 2})
-        writer.append({"type": "third", "n": 3})
+        writer.append(LifecycleEvent.RUN_STARTED, n=1)
+        writer.append(LifecycleEvent.TURN_STARTED, n=2)
+        writer.append(LifecycleEvent.TURN_COMPLETED, n=3)
     finally:
         writer.close()
 
@@ -140,8 +143,8 @@ def test_partial_log_survives_mid_write_truncation(tmp_path: Path) -> None:
     # Line-based recovery: first two records still parse cleanly.
     first = json.loads(lines[0])
     second = json.loads(lines[1])
-    assert first["type"] == "first"
-    assert second["type"] == "second"
+    assert first["type"] == LifecycleEvent.RUN_STARTED.value
+    assert second["type"] == LifecycleEvent.TURN_STARTED.value
     # The last (truncated) line should not be a valid JSON record.
     if len(lines) >= 3:
         with pytest.raises(json.JSONDecodeError):
@@ -151,10 +154,10 @@ def test_partial_log_survives_mid_write_truncation(tmp_path: Path) -> None:
 def test_append_after_close_raises(tmp_path: Path) -> None:
     path = tmp_path / "lifecycle.jsonl"
     writer = LifecycleWriter(run_id="run-closed", path=path)
-    writer.append({"type": "ok"})
+    writer.append(LifecycleEvent.RUN_STARTED)
     writer.close()
     with pytest.raises(RuntimeError, match="closed"):
-        writer.append({"type": "nope"})
+        writer.append(LifecycleEvent.RUN_ENDED)
 
 
 def test_close_is_idempotent(tmp_path: Path) -> None:
@@ -169,9 +172,9 @@ def test_parent_directory_is_created(tmp_path: Path) -> None:
     nested = tmp_path / "a" / "b" / "c" / "lifecycle.jsonl"
     writer = LifecycleWriter(run_id="run-mkdir", path=nested)
     try:
-        writer.append({"type": "made-it"})
+        writer.append(LifecycleEvent.RUN_STARTED)
     finally:
         writer.close()
     assert nested.exists()
     [line] = _read_lines(nested)
-    assert json.loads(line)["type"] == "made-it"
+    assert json.loads(line)["type"] == LifecycleEvent.RUN_STARTED.value

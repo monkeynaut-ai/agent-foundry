@@ -156,11 +156,9 @@ class AgentContainerRegistry:
             )
             self._containers[pid] = live
             lifecycle_writer.append(
-                {
-                    "type": LifecycleEvent.AGENT_CONTAINER_STARTED,
-                    "agent_name": agent_name,
-                    "container_id": handle.container_id,
-                }
+                LifecycleEvent.AGENT_CONTAINER_STARTED,
+                agent_name=agent_name,
+                container_id=handle.container_id,
             )
             return live
 

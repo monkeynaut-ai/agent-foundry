@@ -372,11 +372,9 @@ async def run_agent_in_container(
         live._invocation_count = invocation  # type: ignore[attr-defined]
 
     lifecycle.append(
-        {
-            "type": LifecycleEvent.AGENT_INVOCATION_STARTED,
-            "agent_name": agent_name,
-            "invocation": invocation,
-        }
+        LifecycleEvent.AGENT_INVOCATION_STARTED,
+        agent_name=agent_name,
+        invocation=invocation,
     )
 
     current_prompt = prompt
@@ -405,12 +403,10 @@ async def run_agent_in_container(
                 )
 
             lifecycle.append(
-                {
-                    "type": LifecycleEvent.TURN_STARTED,
-                    "agent_name": agent_name,
-                    "invocation": invocation,
-                    "turn": turn_number,
-                }
+                LifecycleEvent.TURN_STARTED,
+                agent_name=agent_name,
+                invocation=invocation,
+                turn=turn_number,
             )
 
             # Create the per-turn artifacts dir and persist the prompt
@@ -460,23 +456,19 @@ async def run_agent_in_container(
             outcome = envelope.outcome
 
             lifecycle.append(
-                {
-                    "type": LifecycleEvent.TURN_COMPLETED,
-                    "agent_name": agent_name,
-                    "invocation": invocation,
-                    "turn": turn_number,
-                    "outcome_kind": str(outcome.kind),
-                }
+                LifecycleEvent.TURN_COMPLETED,
+                agent_name=agent_name,
+                invocation=invocation,
+                turn=turn_number,
+                outcome_kind=str(outcome.kind),
             )
 
             if outcome.kind == TurnOutcomeKind.FAILED:
                 lifecycle.append(
-                    {
-                        "type": LifecycleEvent.AGENT_INVOCATION_FAILED,
-                        "agent_name": agent_name,
-                        "invocation": invocation,
-                        "reason": outcome.reason,
-                    }
+                    LifecycleEvent.AGENT_INVOCATION_FAILED,
+                    agent_name=agent_name,
+                    invocation=invocation,
+                    reason=outcome.reason,
                 )
                 raise AgentFailedError(
                     reason=outcome.reason,
@@ -500,12 +492,10 @@ async def run_agent_in_container(
                 if violations:
                     if verification_attempts >= 1:
                         lifecycle.append(
-                            {
-                                "type": LifecycleEvent.AGENT_INVOCATION_FAILED,
-                                "agent_name": agent_name,
-                                "invocation": invocation,
-                                "reason": f"file_path_verification_failed: {violations}",
-                            }
+                            LifecycleEvent.AGENT_INVOCATION_FAILED,
+                            agent_name=agent_name,
+                            invocation=invocation,
+                            reason=f"file_path_verification_failed: {violations}",
                         )
                         raise AgentFailedError(
                             reason=f"file_path_verification_failed: {violations}",
@@ -539,11 +529,9 @@ async def run_agent_in_container(
                     specs=file_path_specs,
                 )
                 lifecycle.append(
-                    {
-                        "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED,
-                        "agent_name": agent_name,
-                        "invocation": invocation,
-                    }
+                    LifecycleEvent.AGENT_INVOCATION_COMPLETED,
+                    agent_name=agent_name,
+                    invocation=invocation,
                 )
                 if isinstance(payload, output_type):
                     return payload
@@ -581,14 +569,12 @@ async def run_agent_in_container(
                     turn=turn_number,
                 )
                 lifecycle.append(
-                    {
-                        "type": LifecycleEvent.RESPONDER_REQUESTED,
-                        "agent_name": agent_name,
-                        "invocation": invocation,
-                        "turn": turn_number,
-                        "request_id": responder_context.request_id,
-                        "kind": str(outcome.kind),
-                    }
+                    LifecycleEvent.RESPONDER_REQUESTED,
+                    agent_name=agent_name,
+                    invocation=invocation,
+                    turn=turn_number,
+                    request_id=responder_context.request_id,
+                    kind=str(outcome.kind),
                 )
                 try:
                     responder = provider()
@@ -597,12 +583,10 @@ async def run_agent_in_container(
                     raise
                 except Exception as exc:
                     lifecycle.append(
-                        {
-                            "type": LifecycleEvent.AGENT_INVOCATION_FAILED,
-                            "agent_name": agent_name,
-                            "invocation": invocation,
-                            "reason": f"responder failed: {exc}",
-                        }
+                        LifecycleEvent.AGENT_INVOCATION_FAILED,
+                        agent_name=agent_name,
+                        invocation=invocation,
+                        reason=f"responder failed: {exc}",
                     )
                     raise AgentFailedError(
                         reason=f"responder failed: {exc}",
@@ -611,13 +595,11 @@ async def run_agent_in_container(
                     ) from exc
 
                 lifecycle.append(
-                    {
-                        "type": LifecycleEvent.RESPONDER_ANSWERED,
-                        "agent_name": agent_name,
-                        "invocation": invocation,
-                        "turn": turn_number,
-                        "request_id": responder_context.request_id,
-                    }
+                    LifecycleEvent.RESPONDER_ANSWERED,
+                    agent_name=agent_name,
+                    invocation=invocation,
+                    turn=turn_number,
+                    request_id=responder_context.request_id,
                 )
 
                 current_prompt = response.answer
@@ -637,12 +619,10 @@ async def run_agent_in_container(
         raise
     except Exception as exc:
         lifecycle.append(
-            {
-                "type": LifecycleEvent.AGENT_INVOCATION_FAILED,
-                "agent_name": agent_name,
-                "invocation": invocation,
-                "reason": str(exc),
-            }
+            LifecycleEvent.AGENT_INVOCATION_FAILED,
+            agent_name=agent_name,
+            invocation=invocation,
+            reason=str(exc),
         )
         raise AgentFailedError(
             reason=str(exc),
