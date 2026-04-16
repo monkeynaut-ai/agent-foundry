@@ -1,16 +1,8 @@
 """AgentContainerRegistry — one container per AgentAction per run.
 
-Two APIs:
-
-* Primary: lazy, identity-keyed ``get_or_create``; synchronous
-  ``record_session_id``; idempotent, failure-tolerant ``shutdown_all``;
-  emits ``agent_container_started`` lifecycle events on first creation.
-
-* Legacy helper pair (``create_for_invocation`` / ``destroy``): a thin
-  wrapper around the underlying :class:`ContainerManager` with
-  one-container-per-invocation semantics. It bypasses the
-  ``_containers`` identity map; callers are expected to destroy in a
-  ``finally`` block.
+Lazy, identity-keyed ``get_or_create``; synchronous
+``record_session_id``; idempotent, failure-tolerant ``shutdown_all``;
+emits ``agent_container_started`` lifecycle events on first creation.
 """
 
 from __future__ import annotations
@@ -51,9 +43,7 @@ class LiveContainer:
     """One container bound to one AgentAction for the duration of one run.
 
     The ``primitive_id`` / ``agent_name`` / ``created_at`` fields are
-    populated by :meth:`AgentContainerRegistry.get_or_create`. The
-    legacy ``create_for_invocation`` path leaves them at their defaults
-    — it does not register the container in the identity map.
+    populated by :meth:`AgentContainerRegistry.get_or_create`.
     """
 
     handle: Any
@@ -72,10 +62,10 @@ class AgentContainerRegistry:
     tolerates per-container destroy failures — each failure is logged
     at WARNING and execution continues.
 
-    Accepts either ``docker_client_factory`` (the primary path — builds
-    its own :class:`ContainerManager`) or a pre-built ``manager`` (the
-    legacy path used by ``create_for_invocation``). At least one must
-    be provided before :meth:`get_or_create` is called.
+    Accepts either ``docker_client_factory`` (builds its own
+    :class:`ContainerManager` from the returned client) or a pre-built
+    ``manager`` (used by tests with :class:`FakeContainerManager`). At
+    least one must be provided before :meth:`get_or_create` is called.
     """
 
     def __init__(
@@ -202,55 +192,6 @@ class AgentContainerRegistry:
                     cid,
                     exc,
                 )
-
-    # ------------------------------------------------------------------
-    # Legacy create_for_invocation / destroy helpers
-    # ------------------------------------------------------------------
-
-    async def create_for_invocation(
-        self,
-        primitive: Any,
-        *,
-        oauth_token: str,
-        instructions_text: str,
-    ) -> LiveContainer:
-        """Legacy helper: create a fresh container per invocation.
-
-        Writes the role instructions file, starts the container, waits
-        for the entrypoint setup, and returns an un-registered
-        :class:`LiveContainer`. ``get_or_create`` is the primary path;
-        this helper remains for one-shot invocation semantics without
-        wiring a lifecycle writer.
-        """
-        manager = self._manager_override or await asyncio.to_thread(self._build_manager)
-        env = build_container_env(
-            primitive,
-            oauth_token=oauth_token,
-            role_instructions_path=ROLE_INSTRUCTIONS_PATH,
-        )
-        handle = await asyncio.to_thread(
-            manager.create_container,
-            self._base_image_tag,
-            self._workspace_volume,
-            None,
-            env,
-        )
-        await asyncio.to_thread(
-            manager.write_file_to_container,
-            handle,
-            ROLE_INSTRUCTIONS_PATH,
-            instructions_text,
-        )
-        await asyncio.to_thread(manager.start, handle)
-        await self._wait_until_healthy(handle)
-
-        return LiveContainer(handle=handle, manager=manager)
-
-    async def destroy(self, live: LiveContainer) -> None:
-        """Legacy helper: stop (best-effort) and destroy a single container."""
-        with contextlib.suppress(Exception):
-            await asyncio.to_thread(live.manager.stop, live.handle, 5)
-        await asyncio.to_thread(live.manager.destroy, live.handle)
 
     # ------------------------------------------------------------------
     # Internals

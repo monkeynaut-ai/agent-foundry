@@ -1,11 +1,8 @@
 """Tests for :class:`AgentContainerRegistry`.
 
-Covers two constructor paths and the full public contract:
+Covers the full public contract:
 
-- Legacy ``create_for_invocation`` / ``destroy`` helpers (with injected
-  ``manager=``) for new-container-per-invocation semantics.
-- Lazy, identity-keyed ``get_or_create`` (with ``docker_client_factory=``
-  — the registry builds its own ``ContainerManager``).
+- Lazy, identity-keyed ``get_or_create``.
 - ``record_session_id``.
 - Idempotent, failure-tolerant ``shutdown_all``.
 - ``agent_container_started`` lifecycle events emitted through the writer.
@@ -14,7 +11,6 @@ Covers two constructor paths and the full public contract:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from pydantic import BaseModel
@@ -23,7 +19,7 @@ from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
 from agent_foundry.orchestration.registry import AgentContainerRegistry
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
-from .fakes import FakeContainerManager, FakeDockerClient
+from .fakes import FakeDockerClient
 
 
 class InputModel(BaseModel):
@@ -265,41 +261,3 @@ async def test_get_or_create_emits_event_only_on_first_creation(
     ]
     # Only one start event, even with two get_or_create calls.
     assert len(started) == 1
-
-
-# --- Legacy create_for_invocation / destroy path -----------------------------
-
-
-@pytest.mark.asyncio
-async def test_create_for_invocation_writes_instructions_and_starts() -> None:
-    fake_mgr = FakeContainerManager()
-    registry = AgentContainerRegistry(
-        manager=fake_mgr,
-        base_image_tag="agent-foundry-base:test",
-        workspace_volume="vol-1",
-    )
-    primitive = MagicMock()
-    live = await registry.create_for_invocation(
-        primitive,
-        oauth_token="tok",
-        instructions_text="# agent role\nBe precise.",
-    )
-    assert live.handle.status == "running"
-    assert live.handle.env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok"
-    assert live.handle.env["ACP_ROLE_INSTRUCTIONS_PATH"]
-    written_path = live.handle.env["ACP_ROLE_INSTRUCTIONS_PATH"]
-    assert live.handle.files[written_path] == "# agent role\nBe precise."
-
-
-@pytest.mark.asyncio
-async def test_destroy_marks_handle_destroyed() -> None:
-    fake_mgr = FakeContainerManager()
-    registry = AgentContainerRegistry(
-        manager=fake_mgr,
-        base_image_tag="agent-foundry-base:test",
-        workspace_volume="vol-2",
-    )
-    primitive = MagicMock()
-    live = await registry.create_for_invocation(primitive, oauth_token="t", instructions_text="x")
-    await registry.destroy(live)
-    assert live.handle.status == "destroyed"
