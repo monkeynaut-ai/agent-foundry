@@ -125,8 +125,13 @@ def _compile_node(
 # -- Entry points --
 
 
-def compile_primitive(plan: PrimitivePlan) -> Any:
-    """Compile a PrimitivePlan into an executable LangGraph."""
+def _compile_primitive(plan: PrimitivePlan) -> Any:
+    """Internal: build the executable graph for a plan.
+
+    Not part of the public API — products use :func:`run_primitive_plan`
+    (async) or :func:`run_primitive_plan_sync`. The returned object is
+    opaque; calling methods on it directly is unsupported.
+    """
     plan.validate()
     root = plan.root
     root_in, root_out = get_type_args(root)
@@ -167,7 +172,7 @@ def run_primitive_plan_sync(
         stacklevel=2,
     )
     _, root_out = get_type_args(plan.root)
-    graph = compile_primitive(plan)
+    graph = _compile_primitive(plan)
 
     input_dict = initial_state.model_dump() if initial_state is not None else {}
     result_dict = graph.invoke(input_dict, config=config or {})
@@ -271,7 +276,7 @@ async def run_primitive_plan(
     lifecycle.append(LifecycleEvent.RUN_STARTED, run_id=resolved_run_id)
 
     try:
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
         result_dict = await graph.ainvoke(initial_state.model_dump())
         lifecycle.append(LifecycleEvent.RUN_ENDED, run_id=resolved_run_id)
         return root_out.model_validate(result_dict)

@@ -9,7 +9,7 @@ import pytest
 from pydantic import BaseModel
 
 from agent_foundry.compiler.primitive_compiler import (
-    compile_primitive,
+    _compile_primitive,
 )
 from agent_foundry.compiler.primitive_compiler import (
     run_primitive_plan_sync as run_primitive_plan,
@@ -109,7 +109,7 @@ class TestCompilerRegistry:
     def test_unknown_type_raises(self):
         from pydantic import BaseModel
 
-        from agent_foundry.compiler.primitive_compiler import compile_primitive
+        from agent_foundry.compiler.primitive_compiler import _compile_primitive
         from agent_foundry.primitives.models import Primitive
         from agent_foundry.primitives.plan import PrimitivePlan
         from agent_foundry.primitives.validators import register_validator
@@ -124,7 +124,7 @@ class TestCompilerRegistry:
         prim = _UncompiledPrim[InputState, InputState]()
         plan = PrimitivePlan(root=prim)
         with pytest.raises(PrimitiveCompilationError, match="No compiler registered"):
-            compile_primitive(plan)
+            _compile_primitive(plan)
 
     def test_duplicate_registration_raises(self):
         """Re-registering a compiler for the same type is a footgun; raise instead of clobbering."""
@@ -225,7 +225,7 @@ class TestCompileFunctionAction:
             function=lambda s: TransformOutput(result=s.query.upper()),
         )
         plan = PrimitivePlan(root=action)
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
         with pytest.raises(PrimitiveCompilationError):
             graph.invoke({})  # missing required 'query'
 
@@ -443,7 +443,7 @@ class TestCompileSequence:
         seq = Sequence[In, Out](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
         with pytest.raises(TypeMismatchError, match=r"requires fields.*y.*not available"):
-            compile_primitive(plan)
+            _compile_primitive(plan)
 
 
 # ======================================================================
@@ -693,7 +693,7 @@ class TestCompileGateAction:
             prompt_key="escalation_context",
         )
         plan = PrimitivePlan(root=gate)
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
         assert graph is not None
 
     def test_interrupts_execution(self):
@@ -702,7 +702,7 @@ class TestCompileGateAction:
             prompt_key="escalation_context",
         )
         plan = PrimitivePlan(root=gate)
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
         result = graph.invoke(
             {"escalation_context": "need help", "value": "stuck"},
             config={"configurable": {"thread_id": "test-1"}},
@@ -715,7 +715,7 @@ class TestCompileGateAction:
             prompt_key="escalation_context",
         )
         plan = PrimitivePlan(root=gate)
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
         result = graph.invoke(
             {"escalation_context": "review failed twice", "value": "blocked"},
             config={"configurable": {"thread_id": "test-2"}},
