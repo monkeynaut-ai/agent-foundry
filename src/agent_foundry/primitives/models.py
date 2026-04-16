@@ -8,12 +8,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-# ``AgentRunContext`` is imported at module load because ``FunctionAction``
-# references it in a forward ref string and Pydantic must resolve the
-# annotation during ``model_rebuild``. ``orchestration.run_context`` has
-# no dependency on ``primitives``, so this is safe (no cycle).
-from agent_foundry.orchestration.run_context import AgentRunContext
-
 
 class ContainerReusePolicy(StrEnum):
     """Policy for whether and how an AgentAction reuses containers across invocations.
@@ -105,14 +99,20 @@ class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     file generation, or any non-AI transformation.
     """
 
-    function: Callable[[Any, AgentRunContext], BaseModel]
+    function: Callable[[Any], BaseModel]
     """The callable invoked by the compiled node.
 
-    Signature is ``(state, run_ctx) -> O``. The ``state`` position is
-    typed ``Any`` for now — a future change will narrow it to ``I`` when
-    the compiler narrows node-gen to the state model. One-arg callables
-    remain supported at runtime via the compiler's arity-probe for
-    back-compat.
+    Signature is ``(state) -> O``. For access to run-scoped state
+    (emit domain events, read artifacts_dir, check cancellation),
+    import accessors from ``agent_foundry.runtime``:
+
+        from agent_foundry import runtime
+
+        def my_function(state: StateA) -> StateB:
+            runtime.emit("step_completed", step="hello")
+            return StateB(...)
+
+    No need to accept ``run_ctx`` as a parameter.
     """
 
 

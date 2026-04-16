@@ -308,10 +308,11 @@ def _compile_function_action(
 
     node_id = prefix
     input_type, _ = get_type_args(action)
-    # ``FunctionAction.function`` is annotated ``(state, run_ctx) -> O``.
-    # Two-arg callables receive the current ``AgentRunContext`` pulled
-    # from the ``current_run_context`` ContextVar at invocation time;
-    # 1-arg and 0-arg callables remain supported for back-compat.
+    # ``FunctionAction.function`` is annotated ``(state) -> O``. Product
+    # code that needs run-scoped state (emit domain events, read
+    # artifacts_dir, check cancellation) imports accessors from
+    # ``agent_foundry.runtime``. 0-arg callables remain supported
+    # for trivial / side-effect-only steps.
     fn = cast(Callable[..., BaseModel], action.function)
     arity = len(inspect.signature(fn).parameters)
 
@@ -339,18 +340,7 @@ def _compile_function_action(
             else:
                 _validate_boundary(state, input_type, node_id)
                 model_input = input_type.model_validate(state)
-                if arity >= 2:
-                    if ctx_opt is None:
-                        from agent_foundry.orchestration.run_context import (
-                            require_current_run_context,
-                        )
-
-                        run_ctx = require_current_run_context()
-                    else:
-                        run_ctx = ctx_opt
-                    result = fn(model_input, run_ctx)
-                else:
-                    result = fn(model_input)
+                result = fn(model_input)
         except Exception as exc:
             if ctx_opt is not None:
                 ctx_opt.lifecycle_writer.append(

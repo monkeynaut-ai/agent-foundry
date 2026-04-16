@@ -9,7 +9,7 @@ base image and real Claude Code via ``CLAUDE_CODE_OAUTH_TOKEN`` from
 where the agent's output model carries one ``Annotated[str,
 AgentFilePath()]`` field and one plain string field. The
 ``FunctionAction`` records a domain event via
-``run_ctx.lifecycle_writer.append_run_event``.
+``agent_foundry.runtime.emit``.
 
 Assertions cover:
 
@@ -40,6 +40,7 @@ import pytest
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
+from agent_foundry import runtime
 from agent_foundry.compiler.primitive_compiler import run_primitive_plan
 from agent_foundry.models.markers import AgentFilePath
 from agent_foundry.orchestration.container_executor import run_agent_in_container
@@ -159,16 +160,10 @@ async def test_end_to_end_real_claude_code(tmp_path: Path) -> None:
         reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )
 
-    def _finalize(state: StateB, run_ctx: Any) -> StateC:
-        # Emit a domain event so the test can assert the lifecycle_writer
+    def _finalize(state: StateB) -> StateC:
+        # Emit a domain event so the test can assert the runtime.emit
         # pass-through into FunctionAction callables works end-to-end.
-        run_ctx.lifecycle_writer.append_run_event(
-            {
-                "type": LifecycleEvent.DOMAIN.value,
-                "kind": "end_to_end_verification",
-                "note_path": state.note_path,
-            }
-        )
+        runtime.emit("end_to_end_verification", note_path=state.note_path)
         return StateC(headline=state.headline, verified=True)
 
     fn = FunctionAction[StateB, StateC](function=_finalize)

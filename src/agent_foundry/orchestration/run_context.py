@@ -7,8 +7,10 @@ Fields:
     concrete ``ResponderProvider`` protocol).
   - ``cancel_event``: cooperative cancellation signal
   - module-level ``current_run_context`` ContextVar + a
-    ``require_current_run_context`` helper used by compiled nodes to
-    thread the run context into two-arg ``FunctionAction`` callables.
+    ``require_current_run_context`` helper used by compiled
+    ``AgentAction`` nodes and by ``agent_foundry.runtime`` accessors
+    that product ``FunctionAction`` callables use to read run-scoped
+    state without threading ``run_ctx`` through their signatures.
 """
 
 from __future__ import annotations
@@ -95,9 +97,10 @@ current_run_context: ContextVar[AgentRunContext | None] = ContextVar(
 )
 """Thread-/task-local pointer to the active ``AgentRunContext``.
 
-Compiled nodes read this at invocation time to thread the run context
-into two-arg ``FunctionAction`` callables without having to close over
-it at compile time.
+Compiled nodes read this at invocation time to resolve the active run
+context without having to close over it at compile time. Product code
+inside a ``FunctionAction`` callable reaches it indirectly through
+``agent_foundry.runtime`` accessors.
 """
 
 
