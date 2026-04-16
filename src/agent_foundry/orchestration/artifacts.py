@@ -1,4 +1,4 @@
-"""Run artifacts directory bootstrap for CS7 Plan 2 orchestration.
+"""Run artifacts directory bootstrap.
 
 Creates the per-run artifacts directory layout and generates the
 ``inspect-workspace.sh`` helper script that lets operators drop into

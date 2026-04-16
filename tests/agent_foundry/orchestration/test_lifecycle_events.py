@@ -1,4 +1,4 @@
-"""Tests for CS7 Plan 2 Task B.5: LifecycleEvent StrEnum.
+"""Tests for the LifecycleEvent StrEnum.
 
 Stable wire constants for event names emitted by the executor, registry,
 and compiler nodes into ``lifecycle.jsonl``.

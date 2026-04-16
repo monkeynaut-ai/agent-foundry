@@ -109,10 +109,10 @@ class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """The callable invoked by the compiled node.
 
     Signature is ``(state, run_ctx) -> O``. The ``state`` position is
-    typed ``Any`` for now; Task G.1 narrows it to ``I`` when the
-    compiler narrows node-gen to the state model. One-arg callables
-    remain supported at runtime via the compiler's arity-probe during
-    the migration window (see Task G.1).
+    typed ``Any`` for now — a future change will narrow it to ``I`` when
+    the compiler narrows node-gen to the state model. One-arg callables
+    remain supported at runtime via the compiler's arity-probe for
+    back-compat.
     """
 
 
@@ -161,9 +161,9 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     instructions_provider: Callable[[], str]
 
     # Executor — required, no default. The callable that actually runs the
-    # agent and returns an instance of ``O``. Plan 1 ships
-    # ``run_agent_in_container`` (container + Claude Code CLI). CS10.5 will
-    # add SDK and API executors as additional callables products can choose.
+    # agent and returns an instance of ``O``. The default is
+    # ``run_agent_in_container`` (container + Claude Code CLI); future
+    # SDK/API executors will be additional callables products can choose.
     # Different agents in the same system can use different executors.
     #
     # Contract: ``executor(*, primitive: AgentAction, prompt: str) -> O``.

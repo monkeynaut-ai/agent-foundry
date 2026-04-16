@@ -1,4 +1,4 @@
-"""Responder protocol and provider helpers (CS7 Plan 2)."""
+"""Responder protocol and provider helpers."""
 
 from __future__ import annotations
 

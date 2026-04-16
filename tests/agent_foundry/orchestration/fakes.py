@@ -1,11 +1,20 @@
 """Test fakes for the orchestration layer.
 
-F0 shape ships :class:`FakeContainerManager` / :class:`FakeContainerHandle`
-and :class:`FakeClaudeCodeAdapter`. Phase B.4 adds :class:`FakeDockerClient`
-+ :class:`FakeContainers` for the registry's ``docker_client_factory``
-injection point, plus scripted ``destroy`` / ``exec_run`` on the manager
-fake. F.3 extends further (stream-json line scripting, put_archive
-round-trip).
+Provides:
+
+* :class:`FakeContainerManager` / :class:`FakeContainerHandle` — minimal
+  container lifecycle fake with scripted ``destroy`` / ``exec_run`` /
+  ``read_file_from_container`` / ``copy_from_container``.
+* :class:`FakeDockerClient` + :class:`FakeContainers` — the
+  registry's ``docker_client_factory`` injection point.
+* :class:`FakeClaudeCodeAdapter` — scripted adapter returning canned
+  envelope payloads per turn (older ``run_turn`` shape used by the
+  file-path verification tests).
+* :class:`FakeRunTurn` (alias :class:`FakeClaudeCodeDriver`) — scripted
+  ``run_turn`` callable matching the current executor contract,
+  including stream-json line scripting and session-id tracking.
+* :class:`FakeResponder` — scripted responder for clarification /
+  permission round-trip tests.
 """
 
 from __future__ import annotations
@@ -27,9 +36,9 @@ class FakeContainerHandle:
 
 
 class FakeContainerManager:
-    """F0 shape extended for Phase B.4.
+    """Minimal container manager fake.
 
-    New in B.4:
+    Scripting surface:
       - ``destroy_side_effects`` — per-container-id callable run inside
         ``destroy`` before the handle is marked destroyed. Use to script
         raises (``lambda: (_ for _ in ()).throw(RuntimeError("boom"))``
@@ -48,7 +57,7 @@ class FakeContainerManager:
         self.destroy_side_effects: dict[str, Callable[[], None]] = {}
         self.exec_script: dict[str, tuple[int, bytes]] = {}
         self.destroyed_ids: list[str] = []
-        # E.2 host-side file-path verification: always-present so tests
+        # Host-side file-path verification: always-present so tests
         # that never trigger a read can still assert ``read_file_log == []``.
         self.read_file_script: dict[str, list[str | None]] = {}
         self.read_file_log: list[tuple[str, bool, int]] = []
@@ -88,7 +97,7 @@ class FakeContainerManager:
         handle.exec_log.append(cmd)
         return self.exec_script.get(cmd, (0, b""))
 
-    # --- E.2 host-side file-path verification hooks --------------------------
+    # --- Host-side file-path verification hooks ------------------------------
     #
     # ``read_file_script`` maps a container path to a FIFO list of values.
     # Each ``read_file_from_container(handle, path)`` call pops the head:
@@ -102,12 +111,12 @@ class FakeContainerManager:
     read_file_script: dict[str, list[str | None]]
     read_file_log: list[tuple[str, bool, int]]
 
-    # --- F.3 host-to-host file copy hook -------------------------------------
+    # --- Host-to-host file copy hook -----------------------------------------
     #
     # ``copy_file_script`` maps a container path to the string contents the
     # fake should write to the host target path. Missing keys produce a
     # ``False`` return (nothing copied). ``copy_file_log`` records every
-    # ``(container_path, host_path, copied)`` call in order so F.3 snapshot
+    # ``(container_path, host_path, copied)`` call in order so snapshot
     # tests can assert on both the per-path request and the final file.
     copy_file_script: dict[str, str]
     copy_file_log: list[tuple[str, str, bool]]
@@ -148,14 +157,14 @@ class FakeContainerManager:
         return value
 
 
-# --- Phase B.4 docker-client factory fakes ------------------------------------
+# --- Docker-client factory fakes ---------------------------------------------
 
 
 @dataclass
 class FakeDockerContainer:
     """Mimics the ``docker.models.containers.Container`` attribute surface
-    used by :class:`ContainerManager`. B.4 tests only assert identity and
-    lifecycle flags; F.3 will add exec_run scripting here.
+    used by :class:`ContainerManager`. Registry tests assert identity and
+    lifecycle flags; ``exec_run`` returns a stub (0, b"") tuple.
     """
 
     container_id: str
@@ -213,14 +222,10 @@ class FakeDockerClient:
 class FakeClaudeCodeAdapter:
     """Scripted adapter returning canned envelope payloads per turn.
 
-    F0 only uses run_turn once per invocation and only supports
-    success envelopes. F.3's inner-loop tests extend this fake.
-
-    Phase E.2 adds ``turn_script``: a FIFO list of envelope payloads returned
-    one-per-``run_turn``. Construct with either ``canned_structured_output``
-    (legacy single-response) or ``turn_script`` (multi-turn). Overflow past
-    the scripted turns raises ``AssertionError`` so tests catch runaway
-    retry loops loudly.
+    Construct with either ``canned_structured_output`` (single-response)
+    or ``turn_script`` (FIFO list of envelope payloads returned one per
+    ``run_turn`` call). Overflow past the scripted turns raises
+    ``AssertionError`` so tests catch runaway retry loops loudly.
     """
 
     def __init__(
@@ -256,7 +261,7 @@ class FakeClaudeCodeAdapter:
         return self._turn_script.pop(0)
 
 
-# --- Phase F.3 fakes ---------------------------------------------------------
+# --- Current driver-contract fakes -------------------------------------------
 
 
 class FakeRunTurn:
@@ -319,7 +324,7 @@ FakeClaudeCodeDriver = FakeRunTurn
 
 
 class FakeResponder:
-    """Scripted responder for F.3 tests.
+    """Scripted responder for clarification / permission round-trip tests.
 
     ``answers`` is a FIFO list of answer strings returned one per
     ``respond()`` call. If ``raise_on_call`` is set, the responder raises

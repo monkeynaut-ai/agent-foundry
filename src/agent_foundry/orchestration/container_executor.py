@@ -1,6 +1,6 @@
-"""Inner turn loop for running an AgentAction in its container (Task F.3).
+"""Inner turn loop for running an AgentAction in its container.
 
-Extends the E.2 scope with:
+Provides:
   * responder round-trip for ``ClarificationOutcome`` / ``PermissionOutcome``
   * reuse-policy dispatch across invocations (``REUSE_RESUME`` vs
     ``REUSE_NEW_SESSION``); within an invocation, continuations always
@@ -337,7 +337,7 @@ async def run_agent_in_container(
 ) -> BaseModel:
     """Execute one invocation of an AgentAction in its container.
 
-    Full F.3 inner-loop semantics — see module docstring for the event
+    Full inner-loop semantics — see module docstring for the event
     set and retry/responder/cancel bounds.
 
     The ``run_turn`` kwarg is the per-turn transport: a callable matching

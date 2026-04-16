@@ -1,4 +1,4 @@
-"""Tests for the AgentFilePath Annotated metadata marker (Task D.1)."""
+"""Tests for the AgentFilePath Annotated metadata marker."""
 
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ def test_marker_inside_list_propagates_at_item_level() -> None:
 
 
 # ======================================================================
-# walk_file_path_fields — schema walker (Task D.2)
+# walk_file_path_fields — schema walker
 # ======================================================================
 
 

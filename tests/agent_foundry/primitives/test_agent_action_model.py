@@ -142,7 +142,7 @@ class TestAgentActionRequiredFields:
 
 
 class TestAgentActionNoResponseChannel:
-    """After Task A.2 AgentAction no longer carries a response_channel field.
+    """AgentAction carries no response_channel field.
 
     Every agent uses structured output; the channel abstraction is gone.
     """

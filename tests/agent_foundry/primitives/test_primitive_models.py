@@ -453,7 +453,7 @@ class TestPublicAPI:
         assert ContainerReusePolicy is not None
 
     def test_response_channels_not_exported_from_package(self):
-        """Task A.2 removed response channel types from the primitives surface."""
+        """Response channel types are not part of the primitives surface."""
         import agent_foundry.primitives as primitives
 
         assert not hasattr(primitives, "StructuredOutputChannel")

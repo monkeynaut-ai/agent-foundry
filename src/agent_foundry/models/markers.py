@@ -18,7 +18,7 @@ class AgentFilePath:
             review_path: Annotated[str, AgentFilePath()]
             transcript_path: Annotated[str, AgentFilePath(max_size_bytes=50_000_000)]
 
-    At runtime, the Plan 2 executor walks the JSON schema for fields
+    At runtime, the container executor walks the JSON schema for fields
     carrying ``x-agent-file-path`` extensions and verifies the declared
     paths exist in the container and are within the declared size limit.
     """

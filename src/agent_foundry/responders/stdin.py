@@ -1,4 +1,4 @@
-"""Stdin-backed responder (CS7 Plan 2, Task C.3).
+"""Stdin-backed responder.
 
 ``StdinResponder`` serializes concurrent ``respond`` calls with an
 ``asyncio.Lock`` so the human at the terminal always answers one

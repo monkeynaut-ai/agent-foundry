@@ -1,13 +1,14 @@
 """AgentRunContext — the per-run context carried through compiled plans.
 
-CS7 Plan 2 Task B.1 expands the context with:
+Fields:
   - ``artifacts_dir``: per-run artifacts directory
-  - ``responder_provider``: typed as ``Any`` until Task C.2 introduces
-    the ``ResponderProvider`` protocol.
+  - ``responder_provider``: resolves ``responder_id`` -> responder
+    (typed as ``Any``; see ``agent_foundry.responders.protocol`` for the
+    concrete ``ResponderProvider`` protocol).
   - ``cancel_event``: cooperative cancellation signal
   - module-level ``current_run_context`` ContextVar + a
-    ``require_current_run_context`` helper used by compiled nodes
-    (wiring lands in Task G.1).
+    ``require_current_run_context`` helper used by compiled nodes to
+    thread the run context into two-arg ``FunctionAction`` callables.
 """
 
 from __future__ import annotations
@@ -39,7 +40,8 @@ class LifecycleWriter(Protocol):
 class NoOpLifecycleWriter:
     """Satisfies the LifecycleWriter protocol by discarding all events.
 
-    Phase B Task B.2 introduces the real append-only jsonl writer.
+    The real append-only jsonl writer lives in
+    :mod:`agent_foundry.orchestration.lifecycle_writer`.
     """
 
     def append(self, event: dict[str, Any]) -> None:
@@ -54,8 +56,8 @@ class AgentRunContext(BaseModel):
       - ``artifacts_dir``: directory for per-run artifacts
       - ``container_registry``: AgentContainerRegistry (duck-typed)
       - ``responder_provider``: resolves ``responder_id`` -> responder
-        callable. Typed as ``Any`` until Task C.2 lands the
-        ``ResponderProvider`` protocol.
+        callable. Typed as ``Any``; the concrete ``ResponderProvider``
+        protocol lives in ``agent_foundry.responders.protocol``.
       - ``lifecycle_writer``: any object satisfying LifecycleWriter
       - ``cancel_event``: cooperative cancellation signal. ``frozen=True``
         blocks reassignment but callers may still mutate the event
@@ -67,9 +69,9 @@ class AgentRunContext(BaseModel):
 
     run_id: str = Field(min_length=1)
     # ``artifacts_dir``, ``responder_provider``, and ``cancel_event`` ship
-    # with defaults so F0 call sites (and their tests) continue to work
-    # unchanged; Task C-series and G.1 replace these with explicit values
-    # at every real construction site.
+    # with defaults so minimal call sites (and their tests) continue to
+    # work; real construction sites (``run_primitive_plan``) pass
+    # explicit values for all three.
     artifacts_dir: Path = Field(default_factory=_default_artifacts_dir)
     container_registry: Any
     responder_provider: Any = None
@@ -83,9 +85,9 @@ current_run_context: ContextVar[AgentRunContext | None] = ContextVar(
 )
 """Thread-/task-local pointer to the active ``AgentRunContext``.
 
-Compiled nodes read this at invocation time (Task G.1) to thread the
-run context into two-arg ``FunctionAction`` callables without having
-to close over it at compile time.
+Compiled nodes read this at invocation time to thread the run context
+into two-arg ``FunctionAction`` callables without having to close over
+it at compile time.
 """
 
 

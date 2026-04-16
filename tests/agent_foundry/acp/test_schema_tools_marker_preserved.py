@@ -1,10 +1,10 @@
 """Regression test: ``x-agent-file-path`` markers survive ``to_claude_code_schema``.
 
-Task D.3 of CS7 Plan 2. The Plan 2 executor walks the flattened schema
-returned by ``to_claude_code_schema`` looking for ``x-agent-file-path``
-extension keys. If the schema flattener ever strips unknown keys, the
-executor silently loses all file-path validation. This test pins the
-survival of those markers through the flattening transform.
+The container executor walks the flattened schema returned by
+``to_claude_code_schema`` looking for ``x-agent-file-path`` extension
+keys. If the schema flattener ever strips unknown keys, the executor
+silently loses all file-path validation. This test pins the survival of
+those markers through the flattening transform.
 """
 
 from typing import Annotated, Any

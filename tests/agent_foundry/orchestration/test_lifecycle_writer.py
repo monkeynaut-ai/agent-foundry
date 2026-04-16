@@ -1,4 +1,4 @@
-"""Tests for CS7 Plan 2 Task B.2: LifecycleWriter.
+"""Tests for LifecycleWriter.
 
 An append-only JSONL writer with auto-stamped ``ts`` / ``run_id`` fields,
 thread-safe and durable under mid-write crash.

@@ -1,8 +1,8 @@
-"""Tests for CS7 Plan 2 Task B.6: ``render_summary``.
+"""Tests for ``render_summary``.
 
 Reads ``lifecycle.jsonl`` from a run directory and writes a generic,
-per-agent ``summary.txt``. Domain-aware rendering is Archipelago CS9
-Task 4 and is explicitly out of scope here.
+per-agent ``summary.txt``. Domain-aware rendering happens downstream
+in Archipelago and is explicitly out of scope here.
 """
 
 from __future__ import annotations

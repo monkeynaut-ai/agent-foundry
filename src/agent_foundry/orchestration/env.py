@@ -1,4 +1,4 @@
-"""Container env composition for the F0 executor.
+"""Container env composition for the container executor.
 
 Lifted loosely from Archipelago's docker_worker/env.py composition
 pattern: caller-supplied extras merge first, then required agent
@@ -28,9 +28,10 @@ def build_container_env(
 
     ACP_HOST_DRIVEN=1 tells the container entrypoint to idle (tail -f
     /dev/null) after setup instead of launching an in-container
-    adapter — Plan 2 drives claude via host-side ``docker exec``. See
-    the Phase 0 foundation smoke test in tests/agent_foundry/integration/
-    test_foundation_smoke.py for the end-to-end proof.
+    adapter — the orchestration stack drives claude via host-side
+    ``docker exec``. See the foundation smoke test in
+    tests/agent_foundry/integration/test_foundation_smoke.py for the
+    end-to-end proof.
     """
     env: dict[str, str] = {}
     if extra:

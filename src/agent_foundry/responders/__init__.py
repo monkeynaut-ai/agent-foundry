@@ -1,4 +1,4 @@
-"""Responder models for the human-in-the-loop lifecycle (CS7 Plan 2)."""
+"""Responder models for the human-in-the-loop lifecycle."""
 
 from agent_foundry.responders.models import (
     ClarificationRequest,
