@@ -28,9 +28,10 @@ from agent_foundry.responders.models import (
     ResponderRequest,
     ResponderResponse,
 )
+from agent_foundry.responders.protocol import Responder
 
 
-class StdinResponder:
+class StdinResponder(Responder):
     """Prompt the human on stdout and read a single line from stdin."""
 
     def __init__(self) -> None:

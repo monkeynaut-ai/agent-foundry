@@ -34,7 +34,7 @@ import json
 import os
 import uuid
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import pytest
 from dotenv import load_dotenv
@@ -52,8 +52,12 @@ from agent_foundry.primitives.models import (
     Sequence,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
-from agent_foundry.responders.models import ResponderResponse
-from agent_foundry.responders.protocol import static_provider
+from agent_foundry.responders.models import (
+    ResponderContext,
+    ResponderRequest,
+    ResponderResponse,
+)
+from agent_foundry.responders.protocol import Responder, static_provider
 
 # Load .env from the agent-foundry repo root so CLAUDE_CODE_OAUTH_TOKEN
 # is available when running via ``pdm test-integration``.
@@ -90,7 +94,7 @@ class StateC(BaseModel):
 # --- Responder that fails loudly if called ---------------------------------
 
 
-class _UnusedResponder:
+class _UnusedResponder(Responder):
     """Happy-path responder: we do not expect it to be called.
 
     If the agent emits clarification/permission outcomes despite the
@@ -98,7 +102,9 @@ class _UnusedResponder:
     than hanging on stdin.
     """
 
-    async def respond(self, request: Any, context: Any) -> ResponderResponse:
+    async def respond(
+        self, request: ResponderRequest, context: ResponderContext
+    ) -> ResponderResponse:
         raise AssertionError(
             f"responder unexpectedly invoked with {request!r} (context={context!r})"
         )

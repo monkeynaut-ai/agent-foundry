@@ -1,9 +1,17 @@
-"""Append-only JSONL writer for run lifecycle events.
+"""Lifecycle writer contract and implementations.
 
-Provides :class:`LifecycleWriter`, which auto-stamps every record with
-``ts`` (ISO 8601 UTC) and ``run_id``, is safe to call from multiple
-threads, and flushes per record so a crashed process still leaves a
-readable partial log.
+This module defines:
+
+* :class:`LifecycleWriter` — the abstract base class (contract) for
+  run lifecycle event sinks. Product code that implements the
+  contract declares inheritance explicitly.
+* :class:`JsonlLifecycleWriter` — the concrete append-only JSONL
+  implementation, auto-stamping every record with ``ts``
+  (ISO 8601 UTC) and ``run_id``, thread-safe, and flushing per
+  record so a crashed process still leaves a readable partial log.
+* :class:`NoOpLifecycleWriter` — a sink that discards every event;
+  useful for unit tests and other callers that do not need a
+  persistent lifecycle log.
 """
 
 from __future__ import annotations
@@ -11,6 +19,7 @@ from __future__ import annotations
 import datetime
 import json
 import threading
+from abc import ABC, abstractmethod
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -18,7 +27,33 @@ from typing import Any
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 
 
-class LifecycleWriter:
+class LifecycleWriter(ABC):
+    """Abstract contract for lifecycle event sinks.
+
+    Concrete implementations must supply :meth:`append`,
+    :meth:`append_run_event`, and :meth:`close`. The append methods
+    are typed at the entry point: :meth:`append` requires a
+    :class:`LifecycleEvent` member as the first argument, with extra
+    fields supplied via ``**fields``. Products emit their own
+    open-schema events via :meth:`append_run_event`, which stamps
+    ``type=LifecycleEvent.DOMAIN`` and accepts a product-chosen
+    ``kind`` string.
+    """
+
+    @abstractmethod
+    def append(self, event_type: LifecycleEvent, **fields: Any) -> None:
+        """Append a platform lifecycle event."""
+
+    @abstractmethod
+    def append_run_event(self, kind: str, **fields: Any) -> None:
+        """Emit a product-defined (``type=domain``) event."""
+
+    @abstractmethod
+    def close(self) -> None:
+        """Release any underlying resources. Must be idempotent."""
+
+
+class JsonlLifecycleWriter(LifecycleWriter):
     """Append-only JSONL writer for run lifecycle events.
 
     Auto-stamps every record with ``ts`` (ISO 8601 UTC) and ``run_id``.
@@ -98,7 +133,7 @@ class LifecycleWriter:
             self._closed = True
             self._fh.close()
 
-    def __enter__(self) -> LifecycleWriter:
+    def __enter__(self) -> JsonlLifecycleWriter:
         return self
 
     def __exit__(
@@ -108,3 +143,16 @@ class LifecycleWriter:
         tb: TracebackType | None,
     ) -> None:
         self.close()
+
+
+class NoOpLifecycleWriter(LifecycleWriter):
+    """Satisfies the :class:`LifecycleWriter` contract by discarding events."""
+
+    def append(self, event_type: LifecycleEvent, **fields: Any) -> None:
+        return None
+
+    def append_run_event(self, kind: str, **fields: Any) -> None:
+        return None
+
+    def close(self) -> None:
+        return None

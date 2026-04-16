@@ -31,6 +31,7 @@ from agent_foundry.orchestration.artifacts import bootstrap_run_artifacts
 from agent_foundry.orchestration.container_executor import run_agent_in_container
 from agent_foundry.orchestration.errors import AgentFailedError
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
 from agent_foundry.orchestration.registry import AgentContainerRegistry
 from agent_foundry.orchestration.run_context import AgentRunContext
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
@@ -45,7 +46,7 @@ from .fakes import (
 # --- Shared fixtures & helpers ----------------------------------------------
 
 
-class CapturingLifecycleWriter:
+class CapturingLifecycleWriter(LifecycleWriter):
     """In-memory lifecycle writer capturing every ``append`` call."""
 
     def __init__(self) -> None:
@@ -56,6 +57,9 @@ class CapturingLifecycleWriter:
 
     def append_run_event(self, kind: str, **fields: Any) -> None:
         self.append(LifecycleEvent.DOMAIN, kind=kind, **fields)
+
+    def close(self) -> None:
+        return None
 
     def types(self) -> list[LifecycleEvent]:
         return [e["type"] for e in self.events]

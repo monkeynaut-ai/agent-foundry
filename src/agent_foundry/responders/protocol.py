@@ -1,9 +1,15 @@
-"""Responder protocol and provider helpers."""
+"""Responder contract and provider helpers.
+
+:class:`Responder` is an abstract base class — product code that
+implements the contract declares inheritance explicitly so the
+relationship is visible to LSP navigation and enforced at
+instantiation time.
+"""
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Protocol, runtime_checkable
 
 from agent_foundry.responders.models import (
     ResponderContext,
@@ -12,11 +18,18 @@ from agent_foundry.responders.models import (
 )
 
 
-@runtime_checkable
-class Responder(Protocol):
+class Responder(ABC):
+    """Abstract contract for human-in-the-loop responders.
+
+    Concrete implementations must implement :meth:`respond` to answer
+    clarification and permission requests raised by agents.
+    """
+
+    @abstractmethod
     async def respond(
         self, request: ResponderRequest, context: ResponderContext
-    ) -> ResponderResponse: ...
+    ) -> ResponderResponse:
+        """Return a :class:`ResponderResponse` for ``request``."""
 
 
 ResponderProvider = Callable[[], Responder]

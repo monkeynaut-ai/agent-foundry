@@ -1,4 +1,4 @@
-"""Tests for LifecycleWriter.
+"""Tests for JsonlLifecycleWriter.
 
 An append-only JSONL writer with auto-stamped ``ts`` / ``run_id`` fields,
 thread-safe and durable under mid-write crash.
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
-from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
+from agent_foundry.orchestration.lifecycle_writer import JsonlLifecycleWriter
 
 
 def _read_lines(path: Path) -> list[str]:
@@ -22,7 +22,7 @@ def _read_lines(path: Path) -> list[str]:
 
 
 def test_append_writes_jsonl_line_with_autostamps(tmp_path: Path) -> None:
-    writer = LifecycleWriter(run_id="run-abc", path=tmp_path / "lifecycle.jsonl")
+    writer = JsonlLifecycleWriter(run_id="run-abc", path=tmp_path / "lifecycle.jsonl")
     try:
         writer.append(LifecycleEvent.RUN_STARTED, foo=1)
     finally:
@@ -41,7 +41,7 @@ def test_append_writes_jsonl_line_with_autostamps(tmp_path: Path) -> None:
 
 def test_append_empty_event_still_has_ts_and_run_id(tmp_path: Path) -> None:
     path = tmp_path / "lifecycle.jsonl"
-    writer = LifecycleWriter(run_id="run-empty", path=path)
+    writer = JsonlLifecycleWriter(run_id="run-empty", path=path)
     try:
         writer.append(LifecycleEvent.RUN_STARTED)
     finally:
@@ -56,7 +56,7 @@ def test_append_empty_event_still_has_ts_and_run_id(tmp_path: Path) -> None:
 
 def test_append_run_event_is_public_alias(tmp_path: Path) -> None:
     path = tmp_path / "lifecycle.jsonl"
-    writer = LifecycleWriter(run_id="run-alias", path=path)
+    writer = JsonlLifecycleWriter(run_id="run-alias", path=path)
     try:
         writer.append_run_event("my_kind", n=7)
     finally:
@@ -74,7 +74,7 @@ def test_append_is_flushed_and_readable_from_another_handle(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "lifecycle.jsonl"
-    writer = LifecycleWriter(run_id="run-flush", path=path)
+    writer = JsonlLifecycleWriter(run_id="run-flush", path=path)
     try:
         writer.append(LifecycleEvent.RUN_STARTED)
         # Separate handle — must see the line immediately (flushed per append).
@@ -89,7 +89,7 @@ def test_append_is_flushed_and_readable_from_another_handle(
 
 def test_concurrent_appends_produce_no_interleaving(tmp_path: Path) -> None:
     path = tmp_path / "lifecycle.jsonl"
-    writer = LifecycleWriter(run_id="run-threads", path=path)
+    writer = JsonlLifecycleWriter(run_id="run-threads", path=path)
 
     N = 20
     barrier = threading.Barrier(N)
@@ -120,7 +120,7 @@ def test_concurrent_appends_produce_no_interleaving(tmp_path: Path) -> None:
 
 def test_partial_log_survives_mid_write_truncation(tmp_path: Path) -> None:
     path = tmp_path / "lifecycle.jsonl"
-    writer = LifecycleWriter(run_id="run-crash", path=path)
+    writer = JsonlLifecycleWriter(run_id="run-crash", path=path)
     try:
         writer.append(LifecycleEvent.RUN_STARTED, n=1)
         writer.append(LifecycleEvent.TURN_STARTED, n=2)
@@ -153,7 +153,7 @@ def test_partial_log_survives_mid_write_truncation(tmp_path: Path) -> None:
 
 def test_append_after_close_raises(tmp_path: Path) -> None:
     path = tmp_path / "lifecycle.jsonl"
-    writer = LifecycleWriter(run_id="run-closed", path=path)
+    writer = JsonlLifecycleWriter(run_id="run-closed", path=path)
     writer.append(LifecycleEvent.RUN_STARTED)
     writer.close()
     with pytest.raises(RuntimeError, match="closed"):
@@ -162,7 +162,7 @@ def test_append_after_close_raises(tmp_path: Path) -> None:
 
 def test_close_is_idempotent(tmp_path: Path) -> None:
     path = tmp_path / "lifecycle.jsonl"
-    writer = LifecycleWriter(run_id="run-idem", path=path)
+    writer = JsonlLifecycleWriter(run_id="run-idem", path=path)
     writer.close()
     # Second close must not raise.
     writer.close()
@@ -170,7 +170,7 @@ def test_close_is_idempotent(tmp_path: Path) -> None:
 
 def test_parent_directory_is_created(tmp_path: Path) -> None:
     nested = tmp_path / "a" / "b" / "c" / "lifecycle.jsonl"
-    writer = LifecycleWriter(run_id="run-mkdir", path=nested)
+    writer = JsonlLifecycleWriter(run_id="run-mkdir", path=nested)
     try:
         writer.append(LifecycleEvent.RUN_STARTED)
     finally:

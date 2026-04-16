@@ -33,7 +33,7 @@ from pydantic import BaseModel
 from agent_foundry.compiler.primitive_compiler import _compile_primitive
 from agent_foundry.orchestration.artifacts import bootstrap_run_artifacts
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
-from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
+from agent_foundry.orchestration.lifecycle_writer import JsonlLifecycleWriter
 from agent_foundry.orchestration.registry import AgentContainerRegistry
 from agent_foundry.orchestration.run_context import (
     AgentRunContext,
@@ -86,7 +86,7 @@ async def run_primitive_plan(
     """Execute a :class:`PrimitivePlan` with full orchestration wiring.
 
     Bootstraps the run artifacts directory, builds a
-    :class:`LifecycleWriter` and :class:`AgentContainerRegistry`,
+    :class:`JsonlLifecycleWriter` and :class:`AgentContainerRegistry`,
     constructs the :class:`AgentRunContext`, installs cooperative
     SIGINT/SIGTERM handlers (main thread only), sets the
     ``current_run_context`` ContextVar, and invokes the compiled graph
@@ -107,7 +107,7 @@ async def run_primitive_plan(
 
     _, root_out = get_type_args(plan.root)
 
-    lifecycle = LifecycleWriter(run_id=resolved_run_id, path=run_dir / "lifecycle.jsonl")
+    lifecycle = JsonlLifecycleWriter(run_id=resolved_run_id, path=run_dir / "lifecycle.jsonl")
 
     oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
     # Inject role instructions + wait for container health only when we

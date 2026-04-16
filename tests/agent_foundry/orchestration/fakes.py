@@ -24,6 +24,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agent_foundry.responders.models import (
+    ResponderContext,
+    ResponderRequest,
+    ResponderResponse,
+)
+from agent_foundry.responders.protocol import Responder
+
 
 @dataclass
 class FakeContainerHandle:
@@ -323,7 +330,7 @@ class FakeRunTurn:
 FakeClaudeCodeDriver = FakeRunTurn
 
 
-class FakeResponder:
+class FakeResponder(Responder):
     """Scripted responder for clarification / permission round-trip tests.
 
     ``answers`` is a FIFO list of answer strings returned one per
@@ -342,14 +349,12 @@ class FakeResponder:
         self._raise = raise_on_call
         self.calls: list[dict[str, Any]] = []
 
-    async def respond(self, request: Any, context: Any) -> Any:
+    async def respond(
+        self, request: ResponderRequest, context: ResponderContext
+    ) -> ResponderResponse:
         self.calls.append({"request": request, "context": context})
         if self._raise is not None:
             raise self._raise
-        # Import here to avoid a hard import at module load; keeps the
-        # fakes module import-light for non-responder tests.
-        from agent_foundry.responders.models import ResponderResponse
-
         assert self._answers, (
             f"FakeResponder.respond called beyond scripted answer count (call #{len(self.calls)})"
         )

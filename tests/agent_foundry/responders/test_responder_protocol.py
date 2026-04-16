@@ -1,12 +1,14 @@
-"""Tests for Responder protocol and provider."""
+"""Tests for Responder ABC and provider."""
 
 from __future__ import annotations
 
-from typing import cast, get_type_hints
+from typing import get_type_hints
+
+import pytest
 
 from agent_foundry.responders.models import (
-    ClarificationRequest,
     ResponderContext,
+    ResponderRequest,
     ResponderResponse,
 )
 from agent_foundry.responders.protocol import (
@@ -16,11 +18,11 @@ from agent_foundry.responders.protocol import (
 )
 
 
-class FakeResponder:
-    """Minimal class that structurally satisfies the Responder protocol."""
+class FakeResponder(Responder):
+    """Minimal concrete subclass of the Responder ABC."""
 
     async def respond(
-        self, request: ClarificationRequest, context: ResponderContext
+        self, request: ResponderRequest, context: ResponderContext
     ) -> ResponderResponse:
         return ResponderResponse(answer="ok")
 
@@ -36,18 +38,17 @@ def _make_context() -> ResponderContext:
 
 
 class TestResponderProtocol:
-    def test_fake_responder_satisfies_protocol(self):
+    def test_fake_responder_satisfies_contract(self):
         fake = FakeResponder()
-        # Accept either @runtime_checkable isinstance support or cast fallback.
-        try:
-            assert isinstance(fake, Responder)
-        except TypeError:
-            responder = cast(Responder, fake)
-            assert responder is fake
+        assert isinstance(fake, Responder)
 
-    def test_protocol_declares_respond_method(self):
+    def test_abc_declares_respond_method(self):
         assert hasattr(Responder, "respond")
         assert callable(Responder.respond)
+
+    def test_abc_rejects_direct_instantiation(self):
+        with pytest.raises(TypeError):
+            Responder()  # type: ignore[abstract]
 
 
 class TestResponderProvider:

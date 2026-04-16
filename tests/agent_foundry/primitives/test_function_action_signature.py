@@ -66,6 +66,7 @@ def test_function_action_callable_can_emit_via_runtime(tmp_path):
 
     from agent_foundry import runtime
     from agent_foundry.compiler.primitive_compiler import _compile_function_action
+    from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
     from agent_foundry.orchestration.run_context import (
         AgentRunContext,
         current_run_context,
@@ -73,12 +74,15 @@ def test_function_action_callable_can_emit_via_runtime(tmp_path):
 
     captured_events: list[tuple[str, dict]] = []
 
-    class _RecordingWriter:
+    class _RecordingWriter(LifecycleWriter):
         def append(self, event_type, **fields):
             captured_events.append(("platform", {"type": event_type.value, **fields}))
 
         def append_run_event(self, kind, **fields):
             captured_events.append(("domain", {"kind": kind, **fields}))
+
+        def close(self) -> None:
+            return None
 
     def fn(state: InputModel) -> OutputModel:
         runtime.emit("probe_fired", detail="ok")

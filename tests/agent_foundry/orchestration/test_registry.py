@@ -15,7 +15,10 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
+from agent_foundry.orchestration.lifecycle_writer import (
+    JsonlLifecycleWriter,
+    LifecycleWriter,
+)
 from agent_foundry.orchestration.registry import AgentContainerRegistry
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
@@ -56,7 +59,7 @@ def registry(fake_docker: FakeDockerClient) -> AgentContainerRegistry:
 
 @pytest.fixture
 def writer(tmp_path: Path) -> LifecycleWriter:
-    w = LifecycleWriter(run_id="run-reg", path=tmp_path / "lifecycle.jsonl")
+    w = JsonlLifecycleWriter(run_id="run-reg", path=tmp_path / "lifecycle.jsonl")
     yield w
     w.close()
 

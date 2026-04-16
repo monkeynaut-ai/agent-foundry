@@ -19,12 +19,22 @@ import asyncio
 import tempfile
 from contextvars import ContextVar
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+from agent_foundry.orchestration.lifecycle_writer import (
+    LifecycleWriter,
+    NoOpLifecycleWriter,
+)
+
+__all__ = [
+    "AgentRunContext",
+    "LifecycleWriter",
+    "NoOpLifecycleWriter",
+    "current_run_context",
+    "require_current_run_context",
+]
 
 
 def _default_artifacts_dir() -> Path:
@@ -38,28 +48,6 @@ def _default_artifacts_dir() -> Path:
     return Path(tempfile.mkdtemp(prefix="agent_foundry_run_"))
 
 
-class LifecycleWriter(Protocol):
-    """Protocol for lifecycle event sinks.
-
-    The concrete append-only jsonl writer lives in
-    :mod:`agent_foundry.orchestration.lifecycle_writer`.
-    """
-
-    def append(self, event_type: LifecycleEvent, **fields: Any) -> None: ...
-
-    def append_run_event(self, kind: str, **fields: Any) -> None: ...
-
-
-class NoOpLifecycleWriter:
-    """Satisfies the LifecycleWriter protocol by discarding all events."""
-
-    def append(self, event_type: LifecycleEvent, **fields: Any) -> None:
-        return None
-
-    def append_run_event(self, kind: str, **fields: Any) -> None:
-        return None
-
-
 class AgentRunContext(BaseModel):
     """Per-run context threaded through compiled plan execution.
 
@@ -70,7 +58,7 @@ class AgentRunContext(BaseModel):
       - ``responder_provider``: resolves ``responder_id`` -> responder
         callable. Typed as ``Any``; the concrete ``ResponderProvider``
         protocol lives in ``agent_foundry.responders.protocol``.
-      - ``lifecycle_writer``: any object satisfying LifecycleWriter
+      - ``lifecycle_writer``: a concrete :class:`LifecycleWriter` subclass
       - ``cancel_event``: cooperative cancellation signal. ``frozen=True``
         blocks reassignment but callers may still mutate the event
         (``cancel_event.set()``).
@@ -87,7 +75,7 @@ class AgentRunContext(BaseModel):
     artifacts_dir: Path = Field(default_factory=_default_artifacts_dir)
     container_registry: Any
     responder_provider: Any = None
-    lifecycle_writer: Any
+    lifecycle_writer: LifecycleWriter
     cancel_event: asyncio.Event = Field(default_factory=asyncio.Event)
     env: dict[str, str]
 
