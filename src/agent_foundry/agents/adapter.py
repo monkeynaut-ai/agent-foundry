@@ -1,7 +1,7 @@
 """Abstract adapter interface for Agent Container Protocol.
 
 An adapter is the in-container bridge between an AI agent CLI and
-the ACP WebSocket protocol. Each agent type (Claude Code, Codex, etc.)
+the Agent Container WebSocket protocol. Each agent type (Claude Code, Codex, etc.)
 has its own adapter implementation.
 """
 
@@ -30,10 +30,10 @@ class TurnResult:
 
 
 class AdapterBase(ABC):
-    """Abstract base for ACP adapters.
+    """Abstract base for Agent Container adapters.
 
     Subclasses implement the bridge between a specific AI agent CLI
-    and the ACP WebSocket protocol.
+    and the Agent Container WebSocket protocol.
     """
 
     @abstractmethod
@@ -49,7 +49,7 @@ class AdapterBase(ABC):
         Args:
             prompt: Text prompt to send to the agent.
             ws: WebSocket connection for sending protocol messages.
-            protocol_session_id: ACP session ID.
+            protocol_session_id: Agent Container session ID.
 
         Returns:
             TurnResult with agent session ID, exit code, and completion status.
@@ -68,7 +68,7 @@ class AdapterBase(ABC):
         Args:
             initial_prompt: Optional initial prompt text.
             ws_url: WebSocket URL to connect to.
-            protocol_session_id: ACP session ID.
+            protocol_session_id: Agent Container session ID.
 
         Returns:
             Exit code (0 = success).

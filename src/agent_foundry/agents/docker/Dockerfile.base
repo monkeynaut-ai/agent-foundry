@@ -56,7 +56,7 @@ COPY src/agent_foundry/agents/docker/lockdown.sh /home/claude/lockdown.sh
 COPY src/agent_foundry/agents/docker/entrypoint.sh /home/claude/entrypoint.sh
 RUN chmod +x /home/claude/entrypoint.sh /home/claude/lockdown.sh
 
-# Copy the ACP package so the adapter's imports resolve
+# Copy the Agent Container package so the adapter's imports resolve
 COPY --chown=claude:claude src/agent_foundry/__init__.py /home/claude/lib/agent_foundry/__init__.py
 COPY --chown=claude:claude src/agent_foundry/agents/__init__.py /home/claude/lib/agent_foundry/agents/__init__.py
 COPY --chown=claude:claude src/agent_foundry/agents/adapter.py /home/claude/lib/agent_foundry/agents/adapter.py

@@ -1,4 +1,4 @@
-"""ACP environment variable builders for container lockdown.
+"""Agent Container environment variable builders for container lockdown.
 
 Pure functions that convert lockdown configuration into Docker container
 environment variables. Reusable by any product built on Agent Foundry.
@@ -10,7 +10,7 @@ def build_lockdown_env(
     readonly_dirs: list[str] | None = None,
     role_instructions_path: str | None = None,
 ) -> dict[str, str]:
-    """Build lockdown environment variables for ACP containers.
+    """Build lockdown environment variables for Agent Container containers.
 
     These env vars are read by lockdown.sh inside the container to apply
     filesystem restrictions before the agent process starts.

@@ -1,4 +1,4 @@
-"""Tests for ACP container lifecycle manager."""
+"""Tests for Agent Container container lifecycle manager."""
 
 import io
 import tarfile

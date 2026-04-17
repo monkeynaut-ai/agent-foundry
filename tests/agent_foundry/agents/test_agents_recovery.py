@@ -1,4 +1,4 @@
-"""Tests for ACP generic workspace recovery."""
+"""Tests for Agent Container generic workspace recovery."""
 
 from unittest.mock import MagicMock
 

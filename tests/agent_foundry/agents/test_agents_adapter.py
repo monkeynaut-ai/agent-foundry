@@ -1,4 +1,4 @@
-"""Tests for ACP adapter interface."""
+"""Tests for Agent Container adapter interface."""
 
 import pytest
 

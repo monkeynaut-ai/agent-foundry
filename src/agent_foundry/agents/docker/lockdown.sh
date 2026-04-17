@@ -1,5 +1,5 @@
 #!/bin/sh
-# ACP filesystem lockdown — runs as root before user drop.
+# Agent Container filesystem lockdown — runs as root before user drop.
 # Reusable across any agent container image built on Agent Foundry.
 #
 # Env vars:

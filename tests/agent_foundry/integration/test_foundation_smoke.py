@@ -1,4 +1,4 @@
-"""Foundation smoke test — proves base ACP image + ContainerManager +
+"""Foundation smoke test — proves base Agent Container image + ContainerManager +
 host-driven `docker exec` of `claude --json-schema` + stream-json
 parsing + AgentTurnEnvelope validation work end-to-end against real
 Claude Code. If this fails, the orchestration stack cannot run.

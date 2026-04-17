@@ -1,4 +1,4 @@
-"""Unit tests for ACP lockdown environment variable builder."""
+"""Unit tests for Agent Container lockdown environment variable builder."""
 
 from agent_foundry.agents.env import build_lockdown_env
 

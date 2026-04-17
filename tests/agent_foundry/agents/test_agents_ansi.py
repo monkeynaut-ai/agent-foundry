@@ -1,4 +1,4 @@
-"""Tests for ACP ANSI stripping utility."""
+"""Tests for Agent Container ANSI stripping utility."""
 
 from agent_foundry.agents.ansi import strip_ansi
 

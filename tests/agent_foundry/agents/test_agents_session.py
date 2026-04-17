@@ -1,4 +1,4 @@
-"""Tests for ACP session manager."""
+"""Tests for Agent Container session manager."""
 
 import threading
 from unittest.mock import MagicMock

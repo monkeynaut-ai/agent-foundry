@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 ROLE_INSTRUCTIONS_PATH = "/home/claude/role-instructions.md"
 
 # Maximum seconds to wait for the container's Docker health check to
-# report ``healthy`` before raising. The base ACP image's HEALTHCHECK
+# report ``healthy`` before raising. The base Agent Container image's HEALTHCHECK
 # uses ``--start-period=60s``; this timeout exceeds it so we don't race.
 # The entrypoint's setup steps (auth, lockdown, role-instructions
 # append, LSP plugin install, product-init) touch
@@ -240,7 +240,7 @@ class AgentContainerRegistry:
     async def _wait_until_healthy(self, handle: Any) -> None:
         """Poll the container's Docker HEALTHCHECK status until ``healthy``.
 
-        The base ACP image declares a HEALTHCHECK that tests for
+        The base Agent Container image declares a HEALTHCHECK that tests for
         ``/tmp/.container-ready`` — a marker file the entrypoint
         touches as its final setup step. Polling the health state
         (rather than sleeping a fixed interval) avoids races between
