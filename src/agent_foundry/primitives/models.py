@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -99,7 +98,7 @@ class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     file generation, or any non-AI transformation.
     """
 
-    function: Callable[[Any], BaseModel]
+    function: Callable[[I], O]
     """The callable invoked by the compiled node.
 
     Signature is ``(state) -> O``. For access to run-scoped state
@@ -170,7 +169,7 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     # The compiler calls the executor with keyword arguments; the primitive
     # passed in is the same ``AgentAction`` instance (the executor can read
     # ``instructions_provider``, container config, etc. from it).
-    executor: Callable[..., BaseModel]
+    executor: Callable[..., O | Awaitable[O]]
 
     # Container configuration (platform defaults, product may override)
     timeout_seconds: int = Field(default=3600, ge=1)

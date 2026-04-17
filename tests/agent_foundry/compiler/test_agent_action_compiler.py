@@ -156,7 +156,12 @@ class TestAgentActionCompiler:
             name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            executor=_executor,
+            # Deliberately wrong return type to exercise the compiler's
+            # runtime output-type validation. ``executor`` is typed
+            # ``Callable[..., AgentOutput | Awaitable[AgentOutput]]`` so
+            # pyright catches this statically; we silence it here because
+            # the whole point of the test is to verify the runtime guard.
+            executor=_executor,  # type: ignore[arg-type]
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
