@@ -9,6 +9,7 @@ import logging
 import os
 import tarfile
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -40,17 +41,77 @@ class ContainerConfig(BaseModel):
 
 
 @dataclass
-class ContainerHandle:
-    """Handle to a managed Docker container."""
+class ContainerHandleBase:
+    """Abstract base for container handles.
+
+    Declares the attribute surface shared by the production
+    :class:`ContainerHandle` and test fakes. ``_container`` is the
+    Any-typed escape hatch for the underlying docker-SDK container
+    object — production code sets it; fakes leave it ``None``.
+
+    Subclasses may add their own fields (e.g. ``created_at`` on the
+    production handle, or test-observability fields on fakes).
+    """
 
     container_id: str
     status: str = "created"
     workspace_path: str = ""
-    created_at: float = field(default_factory=time.time)
     _container: Any = field(default=None, repr=False)
 
 
-class ContainerManager:
+@dataclass
+class ContainerHandle(ContainerHandleBase):
+    """Handle to a managed Docker container."""
+
+    created_at: float = field(default_factory=time.time)
+
+
+class ContainerManagerBase(ABC):
+    """Abstract base for container lifecycle managers.
+
+    Declares the methods that
+    :class:`~agent_foundry.orchestration.registry.AgentContainerRegistry`
+    and
+    :mod:`~agent_foundry.orchestration.container_executor` depend on.
+    The production :class:`ContainerManager` and the test
+    ``FakeContainerManager`` both subclass this so ``LiveContainer``
+    can type its ``manager`` field concretely (rather than ``Any``)
+    and LSP navigation works through the call surface.
+    """
+
+    @abstractmethod
+    def create_container(
+        self,
+        image: str | None = None,
+        workspace_volume: str = "",
+        constraints: Any = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> ContainerHandleBase: ...
+
+    @abstractmethod
+    def start(self, handle: ContainerHandleBase) -> None: ...
+
+    @abstractmethod
+    def stop(self, handle: ContainerHandleBase, timeout: int = 10) -> None: ...
+
+    @abstractmethod
+    def destroy(self, handle: ContainerHandleBase) -> None: ...
+
+    @abstractmethod
+    def read_file_from_container(self, handle: ContainerHandleBase, path: str) -> str | None: ...
+
+    @abstractmethod
+    def copy_from_container(
+        self, handle: ContainerHandleBase, container_path: str, host_path: Path
+    ) -> bool: ...
+
+    @abstractmethod
+    def write_file_to_container(
+        self, handle: ContainerHandleBase, container_path: str, content: str
+    ) -> None: ...
+
+
+class ContainerManager(ContainerManagerBase):
     """Manages Docker container lifecycle with safety baseline enforcement."""
 
     def __init__(

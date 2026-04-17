@@ -30,8 +30,10 @@ import asyncio
 import json
 import logging
 import re
+import sys
 import uuid
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -42,6 +44,7 @@ from agent_foundry.acp.agent_turn_envelope import (
     PermissionOutcome,
     TurnOutcomeKind,
 )
+from agent_foundry.acp.container import ContainerHandleBase, ContainerManagerBase
 from agent_foundry.acp.schema_tools import to_claude_code_schema
 from agent_foundry.models.markers import (
     FilePathFieldSpec,
@@ -84,6 +87,7 @@ async def _run_claude_turn(
     prompt: str,
     resume_session_id: str | None,
     schema: dict[str, Any],
+    turn_dir: Path | None = None,
 ) -> tuple[dict[str, Any], str | None]:
     """Invoke ``claude`` once inside the live container and return the
     parsed envelope dict plus the captured session id.
@@ -119,6 +123,16 @@ async def _run_claude_turn(
         if resume_session_id:
             cmd.extend(["--resume", resume_session_id])
         exit_code, output = live.handle._container.exec_run(cmd, demux=False, user="claude")
+        # Tee the raw stream to stderr and to a per-turn file so every
+        # claude emission is observable, regardless of outcome. Stdout is
+        # already used by StdinResponder for interactive prompts.
+        sys.stderr.write(output.decode(errors="replace"))
+        sys.stderr.flush()
+        if turn_dir is not None:
+            try:
+                (turn_dir / "stream.jsonl").write_bytes(output)
+            except Exception:
+                logger.warning("failed to persist stream.jsonl")
         if exit_code != 0:
             logs = live.handle._container.logs(tail=80).decode(errors="replace")
             raise RuntimeError(
@@ -208,15 +222,15 @@ def _snapshot_container_artifacts(
     from agent_foundry.orchestration.artifacts import agent_log_path
 
     # --- container.log ---
+    # ``handle._container`` is the docker-SDK Container object (typed
+    # Any — docker-py has no stubs). Fakes leave it ``None``, in which
+    # case the ``.logs`` call raises and the except-warn below fires.
     try:
-        inner = getattr(live.handle, "_container", None)
-        logs_fn = getattr(inner, "logs", None)
-        if logs_fn is not None:
-            raw = logs_fn(stdout=True, stderr=True, timestamps=False)
-            if isinstance(raw, bytes):
-                log_path = agent_log_path(run_dir, agent_name)
-                log_path.parent.mkdir(parents=True, exist_ok=True)
-                log_path.write_bytes(raw)
+        raw = live.handle._container.logs(stdout=True, stderr=True, timestamps=False)
+        if isinstance(raw, bytes):
+            log_path = agent_log_path(run_dir, agent_name)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_bytes(raw)
     except Exception as exc:
         logger.warning(
             "failed to snapshot container.log for agent %s: %s",
@@ -226,14 +240,13 @@ def _snapshot_container_artifacts(
 
     # --- CLAUDE.md ---
     try:
-        manager = live.manager
-        read_fn = getattr(manager, "read_file_from_container", None)
-        if read_fn is not None:
-            content = read_fn(live.handle, "/home/claude/.claude/CLAUDE.md")
-            if isinstance(content, str):
-                agent_dir = run_dir / agent_name
-                agent_dir.mkdir(parents=True, exist_ok=True)
-                (agent_dir / "CLAUDE.md").write_text(content, encoding="utf-8")
+        content = live.manager.read_file_from_container(
+            live.handle, "/home/claude/.claude/CLAUDE.md"
+        )
+        if isinstance(content, str):
+            agent_dir = run_dir / agent_name
+            agent_dir.mkdir(parents=True, exist_ok=True)
+            (agent_dir / "CLAUDE.md").write_text(content, encoding="utf-8")
     except Exception as exc:
         logger.warning(
             "failed to snapshot CLAUDE.md for agent %s: %s",
@@ -243,8 +256,8 @@ def _snapshot_container_artifacts(
 
 
 def _verify_paths(
-    manager: Any,
-    handle: Any,
+    manager: ContainerManagerBase,
+    handle: ContainerHandleBase,
     payload_dict: dict[str, Any],
     specs: list[FilePathFieldSpec],
 ) -> list[str]:
@@ -306,13 +319,13 @@ async def _snapshot_files(
                 logger.warning(
                     "failed to snapshot %s from container %s",
                     declared_path,
-                    getattr(live.handle, "container_id", "<unknown>"),
+                    live.handle.container_id,
                 )
         except Exception as exc:
             logger.warning(
                 "error snapshotting %s from container %s: %s",
                 declared_path,
-                getattr(live.handle, "container_id", "<unknown>"),
+                live.handle.container_id,
                 exc,
             )
 
@@ -364,12 +377,10 @@ async def run_agent_in_container(
         agent_name=agent_name,
     )
 
-    # Invocation number: best-effort counter stamped on the live container.
-    invocation = (getattr(live, "_invocation_count", 0) or 0) + 1
-    import contextlib
-
-    with contextlib.suppress(Exception):
-        live._invocation_count = invocation  # type: ignore[attr-defined]
+    # Invocation number: per-container counter stamped on the live
+    # container for lifecycle tagging.
+    invocation = live._invocation_count + 1
+    live._invocation_count = invocation
 
     lifecycle.append(
         LifecycleEvent.AGENT_INVOCATION_STARTED,
@@ -423,6 +434,7 @@ async def run_agent_in_container(
                 prompt=current_prompt,
                 resume_session_id=current_resume,
                 schema=schema,
+                turn_dir=turn_dir,
             )
 
             # Persist the raw envelope payload as soon as we have it,

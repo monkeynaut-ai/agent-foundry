@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agent_foundry.acp.container import ContainerHandleBase, ContainerManagerBase
 from agent_foundry.responders.models import (
     ResponderContext,
     ResponderRequest,
@@ -33,16 +34,13 @@ from agent_foundry.responders.protocol import Responder
 
 
 @dataclass
-class FakeContainerHandle:
-    container_id: str
-    workspace_path: str = "/workspace"
-    status: str = "created"
+class FakeContainerHandle(ContainerHandleBase):
     files: dict[str, str] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
     exec_log: list[str] = field(default_factory=list)
 
 
-class FakeContainerManager:
+class FakeContainerManager(ContainerManagerBase):
     """Minimal container manager fake.
 
     Scripting surface:
@@ -79,6 +77,7 @@ class FakeContainerManager:
         self._next_id += 1
         h = FakeContainerHandle(
             container_id=f"fake-{self._next_id}",
+            workspace_path="/workspace",
             env=dict(extra_env or {}),
         )
         self.handles.append(h)
@@ -313,6 +312,7 @@ class FakeRunTurn:
         prompt: str,
         resume_session_id: str | None,
         schema: dict[str, Any],
+        **_kwargs: Any,
     ) -> tuple[dict[str, Any], str | None]:
         self.calls.append({"prompt": prompt, "resume": resume_session_id})
         assert self._turn_script, (

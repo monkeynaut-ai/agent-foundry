@@ -20,6 +20,7 @@ from agent_foundry.orchestration.env import build_container_env
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 
 if TYPE_CHECKING:
+    from agent_foundry.acp.container import ContainerHandleBase, ContainerManagerBase
     from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
     from agent_foundry.primitives.models import AgentAction
 
@@ -46,12 +47,16 @@ class LiveContainer:
     populated by :meth:`AgentContainerRegistry.get_or_create`.
     """
 
-    handle: Any
-    manager: Any
+    handle: ContainerHandleBase
+    manager: ContainerManagerBase
     session_id: str | None = None
     primitive_id: int | None = None
     agent_name: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # Per-container invocation counter. Incremented by the executor on
+    # each ``run_agent_in_container`` call against this live container
+    # so lifecycle events can tag which invocation they belong to.
+    _invocation_count: int = 0
 
 
 class AgentContainerRegistry:
@@ -74,7 +79,7 @@ class AgentContainerRegistry:
         workspace_volume: str,
         base_image_tag: str,
         docker_client_factory: Callable[[], Any] | None = None,
-        manager: Any | None = None,
+        manager: ContainerManagerBase | None = None,
         oauth_token: str | None = None,
         inject_instructions: bool = False,
         health_wait_timeout_seconds: float = _DEFAULT_HEALTH_WAIT_TIMEOUT_SECONDS,
@@ -185,7 +190,7 @@ class AgentContainerRegistry:
             try:
                 await asyncio.to_thread(live.manager.destroy, live.handle)
             except Exception as exc:
-                cid = getattr(live.handle, "container_id", "<unknown>")
+                cid = live.handle.container_id
                 logger.warning(
                     "destroy failed for %s (%s): %s",
                     live.agent_name,
@@ -197,7 +202,7 @@ class AgentContainerRegistry:
     # Internals
     # ------------------------------------------------------------------
 
-    def _build_manager(self) -> Any:
+    def _build_manager(self) -> ContainerManagerBase:
         """Construct a :class:`ContainerManager` from the injected factory.
 
         ``docker`` is imported lazily in the default-factory fallback so
@@ -247,19 +252,15 @@ class AgentContainerRegistry:
         Raises ``RuntimeError`` when the container reports ``unhealthy``
         or when the timeout elapses without reaching ``healthy``.
         """
-        inner = getattr(handle, "_container", None)
+        inner = handle._container
         if inner is None:
-            return
-
-        reload_fn = getattr(inner, "reload", None)
-        if reload_fn is None:
             return
 
         deadline = time.monotonic() + self._health_wait_timeout_seconds
         last_status: str | None = None
         while time.monotonic() < deadline:
-            await asyncio.to_thread(reload_fn)
-            attrs = getattr(inner, "attrs", None) or {}
+            await asyncio.to_thread(inner.reload)
+            attrs = inner.attrs or {}
             health = attrs.get("State", {}).get("Health", {}) or {}
             last_status = health.get("Status")
             if last_status == "healthy":
@@ -274,7 +275,7 @@ class AgentContainerRegistry:
             # ``starting`` or no HEALTHCHECK configured — keep polling.
             # If the image has no HEALTHCHECK, ``health`` is empty and
             # we'd loop forever; fall through to status-based readiness.
-            if not health and getattr(inner, "status", None) == "running":
+            if not health and inner.status == "running":
                 return
             await asyncio.sleep(_HEALTH_POLL_INTERVAL_SECONDS)
 
@@ -291,12 +292,10 @@ class AgentContainerRegistry:
 
     def _format_health_failure(self, inner: Any, *, reason: str) -> str:
         logs = ""
-        logs_fn = getattr(inner, "logs", None)
-        if logs_fn is not None:
-            try:
-                raw = logs_fn(tail=80)
-                logs = raw.decode(errors="replace") if isinstance(raw, bytes) else str(raw)
-            except Exception:
-                logs = "<unable to read container logs>"
+        try:
+            raw = inner.logs(tail=80)
+            logs = raw.decode(errors="replace") if isinstance(raw, bytes) else str(raw)
+        except Exception:
+            logs = "<unable to read container logs>"
         failed_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         return f"{reason} (checked_at={failed_at}); logs=\n{logs}"
