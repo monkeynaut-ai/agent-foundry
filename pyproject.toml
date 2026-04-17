@@ -4,7 +4,7 @@ build-backend = "pdm.backend"
 
 [project]
 name = "agent-foundry"
-version = "0.4.0"
+version = "0.5.0"
 description = "Default template for PDM package"
 authors = [
     {name = "Mark Norman", email = "mark@marknorman.com"},
@@ -29,10 +29,12 @@ license = {text = "MIT"}
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-m 'not benchmark' -n 8"
+asyncio_mode = "strict"
 markers = [
     "benchmark: performance benchmark tests (excluded from normal runs)",
     "integration: integration tests (require Docker, external services)",
 ]
+
 
 
 
@@ -70,6 +72,7 @@ dev = [
     "pyright>=1.1.408",
     "pre-commit>=4.5.1",
     "pytest-xdist>=3.8.0",
+    "pytest-asyncio>=1.3.0",
 ]
 
 [tool.ruff]

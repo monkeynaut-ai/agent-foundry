@@ -14,13 +14,13 @@ from agent_foundry.primitives.errors import (
 from agent_foundry.primitives.models import (
     AgentAction,
     Conditional,
+    ContainerReusePolicy,
     FunctionAction,
     GateAction,
     Loop,
     Primitive,
     Retry,
     Sequence,
-    StructuredOutputChannel,
 )
 from agent_foundry.primitives.validators import register_validator, validate_primitive
 
@@ -526,10 +526,11 @@ def _stub_executor_for_validator(*, primitive, prompt) -> _AgentValOutput:
 def _make_agent_action(input_type, output_type):
     """Build an AgentAction with all required fields populated."""
     return AgentAction[input_type, output_type](
+        name="test-agent",
         prompt_builder=_stub_prompt_builder_for_validator,
         instructions_provider=_stub_instructions_for_validator,
-        response_channel=StructuredOutputChannel(),
         executor=_stub_executor_for_validator,
+        reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )
 
 

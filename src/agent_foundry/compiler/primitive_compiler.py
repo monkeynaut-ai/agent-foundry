@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, TypedDict, cast
 
+from langgraph._internal._runnable import RunnableCallable
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ValidationError
 
@@ -116,8 +117,13 @@ def _compile_node(
 # -- Entry points --
 
 
-def compile_primitive(plan: PrimitivePlan) -> Any:
-    """Compile a PrimitivePlan into an executable LangGraph."""
+def _compile_primitive(plan: PrimitivePlan) -> Any:
+    """Internal: build the executable graph for a plan.
+
+    Not part of the public API — products use :func:`run_primitive_plan`
+    (async) or :func:`run_primitive_plan_sync`. The returned object is
+    opaque; calling methods on it directly is unsupported.
+    """
     plan.validate()
     root = plan.root
     root_in, root_out = get_type_args(root)
@@ -139,20 +145,6 @@ def compile_primitive(plan: PrimitivePlan) -> Any:
     return graph.compile(**compile_kwargs)
 
 
-def run_primitive_plan(
-    plan: PrimitivePlan,
-    initial_state: BaseModel | None = None,
-    config: dict[str, Any] | None = None,
-) -> BaseModel:
-    """Compile and execute a PrimitivePlan with typed input/output."""
-    _, root_out = get_type_args(plan.root)
-    graph = compile_primitive(plan)
-
-    input_dict = initial_state.model_dump() if initial_state is not None else {}
-    result_dict = graph.invoke(input_dict, config=config or {})
-    return root_out.model_validate(result_dict)
-
-
 # -- Per-type compilers --
 
 
@@ -163,16 +155,52 @@ def _compile_function_action(
 
     node_id = prefix
     input_type, _ = get_type_args(action)
-    fn = action.function
-    takes_input = len(inspect.signature(fn).parameters) > 0
+    # ``FunctionAction.function`` is annotated ``(state) -> O``. Product
+    # code that needs run-scoped state (emit domain events, read
+    # artifacts_dir, check cancellation) imports accessors from
+    # ``agent_foundry.runtime``. 0-arg callables remain supported
+    # for trivial / side-effect-only steps.
+    fn = cast(Callable[..., BaseModel], action.function)
+    arity = len(inspect.signature(fn).parameters)
 
     def node_fn(state: dict[str, Any]) -> dict[str, Any]:
-        if takes_input:
-            _validate_boundary(state, input_type, node_id)
-            model_input = input_type.model_validate(state)
-            result = fn(model_input)
-        else:
-            result = fn()
+        # Resolve the current ``AgentRunContext`` once — we need it to
+        # emit ``FUNCTION_ACTION_STARTED`` / ``_COMPLETED`` / ``_FAILED``
+        # lifecycle events regardless of callable arity. When no run is
+        # in progress (legacy ``run_primitive_plan_sync`` + unit tests
+        # that compile nodes without a run context), skip event emission
+        # so the compiler remains usable outside the async run path.
+        from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+        from agent_foundry.orchestration.run_context import (
+            current_run_context,
+        )
+
+        ctx_opt = current_run_context.get()
+        if ctx_opt is not None:
+            ctx_opt.lifecycle_writer.append(
+                LifecycleEvent.FUNCTION_ACTION_STARTED,
+                node_id=node_id,
+            )
+        try:
+            if arity == 0:
+                result = fn()
+            else:
+                _validate_boundary(state, input_type, node_id)
+                model_input = input_type.model_validate(state)
+                result = fn(model_input)
+        except Exception as exc:
+            if ctx_opt is not None:
+                ctx_opt.lifecycle_writer.append(
+                    LifecycleEvent.FUNCTION_ACTION_FAILED,
+                    node_id=node_id,
+                    reason=str(exc),
+                )
+            raise
+        if ctx_opt is not None:
+            ctx_opt.lifecycle_writer.append(
+                LifecycleEvent.FUNCTION_ACTION_COMPLETED,
+                node_id=node_id,
+            )
         return result.model_dump()
 
     graph.add_node(node_id, node_fn)
@@ -230,7 +258,12 @@ def _compile_sequence(
         result = compiled_sub.invoke(scoped_input)
         return _scope_out(result, seq_out)
 
-    graph.add_node(node_id, seq_node)
+    async def seq_node_async(state: dict[str, Any]) -> dict[str, Any]:
+        scoped_input = _scope_in(state, seq_in)
+        result = await compiled_sub.ainvoke(scoped_input)
+        return _scope_out(result, seq_out)
+
+    graph.add_node(node_id, RunnableCallable(seq_node, seq_node_async, name=node_id, trace=False))
     return (node_id, node_id)
 
 
@@ -303,7 +336,11 @@ def _compile_conditional(
         result = compiled_sub.invoke(dict(state))
         return _scope_out(result, cond_out)
 
-    graph.add_node(node_id, cond_node)
+    async def cond_node_async(state: dict[str, Any]) -> dict[str, Any]:
+        result = await compiled_sub.ainvoke(dict(state))
+        return _scope_out(result, cond_out)
+
+    graph.add_node(node_id, RunnableCallable(cond_node, cond_node_async, name=node_id, trace=False))
     return (node_id, node_id)
 
 
@@ -357,7 +394,22 @@ def _compile_loop(
 
         return _scope_out(current_state, loop_out)
 
-    graph.add_node(node_id, loop_node)
+    async def loop_node_async(state: dict[str, Any]) -> dict[str, Any]:
+        model = loop_in.model_validate(state)
+        items = over_fn(model)
+        current_state = dict(state)
+
+        for i, item in enumerate(items):
+            if i >= max_iter:
+                break
+            current_state[item_key] = item
+            result = await compiled_body.ainvoke(dict(current_state))
+            updates = _scope_out(result, body_out)
+            current_state.update(updates)
+
+        return _scope_out(current_state, loop_out)
+
+    graph.add_node(node_id, RunnableCallable(loop_node, loop_node_async, name=node_id, trace=False))
     return (node_id, node_id)
 
 
@@ -405,7 +457,19 @@ def _compile_retry(
                 break
         return _scope_out(current_state, retry_out)
 
-    graph.add_node(node_id, retry_node)
+    async def retry_node_async(state: dict[str, Any]) -> dict[str, Any]:
+        current_state = dict(state)
+        for _ in range(max_attempts):
+            result = await compiled_body.ainvoke(dict(current_state))
+            current_state.update(_scope_out(result, body_out))
+            model = retry_in.model_validate(current_state)
+            if until_fn(model):
+                break
+        return _scope_out(current_state, retry_out)
+
+    graph.add_node(
+        node_id, RunnableCallable(retry_node, retry_node_async, name=node_id, trace=False)
+    )
     return (node_id, node_id)
 
 
@@ -442,23 +506,61 @@ def _compile_agent_action(
     prompt_builder = action.prompt_builder
     executor = action.executor
 
-    def node_fn(state: dict[str, Any]) -> dict[str, Any]:
-        _validate_boundary(state, input_type, node_id)
-        model_input = input_type.model_validate(state)
-        prompt = prompt_builder(model_input)
+    import inspect as _inspect
 
-        result = executor(primitive=action, prompt=prompt)
+    # Detect async executors at compile time so we can expose the node
+    # to LangGraph as a coroutine function. ``graph.ainvoke`` awaits
+    # async node callables and runs sync ones via ``asyncio.to_thread``
+    # — giving both sync and async executors correct semantics without
+    # a blanket coroutine-wrap on the sync path.
+    executor_is_async = _inspect.iscoroutinefunction(executor)
 
+    def _validate_and_return(result: Any) -> dict[str, Any]:
         if not isinstance(result, output_type):
             raise PrimitiveCompilationError(
                 f"AgentAction {node_id}: executor returned "
                 f"{type(result).__name__}, expected {output_type.__name__}",
                 primitive_type=node_id,
             )
-
         return result.model_dump()
 
-    graph.add_node(node_id, node_fn)
+    def _prepare(state: dict[str, Any]) -> tuple[Any, str, Any]:
+        _validate_boundary(state, input_type, node_id)
+        model_input = input_type.model_validate(state)
+        prompt = prompt_builder(model_input)
+
+        # Resolve ContextVar at invocation time. Deferred import avoids
+        # any risk of an orchestration -> compiler cycle.
+        from agent_foundry.orchestration.run_context import (
+            require_current_run_context,
+        )
+
+        run_ctx = require_current_run_context()
+        return action, prompt, run_ctx
+
+    if executor_is_async:
+        async_executor = cast(
+            Callable[..., Any], executor
+        )  # typed Callable[..., BaseModel] — pyright can't see the coroutine
+
+        async def node_fn_async(state: dict[str, Any]) -> dict[str, Any]:
+            primitive, prompt, run_ctx = _prepare(state)
+            result = await async_executor(primitive=primitive, prompt=prompt, run_ctx=run_ctx)
+            return _validate_and_return(result)
+
+        # No sync function — attempting ``graph.invoke`` on a plan with
+        # an async AgentAction raises a clear TypeError from LangGraph
+        # pointing callers at ``ainvoke`` / ``run_primitive_plan``.
+        graph.add_node(node_id, RunnableCallable(None, node_fn_async, name=node_id, trace=False))
+    else:
+
+        def node_fn_sync(state: dict[str, Any]) -> dict[str, Any]:
+            primitive, prompt, run_ctx = _prepare(state)
+            result = executor(primitive=primitive, prompt=prompt, run_ctx=run_ctx)
+            return _validate_and_return(result)
+
+        graph.add_node(node_id, node_fn_sync)
+
     return (node_id, node_id)
 
 

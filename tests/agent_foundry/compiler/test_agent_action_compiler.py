@@ -7,11 +7,11 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import compile_primitive
+from agent_foundry.compiler.primitive_compiler import _compile_primitive
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     AgentAction,
-    StructuredOutputChannel,
+    ContainerReusePolicy,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
 
@@ -44,6 +44,40 @@ def reset_recorded_prompts():
     _prompts_built.clear()
 
 
+@pytest.fixture(autouse=True)
+def _default_run_context(tmp_path):
+    """Provide a default ``AgentRunContext`` for compiler tests.
+
+    The compiled node resolves ``current_run_context`` at invocation
+    time, so every ``graph.invoke`` in this file needs an active
+    context. Tests that care about the run_ctx value set their own via
+    ``current_run_context.set(...)`` — that inner ``set``
+    shadows this fixture's default until ``reset``.
+    """
+    import asyncio
+
+    from agent_foundry.orchestration.run_context import (
+        AgentRunContext,
+        NoOpLifecycleWriter,
+        current_run_context,
+    )
+
+    ctx = AgentRunContext(
+        run_id="compiler-test-default",
+        artifacts_dir=tmp_path,
+        container_registry=object(),
+        responder_provider=object(),
+        lifecycle_writer=NoOpLifecycleWriter(),
+        cancel_event=asyncio.Event(),
+        env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+    )
+    token = current_run_context.set(ctx)
+    try:
+        yield
+    finally:
+        current_run_context.reset(token)
+
+
 class TestAgentActionCompiler:
     """The AgentAction compiler node mirrors FunctionAction behavior.
 
@@ -55,19 +89,20 @@ class TestAgentActionCompiler:
     def test_executor_called_with_primitive_and_prompt(self):
         captured: dict[str, Any] = {}
 
-        def _executor(*, primitive, prompt):
+        def _executor(*, primitive, prompt, run_ctx):
             captured["primitive"] = primitive
             captured["prompt"] = prompt
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
 
         graph.invoke({"query": "hello"})
 
@@ -76,33 +111,35 @@ class TestAgentActionCompiler:
         assert captured["primitive"] is action
 
     def test_missing_required_input_field_raises(self):
-        def _executor(*, primitive, prompt):
+        def _executor(*, primitive, prompt, run_ctx):
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
 
         with pytest.raises(PrimitiveCompilationError, match="Boundary validation failed"):
             graph.invoke({})  # missing `query`
 
     def test_executor_output_merged_into_state(self):
-        def _executor(*, primitive, prompt):
+        def _executor(*, primitive, prompt, run_ctx):
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
 
         result = graph.invoke({"query": "hello"})
 
@@ -112,72 +149,43 @@ class TestAgentActionCompiler:
         class WrongType(BaseModel):
             other: str
 
-        def _executor(*, primitive, prompt):
+        def _executor(*, primitive, prompt, run_ctx):
             return WrongType(other="oops")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
 
         with pytest.raises(PrimitiveCompilationError, match="AgentOutput"):
             graph.invoke({"query": "hello"})
-
-    def test_compiler_is_agnostic_to_response_channel(self):
-        """The compiler must not branch on response_channel — that's executor-internal.
-
-        Confirm by compiling an AgentAction that uses FileCollectionChannel
-        and verifying it behaves identically to the StructuredOutputChannel
-        cases above: executor is called, result is merged into state.
-        """
-        from agent_foundry.primitives.models import FileCollectionChannel
-
-        def _executor(*, primitive, prompt):
-            return AgentOutput(answer="42")
-
-        def _builder(files: dict[str, str]) -> AgentOutput:
-            return AgentOutput(answer=files.get("/workspace/out.md", ""))
-
-        action = AgentAction[AgentInput, AgentOutput](
-            prompt_builder=_record_prompt_builder,
-            instructions_provider=_stub_instructions,
-            response_channel=FileCollectionChannel(
-                files=["/workspace/out.md"],
-                builder=_builder,
-            ),
-            executor=_executor,
-        )
-        plan = PrimitivePlan(root=action)
-        graph = compile_primitive(plan)
-
-        result = graph.invoke({"query": "hello"})
-
-        assert result["answer"] == "42"
 
     def test_compiles_with_empty_lockdown_dirs(self):
         """Empty visible_dirs/writable_dirs are a valid configuration.
 
         Safe-by-default invariant: empty dirs means no access, not
-        no-compilation. Plan 2 implementers must not add a guard that
-        rejects empty dirs.
+        no-compilation. Implementers must not add a guard that rejects
+        empty dirs.
         """
 
-        def _executor(*, primitive, prompt):
+        def _executor(*, primitive, prompt, run_ctx):
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             # visible_dirs and writable_dirs default to empty.
         )
         plan = PrimitivePlan(root=action)
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
 
         result = graph.invoke({"query": "hello"})
 
@@ -197,17 +205,18 @@ class TestAgentActionCompiler_ExceptionPropagation:
     """Executor exceptions propagate through the compiled node."""
 
     def test_executor_exception_propagates(self):
-        def _executor(*, primitive, prompt):
+        def _executor(*, primitive, prompt, run_ctx):
             raise _ExecutorFailure("agent failed")
 
         action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
 
         with pytest.raises(_ExecutorFailure, match="agent failed"):
             graph.invoke({"query": "hello"})
@@ -243,14 +252,15 @@ class TestAgentActionCompiler_Composition:
         class AgentStepOutput(BaseModel):
             answer: str
 
-        def _executor(*, primitive, prompt):
+        def _executor(*, primitive, prompt, run_ctx):
             return AgentStepOutput(answer="42")
 
         agent_step = AgentAction[AgentStepInput, AgentStepOutput](
+            name="test-agent",
             prompt_builder=lambda s: f"Q: {s.query}",
             instructions_provider=_stub_instructions,
-            response_channel=StructuredOutputChannel(),
             executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         annotate_step = FunctionAction[SeqMid, SeqOutput](
             function=lambda s: SeqOutput(
@@ -261,10 +271,119 @@ class TestAgentActionCompiler_Composition:
         )
         seq = Sequence[SeqInput, SeqOutput](steps=[agent_step, annotate_step])
         plan = PrimitivePlan(root=seq)
-        graph = compile_primitive(plan)
+        graph = _compile_primitive(plan)
 
         result = graph.invoke({"query": "hello"})
 
         assert result["query"] == "hello"
         assert result["answer"] == "42"
         assert result["annotated"] == "[42]"
+
+
+# ======================================================================
+# run_ctx threading through _compile_agent_action
+# ======================================================================
+
+
+class TestAgentActionCompiler_RunCtxThreading:
+    """The AgentAction compiled node must call
+    ``action.executor(primitive=action, prompt=<built>, run_ctx=<ctx>)``,
+    where ``run_ctx`` is pulled from the ``current_run_context``
+    ContextVar at invocation time (not capture/compile time).
+    """
+
+    def test_executor_receives_run_ctx_kwarg_from_context_var(self, tmp_path):
+        import asyncio
+
+        from agent_foundry.orchestration.run_context import (
+            AgentRunContext,
+            NoOpLifecycleWriter,
+            current_run_context,
+        )
+
+        captured: dict[str, Any] = {}
+
+        def _executor(*, primitive, prompt, run_ctx):
+            captured["primitive"] = primitive
+            captured["prompt"] = prompt
+            captured["run_ctx"] = run_ctx
+            return AgentOutput(answer="ok")
+
+        action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
+            prompt_builder=_record_prompt_builder,
+            instructions_provider=_stub_instructions,
+            executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+        )
+        plan = PrimitivePlan(root=action)
+        graph = _compile_primitive(plan)
+
+        run_ctx = AgentRunContext(
+            run_id="run-g1-agent",
+            artifacts_dir=tmp_path,
+            container_registry=object(),
+            responder_provider=object(),
+            lifecycle_writer=NoOpLifecycleWriter(),
+            cancel_event=asyncio.Event(),
+            env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+        )
+
+        token = current_run_context.set(run_ctx)
+        try:
+            result = graph.invoke({"query": "hello"})
+        finally:
+            current_run_context.reset(token)
+
+        assert captured["primitive"] is action
+        assert captured["prompt"] == "Q: hello"
+        assert captured["run_ctx"] is run_ctx
+        assert result["answer"] == "ok"
+
+    def test_executor_receives_latest_context_var_value_at_invocation(self, tmp_path):
+        """The compiled node must resolve ``current_run_context`` at
+        invocation time, not at compile time — so switching the
+        ContextVar between compile and invoke is visible to the executor.
+        """
+        import asyncio
+
+        from agent_foundry.orchestration.run_context import (
+            AgentRunContext,
+            NoOpLifecycleWriter,
+            current_run_context,
+        )
+
+        captured: dict[str, Any] = {}
+
+        def _executor(*, primitive, prompt, run_ctx):
+            captured["run_ctx"] = run_ctx
+            return AgentOutput(answer="ok")
+
+        action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
+            prompt_builder=_record_prompt_builder,
+            instructions_provider=_stub_instructions,
+            executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+        )
+        plan = PrimitivePlan(root=action)
+        # Compile first — no ContextVar set at this point.
+        graph = _compile_primitive(plan)
+
+        run_ctx = AgentRunContext(
+            run_id="run-g1-late-bind",
+            artifacts_dir=tmp_path,
+            container_registry=object(),
+            responder_provider=object(),
+            lifecycle_writer=NoOpLifecycleWriter(),
+            cancel_event=asyncio.Event(),
+            env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+        )
+
+        token = current_run_context.set(run_ctx)
+        try:
+            graph.invoke({"query": "hello"})
+        finally:
+            current_run_context.reset(token)
+
+        assert captured["run_ctx"] is run_ctx
