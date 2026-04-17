@@ -539,13 +539,10 @@ def _compile_agent_action(
         return action, prompt, run_ctx
 
     if executor_is_async:
-        async_executor = cast(
-            Callable[..., Any], executor
-        )  # typed Callable[..., BaseModel] — pyright can't see the coroutine
 
         async def node_fn_async(state: dict[str, Any]) -> dict[str, Any]:
             primitive, prompt, run_ctx = _prepare(state)
-            result = await async_executor(primitive=primitive, prompt=prompt, run_ctx=run_ctx)
+            result = await executor(primitive=primitive, prompt=prompt, run_ctx=run_ctx)
             return _validate_and_return(result)
 
         # No sync function — attempting ``graph.invoke`` on a plan with

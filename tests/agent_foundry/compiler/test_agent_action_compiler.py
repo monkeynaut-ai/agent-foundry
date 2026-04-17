@@ -156,7 +156,12 @@ class TestAgentActionCompiler:
             name="test-agent",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
-            executor=_executor,
+            # Deliberately wrong return type to exercise the compiler's
+            # runtime output-type validation. ``executor`` is typed
+            # ``Callable[..., AgentOutput | Awaitable[AgentOutput]]`` so
+            # pyright catches this statically; we silence it here because
+            # the whole point of the test is to verify the runtime guard.
+            executor=_executor,  # type: ignore[arg-type]
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
@@ -341,9 +346,11 @@ class TestAgentActionCompiler_RunCtxThreading:
         assert result["answer"] == "ok"
 
     def test_executor_receives_latest_context_var_value_at_invocation(self, tmp_path):
-        """The compiled node must resolve ``current_run_context`` at
-        invocation time, not at compile time — so switching the
-        ContextVar between compile and invoke is visible to the executor.
+        """Invoking the same compiled graph twice with different
+        ``current_run_context`` values must cause each invocation's
+        executor to see the value current at that invocation — proving
+        the compiled node re-resolves the ContextVar per invocation
+        rather than snapshotting it at compile time or on first use.
         """
         import asyncio
 
@@ -353,10 +360,10 @@ class TestAgentActionCompiler_RunCtxThreading:
             current_run_context,
         )
 
-        captured: dict[str, Any] = {}
+        observed: list[AgentRunContext] = []
 
         def _executor(*, primitive, prompt, run_ctx):
-            captured["run_ctx"] = run_ctx
+            observed.append(run_ctx)
             return AgentOutput(answer="ok")
 
         action = AgentAction[AgentInput, AgentOutput](
@@ -367,11 +374,19 @@ class TestAgentActionCompiler_RunCtxThreading:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        # Compile first — no ContextVar set at this point.
         graph = _compile_primitive(plan)
 
-        run_ctx = AgentRunContext(
-            run_id="run-g1-late-bind",
+        run_ctx_a = AgentRunContext(
+            run_id="run-g1-late-bind-a",
+            artifacts_dir=tmp_path,
+            container_registry=object(),
+            responder_provider=object(),
+            lifecycle_writer=NoOpLifecycleWriter(),
+            cancel_event=asyncio.Event(),
+            env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+        )
+        run_ctx_b = AgentRunContext(
+            run_id="run-g1-late-bind-b",
             artifacts_dir=tmp_path,
             container_registry=object(),
             responder_provider=object(),
@@ -380,10 +395,18 @@ class TestAgentActionCompiler_RunCtxThreading:
             env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
         )
 
-        token = current_run_context.set(run_ctx)
+        token_a = current_run_context.set(run_ctx_a)
         try:
             graph.invoke({"query": "hello"})
         finally:
-            current_run_context.reset(token)
+            current_run_context.reset(token_a)
 
-        assert captured["run_ctx"] is run_ctx
+        token_b = current_run_context.set(run_ctx_b)
+        try:
+            graph.invoke({"query": "hello"})
+        finally:
+            current_run_context.reset(token_b)
+
+        assert len(observed) == 2
+        assert observed[0] is run_ctx_a
+        assert observed[1] is run_ctx_b
