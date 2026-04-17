@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from agent_foundry.acp.protocol import MarkerMapping
+from agent_foundry.agents.protocol import MarkerMapping
 
 
 class RoleStack(BaseModel):

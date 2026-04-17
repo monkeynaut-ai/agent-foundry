@@ -25,9 +25,9 @@ def build_lockdown_env(
     """
     env: dict[str, str] = {}
     if hidden_dirs:
-        env["ACP_HIDDEN_DIRS"] = ",".join(hidden_dirs)
+        env["WORKSPACE_HIDDEN_DIRS"] = ",".join(hidden_dirs)
     if readonly_dirs:
-        env["ACP_READONLY_DIRS"] = ",".join(readonly_dirs)
+        env["WORKSPACE_READONLY_DIRS"] = ",".join(readonly_dirs)
     if role_instructions_path:
         env["ACP_ROLE_INSTRUCTIONS_PATH"] = role_instructions_path
     return env

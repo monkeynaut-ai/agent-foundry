@@ -1,6 +1,6 @@
 """Tests for ACP ANSI stripping utility."""
 
-from agent_foundry.acp.ansi import strip_ansi
+from agent_foundry.agents.ansi import strip_ansi
 
 
 class TestStripAnsi:

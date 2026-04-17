@@ -11,7 +11,7 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel
 
-from agent_foundry.acp.schema_tools import to_claude_code_schema
+from agent_foundry.agents.schema_tools import to_claude_code_schema
 from agent_foundry.models.markers import AgentFilePath
 
 

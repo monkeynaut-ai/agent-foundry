@@ -6,13 +6,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agent_foundry.acp.container import (
+from agent_foundry.agents.errors import ContainerCreationError, ContainerLifecycleError
+from agent_foundry.agents.lifecycle import (
     DEFAULT_ENV_ALLOWLIST,
     ContainerConfig,
     ContainerHandle,
     ContainerManager,
 )
-from agent_foundry.acp.errors import ContainerCreationError, ContainerLifecycleError
 
 
 @pytest.fixture

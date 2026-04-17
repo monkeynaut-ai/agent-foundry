@@ -9,7 +9,7 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
-from agent_foundry.acp.errors import ProtocolError
+from agent_foundry.agents.errors import ProtocolError
 
 # ── Agent-to-orchestrator messages ──
 

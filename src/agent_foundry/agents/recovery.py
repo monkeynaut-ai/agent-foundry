@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from agent_foundry.acp.container import ContainerHandle, ContainerManager
+from agent_foundry.agents.lifecycle import ContainerHandle, ContainerManager
 
 
 class WorkspaceSnapshot(BaseModel):

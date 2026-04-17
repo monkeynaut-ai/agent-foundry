@@ -49,7 +49,7 @@ package-dir = "src"
 post_install.cmd = "pre-commit install"
 demo.cmd = "python -m agent_foundry.demo.cli"
 demo.env = {PYTHONPATH = "src"}
-docker-base.cmd = "docker build -t acp-cc-worker:latest -f src/agent_foundry/acp/docker/Dockerfile.base ."
+docker-base.cmd = "docker build -t agent-worker:latest -f src/agent_foundry/agents/docker/Dockerfile.base ."
 test-unit.cmd = "pytest tests/ -m 'not integration and not benchmark'"
 test-unit.env = {PYTHONPATH = "src"}
 test-integration.cmd = "pytest tests/ -m 'integration'"

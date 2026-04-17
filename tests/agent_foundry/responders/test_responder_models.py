@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from agent_foundry.acp.agent_turn_envelope import (
+from agent_foundry.agents.agent_turn_envelope import (
     ClarificationOutcome,
     PermissionOutcome,
 )

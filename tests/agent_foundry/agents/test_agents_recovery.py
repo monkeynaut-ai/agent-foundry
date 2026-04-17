@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from agent_foundry.acp.recovery import WorkspaceSnapshot, capture_workspace_state
+from agent_foundry.agents.recovery import WorkspaceSnapshot, capture_workspace_state
 
 
 class TestWorkspaceSnapshot:

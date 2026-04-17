@@ -17,7 +17,7 @@ There are three layers:
 
 ### 1. Base image
 
-Agent Foundry ships a base Docker image (`acp-cc-worker`) that includes the Claude Code CLI, a WebSocket adapter, and a generic entrypoint. It handles authentication, git credentials, repo cloning, and adapter startup. You never modify this image directly.
+Agent Foundry ships a base Docker image (`agent-worker`) that includes the Claude Code CLI, a WebSocket adapter, and a generic entrypoint. It handles authentication, git credentials, repo cloning, and adapter startup. You never modify this image directly.
 
 Build it once:
 ```sh
@@ -130,7 +130,7 @@ To define a new product that uses agent containers:
 
 1. Write a **CLAUDE.md** — describe the agent's role, what markers to output, any domain-specific instructions
 2. Write a **marker-config.json** — map your marker strings to ACP event types
-3. Write a **Dockerfile** — `FROM acp-cc-worker:latest`, copy your files in
+3. Write a **Dockerfile** — `FROM agent-worker:latest`, copy your files in
 4. Optionally write a **product-init.sh** — for plugins, version checks, or environment setup
 5. Optionally write **skills** — reusable capabilities the agent can invoke
 6. Optionally override **settings.json** — to customize permissions or enable plugins
@@ -145,9 +145,9 @@ For detailed schemas, message formats, field types, and the full ACP specificati
 
 | File | Purpose |
 |---|---|
-| `src/agent_foundry/acp/` | ACP module — protocol, adapters, container management |
-| `src/agent_foundry/acp/docker/Dockerfile.base` | Base image definition |
-| `src/agent_foundry/acp/docker/entrypoint.sh` | Base entrypoint |
+| `src/agent_foundry/agents/` | ACP module — protocol, adapters, container management |
+| `src/agent_foundry/agents/docker/Dockerfile.base` | Base image definition |
+| `src/agent_foundry/agents/docker/entrypoint.sh` | Base entrypoint |
 | `docker/Dockerfile` | Archipelago product overlay |
 | `docker/CLAUDE.md` | Archipelago agent instructions |
 | `docker/marker-config.json` | Archipelago marker mappings |

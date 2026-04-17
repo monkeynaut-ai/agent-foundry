@@ -1,6 +1,6 @@
 """Tests for Agent Container Protocol error types."""
 
-from agent_foundry.acp.errors import (
+from agent_foundry.agents.errors import (
     AdapterError,
     ContainerCreationError,
     ContainerLifecycleError,

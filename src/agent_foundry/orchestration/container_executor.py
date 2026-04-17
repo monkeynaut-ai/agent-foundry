@@ -37,14 +37,14 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from agent_foundry.acp.agent_turn_envelope import (
+from agent_foundry.agents.agent_turn_envelope import (
     AgentTurnEnvelope,
     ClarificationOutcome,
     PermissionOutcome,
     TurnOutcomeKind,
 )
-from agent_foundry.acp.container import ContainerHandleBase, ContainerManagerBase
-from agent_foundry.acp.schema_tools import to_claude_code_schema
+from agent_foundry.agents.lifecycle import ContainerHandleBase, ContainerManagerBase
+from agent_foundry.agents.schema_tools import to_claude_code_schema
 from agent_foundry.models.markers import (
     FilePathFieldSpec,
     extract_paths,

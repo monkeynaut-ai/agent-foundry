@@ -7,7 +7,7 @@ lockdown script handles filesystem restrictions properly.
 
 from pathlib import Path
 
-_DOCKER_DIR = Path(__file__).resolve().parents[3] / "src/agent_foundry/acp/docker"
+_DOCKER_DIR = Path(__file__).resolve().parents[3] / "src/agent_foundry/agents/docker"
 ENTRYPOINT = _DOCKER_DIR / "entrypoint.sh"
 LOCKDOWN = _DOCKER_DIR / "lockdown.sh"
 
@@ -41,12 +41,12 @@ class TestFilesystemLockdown:
 class TestLockdownScript:
     def test_given_lockdown_script_when_read_then_handles_hidden_dirs(self):
         content = _read_lockdown()
-        assert "ACP_HIDDEN_DIRS" in content
+        assert "WORKSPACE_HIDDEN_DIRS" in content
         assert "chmod 000" in content
 
     def test_given_lockdown_script_when_read_then_handles_readonly_dirs(self):
         content = _read_lockdown()
-        assert "ACP_READONLY_DIRS" in content
+        assert "WORKSPACE_READONLY_DIRS" in content
         assert "chmod -R a-w" in content
 
     def test_given_lockdown_script_when_read_then_guards_nonexistent_dirs(self):

@@ -5,7 +5,7 @@ from Claude Code's output. If Claude Code changes its event shape, these
 models (and only these models) need updating.
 """
 
-from agent_foundry.acp.claude_code_events import (
+from agent_foundry.agents.claude_code_events import (
     AssistantEvent,
     ErrorEvent,
     ResultEvent,

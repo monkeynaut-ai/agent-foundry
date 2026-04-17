@@ -16,7 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from agent_foundry.acp.errors import ContainerCreationError, ContainerLifecycleError
+from agent_foundry.agents.errors import ContainerCreationError, ContainerLifecycleError
 
 logger = logging.getLogger(__name__)
 

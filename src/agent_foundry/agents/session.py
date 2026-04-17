@@ -6,8 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from agent_foundry.acp.container import ContainerHandle
-from agent_foundry.acp.errors import SessionError
+from agent_foundry.agents.errors import SessionError
+from agent_foundry.agents.lifecycle import ContainerHandle
 
 
 @dataclass

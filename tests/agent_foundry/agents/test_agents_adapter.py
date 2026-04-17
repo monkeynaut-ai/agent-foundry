@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent_foundry.acp.adapter import AdapterBase, TurnResult
+from agent_foundry.agents.adapter import AdapterBase, TurnResult
 
 
 class TestTurnResult:

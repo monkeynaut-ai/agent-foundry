@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agent_foundry.acp.container import ContainerHandle
-from agent_foundry.acp.session import SessionHandle, SessionManager
+from agent_foundry.agents.lifecycle import ContainerHandle
+from agent_foundry.agents.session import SessionHandle, SessionManager
 
 
 def _mock_container_handle():

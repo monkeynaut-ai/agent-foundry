@@ -1,7 +1,7 @@
 """Tests for RoleStack model."""
 
-from agent_foundry.acp.protocol import MarkerMapping
-from agent_foundry.acp.role_stack import RoleStack
+from agent_foundry.agents.protocol import MarkerMapping
+from agent_foundry.agents.role_stack import RoleStack
 
 
 class TestRoleStack:

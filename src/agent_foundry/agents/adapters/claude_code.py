@@ -22,8 +22,8 @@ from typing import Any
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect as ws_connect
 
-from agent_foundry.acp.adapter import AdapterBase, TurnResult
-from agent_foundry.acp.claude_code_events import (
+from agent_foundry.agents.adapter import AdapterBase, TurnResult
+from agent_foundry.agents.claude_code_events import (
     NON_RECOVERABLE_STOP_REASONS,
     STRUCTURED_OUTPUT_TOOL_NAME,
     AssistantEvent,
@@ -34,7 +34,7 @@ from agent_foundry.acp.claude_code_events import (
     ToolUseBlock,
     parse_stream_event,
 )
-from agent_foundry.acp.protocol import MarkerMapping
+from agent_foundry.agents.protocol import MarkerMapping
 
 logger = logging.getLogger(__name__)
 

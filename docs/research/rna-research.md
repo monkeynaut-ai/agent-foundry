@@ -16,7 +16,7 @@ RNA is an MCP server that provides semantic code search, dependency graph traver
 
 ### 1. Add RNA binary to base image
 
-In `src/agent_foundry/acp/docker/Dockerfile.base`:
+In `src/agent_foundry/agents/docker/Dockerfile.base`:
 
 ```dockerfile
 # Install RNA for semantic code analysis
@@ -26,7 +26,7 @@ RUN curl -L https://github.com/open-horizon-labs/repo-native-alignment/releases/
 
 ### 2. Configure as MCP server
 
-In `src/agent_foundry/acp/docker/settings.json`, add:
+In `src/agent_foundry/agents/docker/settings.json`, add:
 
 ```json
 {
@@ -44,7 +44,7 @@ Or in Claude Code's MCP config file (`.mcp.json`).
 
 ### 3. Initial scan at container start
 
-In `src/agent_foundry/acp/docker/entrypoint.sh`, after repo clone and before adapter launch:
+In `src/agent_foundry/agents/docker/entrypoint.sh`, after repo clone and before adapter launch:
 
 ```sh
 # Index workspace for semantic search (if RNA is installed and workspace has code)

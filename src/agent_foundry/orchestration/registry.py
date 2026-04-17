@@ -20,7 +20,7 @@ from agent_foundry.orchestration.env import build_container_env
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 
 if TYPE_CHECKING:
-    from agent_foundry.acp.container import ContainerHandleBase, ContainerManagerBase
+    from agent_foundry.agents.lifecycle import ContainerHandleBase, ContainerManagerBase
     from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
     from agent_foundry.primitives.models import AgentAction
 
@@ -209,7 +209,7 @@ class AgentContainerRegistry:
         test environments without the docker SDK can still import this
         module.
         """
-        from agent_foundry.acp.container import ContainerManager
+        from agent_foundry.agents.lifecycle import ContainerManager
 
         if self._docker_client_factory is not None:
             client = self._docker_client_factory()

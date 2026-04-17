@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from agent_foundry.acp.errors import ProtocolError
-from agent_foundry.acp.protocol import (
+from agent_foundry.agents.errors import ProtocolError
+from agent_foundry.agents.protocol import (
     AdapterMessage,
     AgentEventMessage,
     ControlMessage,

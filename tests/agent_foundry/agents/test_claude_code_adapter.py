@@ -3,13 +3,13 @@
 import json
 from typing import Any
 
-from agent_foundry.acp.adapters.claude_code import ClaudeCodeAdapter, _build_claude_cmd
-from agent_foundry.acp.claude_code_events import (
+from agent_foundry.agents.adapters.claude_code import ClaudeCodeAdapter, _build_claude_cmd
+from agent_foundry.agents.claude_code_events import (
     AssistantEvent,
     ErrorEvent,
     ResultEvent,
 )
-from agent_foundry.acp.protocol import MarkerMapping
+from agent_foundry.agents.protocol import MarkerMapping
 
 
 def _make_adapter(mappings=None):
