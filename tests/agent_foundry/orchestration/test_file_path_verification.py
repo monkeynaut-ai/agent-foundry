@@ -126,6 +126,7 @@ from pydantic import BaseModel  # noqa: E402
 
 from agent_foundry.orchestration import container_executor  # noqa: E402
 from agent_foundry.orchestration.container_executor import (  # noqa: E402
+    TurnResult,
     run_agent_in_container,
 )
 from agent_foundry.orchestration.errors import AgentFailedError  # noqa: E402
@@ -183,8 +184,8 @@ def _install_adapter(monkeypatch: pytest.MonkeyPatch, adapter: FakeClaudeCodeAda
     shape (``run_turn(*, prompt, json_schema, resume_session_id) ->
     envelope``). The current executor calls
     ``_run_claude_turn(live, *, prompt, resume_session_id, schema) ->
-    (envelope, session_id)``. This helper adapts the former to the
-    latter so the tests keep their scripting ergonomics.
+    TurnResult``. This helper adapts the former to the latter so the
+    tests keep their scripting ergonomics.
     """
 
     async def _fake_run_turn(
@@ -193,14 +194,13 @@ def _install_adapter(monkeypatch: pytest.MonkeyPatch, adapter: FakeClaudeCodeAda
         prompt: str,
         resume_session_id: str | None,
         schema: dict,
-        **_kwargs: object,
-    ) -> tuple[dict, str | None]:
+    ) -> TurnResult:
         envelope = await adapter.run_turn(
             prompt=prompt,
             json_schema=schema,
             resume_session_id=resume_session_id,
         )
-        return envelope, "sess-verify"
+        return TurnResult(envelope=envelope, session_id="sess-verify", raw_output=b"")
 
     monkeypatch.setattr(container_executor, "_run_claude_turn", _fake_run_turn)
 

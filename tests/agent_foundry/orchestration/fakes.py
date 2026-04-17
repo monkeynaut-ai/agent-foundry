@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_foundry.acp.container import ContainerHandleBase, ContainerManagerBase
+from agent_foundry.orchestration.container_executor import TurnResult
 from agent_foundry.responders.models import (
     ResponderContext,
     ResponderRequest,
@@ -312,8 +313,7 @@ class FakeRunTurn:
         prompt: str,
         resume_session_id: str | None,
         schema: dict[str, Any],
-        **_kwargs: Any,
-    ) -> tuple[dict[str, Any], str | None]:
+    ) -> TurnResult:
         self.calls.append({"prompt": prompt, "resume": resume_session_id})
         assert self._turn_script, (
             f"FakeRunTurn called beyond scripted turn count (call #{len(self.calls)})"
@@ -323,7 +323,7 @@ class FakeRunTurn:
             sid = self._session_ids.pop(0)
         else:
             sid = self._session_ids[0] if self._session_ids else None
-        return envelope, sid
+        return TurnResult(envelope=envelope, session_id=sid, raw_output=b"")
 
 
 # Back-compat alias — some tests still refer to the old name.
