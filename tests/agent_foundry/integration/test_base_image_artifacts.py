@@ -1,7 +1,6 @@
 """Integration tests — base image ships the generic agent brief and skills.
 
-Verifies that the `agent-worker:latest` image contains the two artifacts
-the CS7 agents depend on:
+Verifies that the `agent-worker:latest` image contains the following artifacts:
 
 - `/home/claude/.claude/CLAUDE.md` — generic agent brief referencing
   the structured-output protocol via `AgentTurnEnvelope`.
