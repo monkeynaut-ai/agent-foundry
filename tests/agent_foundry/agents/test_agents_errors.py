@@ -1,10 +1,8 @@
-"""Tests for Agent Container Protocol error types."""
+"""Tests for agent-container error types."""
 
 from agent_foundry.agents.errors import (
-    AdapterError,
     ContainerCreationError,
     ContainerLifecycleError,
-    ProtocolError,
     SessionError,
 )
 
@@ -48,24 +46,6 @@ class TestSessionError:
         assert "exec failed" in str(err)
 
 
-class TestAdapterError:
-    def test_given_adapter_error_when_constructed_with_message_then_message_preserved(
-        self,
-    ):
-        err = AdapterError("connection lost")
-        assert "connection lost" in str(err)
-        assert isinstance(err, Exception)
-
-
-class TestProtocolError:
-    def test_given_protocol_error_when_constructed_with_message_then_message_preserved(
-        self,
-    ):
-        err = ProtocolError("invalid JSON")
-        assert "invalid JSON" in str(err)
-        assert isinstance(err, Exception)
-
-
 class TestErrorHierarchy:
     def test_given_all_error_types_when_checked_then_all_are_exception_subclasses(
         self,
@@ -74,8 +54,6 @@ class TestErrorHierarchy:
             ContainerCreationError,
             ContainerLifecycleError,
             SessionError,
-            AdapterError,
-            ProtocolError,
         ]
         for cls in error_types:
             assert issubclass(cls, Exception)

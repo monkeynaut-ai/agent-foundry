@@ -71,10 +71,6 @@ class TestRoleInstructions:
 
 
 class TestGosuUserDrop:
-    def test_given_entrypoint_when_read_then_adapter_launch_uses_gosu(self):
-        content = _read_entrypoint()
-        assert "exec gosu claude python /home/claude/adapter.py" in content
-
     def test_given_entrypoint_when_read_then_interactive_fallback_uses_gosu(self):
         content = _read_entrypoint()
         assert "exec gosu claude /home/claude/.local/bin/claude" in content

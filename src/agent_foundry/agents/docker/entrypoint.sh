@@ -82,18 +82,6 @@ if [ "${AGENT_HOST_DRIVEN:-0}" = "1" ]; then
   exec tail -f /dev/null
 fi
 
-# ── Adapter launch ──
-if [ -n "$AGENT_WS_URL" ]; then
-  TURN_TIMEOUT="${AGENT_TURN_TIMEOUT:-3600}"
-  SKIP_PERMS_FLAG=""
-  if [ "${AGENT_SKIP_PERMISSIONS:-0}" = "1" ]; then
-    SKIP_PERMS_FLAG="--dangerously-skip-permissions"
-  fi
-  export PATH="/home/claude/.local/bin:$PATH"
-  exec gosu claude python /home/claude/adapter.py --protocol "$AGENT_WS_URL" \
-    --timeout "$TURN_TIMEOUT" $SKIP_PERMS_FLAG
-fi
-
 # ── Interactive/headless fallback ──
 if [ -t 0 ]; then
   exec gosu claude /home/claude/.local/bin/claude "$@"
