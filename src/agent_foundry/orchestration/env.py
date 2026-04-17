@@ -22,11 +22,11 @@ def build_container_env(
 ) -> dict[str, str]:
     """Compose the env dict passed to ContainerManager.create_container.
 
-    The required agent keys (CLAUDE_CODE_OAUTH_TOKEN, ACP_HOST_DRIVEN,
-    ACP_ROLE_INSTRUCTIONS_PATH) always win over ``extra``; callers use
+    The required agent keys (CLAUDE_CODE_OAUTH_TOKEN, AGENT_HOST_DRIVEN,
+    AGENT_ROLE_INSTRUCTIONS_PATH) always win over ``extra``; callers use
     ``extra`` for optional additions (REPO_URL, GIT_USER_NAME, etc.).
 
-    ACP_HOST_DRIVEN=1 tells the container entrypoint to idle (tail -f
+    AGENT_HOST_DRIVEN=1 tells the container entrypoint to idle (tail -f
     /dev/null) after setup instead of launching an in-container
     adapter — the orchestration stack drives claude via host-side
     ``docker exec``. See the foundation smoke test in
@@ -37,6 +37,6 @@ def build_container_env(
     if extra:
         env.update(extra)
     env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
-    env["ACP_HOST_DRIVEN"] = "1"
-    env["ACP_ROLE_INSTRUCTIONS_PATH"] = role_instructions_path
+    env["AGENT_HOST_DRIVEN"] = "1"
+    env["AGENT_ROLE_INSTRUCTIONS_PATH"] = role_instructions_path
     return env

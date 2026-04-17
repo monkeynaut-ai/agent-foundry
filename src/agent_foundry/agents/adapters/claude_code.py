@@ -4,15 +4,14 @@
 Launches Claude Code in headless mode with structured JSON output:
     claude -p "prompt" --output-format stream-json --verbose
 
-Marker detection is configurable via MarkerMapping — no product-specific
-markers are hardcoded. Products pass their marker definitions through the
-role stack.
+Turn results are delivered via Claude Code's ``--json-schema`` /
+``StructuredOutput`` tool-call, parsed into ``StructuredOutputMessage``
+protocol messages. Free-text output is relayed as ``OutputMessage``.
 """
 
 import contextlib
 import json
 import logging
-import re
 import subprocess
 import sys
 import threading
@@ -34,7 +33,6 @@ from agent_foundry.agents.claude_code_events import (
     ToolUseBlock,
     parse_stream_event,
 )
-from agent_foundry.agents.protocol import MarkerMapping
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +72,9 @@ def _build_claude_cmd(
 
 
 class ClaudeCodeAdapter(AdapterBase):
-    """Claude Code adapter with configurable marker-to-event mapping.
+    """Claude Code adapter — relays free-text output and structured results.
 
     Args:
-        marker_mappings: List of MarkerMapping defining how stdout markers
-            translate to ACP events.
         skip_permissions: Pass --dangerously-skip-permissions to claude CLI.
         turn_timeout: Timeout per turn in seconds.
         connect_timeout: Timeout for WebSocket connection in seconds.
@@ -86,36 +82,14 @@ class ClaudeCodeAdapter(AdapterBase):
 
     def __init__(
         self,
-        marker_mappings: list[MarkerMapping] | None = None,
         skip_permissions: bool = False,
         turn_timeout: float = 600.0,
         connect_timeout: float = 30.0,
     ):
-        self._marker_mappings = marker_mappings or []
-        self._compiled_markers = [
-            (re.compile(m.pattern), m.event_type, m.payload_group) for m in self._marker_mappings
-        ]
         self._skip_permissions = skip_permissions
         self._turn_timeout = turn_timeout
         self._connect_timeout = connect_timeout
         self._in_structured_output_retry = False
-
-    def _match_marker(self, line: str) -> tuple[str, dict[str, Any]] | None:
-        """Check if a line matches any configured marker.
-
-        Returns (event_type, payload) or None.
-        """
-        for compiled, event_type, payload_group in self._compiled_markers:
-            match = compiled.match(line)
-            if match:
-                payload: dict[str, Any] = {}
-                if payload_group is not None:
-                    try:
-                        payload = json.loads(match.group(payload_group))
-                    except (json.JSONDecodeError, IndexError):
-                        continue  # Malformed payload — skip this marker
-                return event_type, payload
-        return None
 
     def _map_event_to_protocol(
         self,
@@ -140,39 +114,15 @@ class ClaudeCodeAdapter(AdapterBase):
                 if isinstance(block, TextBlock):
                     if not block.text.strip():
                         continue
-                    output_lines: list[str] = []
-                    for line in block.text.splitlines():
-                        stripped = line.strip()
-                        marker_result = self._match_marker(stripped)
-                        if marker_result:
-                            evt_type, payload = marker_result
-                            if evt_type == "task_complete":
-                                task_complete = True
-                                logger.info("Task complete marker detected")
-                                continue
-                            messages.append(
-                                {
-                                    "type": "agent_event",
-                                    "session_id": session_id,
-                                    "event_type": evt_type,
-                                    "payload": payload,
-                                    "raw_line": stripped,
-                                    "timestamp": ts,
-                                }
-                            )
-                            continue
-                        output_lines.append(line)
-                    remaining = "\n".join(output_lines).strip()
-                    if remaining:
-                        messages.append(
-                            {
-                                "type": "output",
-                                "session_id": session_id,
-                                "text": remaining,
-                                "stream": "stdout",
-                                "timestamp": ts,
-                            }
-                        )
+                    messages.append(
+                        {
+                            "type": "output",
+                            "session_id": session_id,
+                            "text": block.text.strip(),
+                            "stream": "stdout",
+                            "timestamp": ts,
+                        }
+                    )
                 elif isinstance(block, ToolUseBlock):
                     if block.name == STRUCTURED_OUTPUT_TOOL_NAME:
                         messages.append(
@@ -448,7 +398,7 @@ class ClaudeCodeAdapter(AdapterBase):
 
             if result.task_complete:
                 completed = True
-                logger.info("Sending status: completed (source: task_complete_marker)")
+                logger.info("Sending status: completed (source: structured_output)")
                 _send_msg(
                     {
                         "type": "status",
@@ -540,7 +490,7 @@ def _parse_adapter_args(argv=None):
     """Parse adapter CLI arguments. Exposed for testing."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Claude Code ACP adapter")
+    parser = argparse.ArgumentParser(description="Claude Code adapter")
     parser.add_argument(
         "prompt",
         nargs="?",
@@ -576,11 +526,6 @@ def _parse_adapter_args(argv=None):
         action="store_true",
         help="enable debug logging",
     )
-    parser.add_argument(
-        "--marker-config",
-        default=None,
-        help="path to JSON file defining marker mappings",
-    )
     return parser.parse_args(argv)
 
 
@@ -592,16 +537,7 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    # Load marker mappings from config file if provided
-    mappings: list[MarkerMapping] = []
-    if args.marker_config:
-        import pathlib
-
-        raw = json.loads(pathlib.Path(args.marker_config).read_text())
-        mappings = [MarkerMapping(**m) for m in raw]
-
     adapter = ClaudeCodeAdapter(
-        marker_mappings=mappings,
         skip_permissions=args.dangerously_skip_permissions,
         turn_timeout=args.timeout,
     )

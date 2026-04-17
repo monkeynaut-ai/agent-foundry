@@ -29,5 +29,5 @@ def build_lockdown_env(
     if readonly_dirs:
         env["WORKSPACE_READONLY_DIRS"] = ",".join(readonly_dirs)
     if role_instructions_path:
-        env["ACP_ROLE_INSTRUCTIONS_PATH"] = role_instructions_path
+        env["AGENT_ROLE_INSTRUCTIONS_PATH"] = role_instructions_path
     return env

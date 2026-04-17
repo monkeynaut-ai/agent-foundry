@@ -24,32 +24,13 @@ class OutputMessage(BaseModel):
     timestamp: float
 
 
-class AgentEventMessage(BaseModel):
-    """Structured event emitted by the agent (detected via marker mapping).
-
-    Replaces the Archipelago-specific InterruptMessage with a generic
-    event vocabulary usable by any containerized agent.
-    """
-
-    type: Literal["agent_event"] = "agent_event"
-    session_id: str
-    # ACP vocabulary: task_complete, clarification_requested, permission_requested, stuck, etc.
-    event_type: str
-    payload: dict[str, Any]
-    raw_line: str  # original marker line for audit
-    timestamp: float
-
-
 class StructuredOutputMessage(BaseModel):
     """Typed payload captured from Claude Code's StructuredOutput tool call.
 
     Emitted by the adapter when the agent (running under --json-schema) calls
     the synthetic StructuredOutput tool. The payload is the raw dict from
     ``tool_use.input``; orchestrators are expected to validate it against
-    their own typed envelope model.
-
-    Distinct from AgentEventMessage: this carries the turn's final typed
-    result, not a mid-stream signal parsed from free text.
+    their own typed envelope model (e.g. ``AgentTurnEnvelope[T]``).
     """
 
     type: Literal["structured_output"] = "structured_output"
@@ -89,29 +70,9 @@ class ControlMessage(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
 
 
-# ── Marker mapping ──
-
-
-class MarkerMapping(BaseModel):
-    """Maps a product-defined marker pattern to an ACP event type.
-
-    The adapter uses these to translate raw agent stdout into structured
-    AgentEventMessage instances.
-
-    Attributes:
-        pattern: Regex pattern to match against agent output lines.
-        event_type: ACP event type to emit when the pattern matches.
-        payload_group: Regex group index containing a JSON payload (if any).
-    """
-
-    pattern: str
-    event_type: str
-    payload_group: int | None = None
-
-
 # ── Type aliases ──
 
-AdapterMessage = OutputMessage | AgentEventMessage | StructuredOutputMessage | StatusMessage
+AdapterMessage = OutputMessage | StructuredOutputMessage | StatusMessage
 OrchestratorMessage = InputMessage | ControlMessage
 ProtocolMessage = AdapterMessage | OrchestratorMessage
 
@@ -119,7 +80,6 @@ ProtocolMessage = AdapterMessage | OrchestratorMessage
 
 _MESSAGE_TYPES: dict[str, type[BaseModel]] = {
     "output": OutputMessage,
-    "agent_event": AgentEventMessage,
     "structured_output": StructuredOutputMessage,
     "status": StatusMessage,
     "input": InputMessage,

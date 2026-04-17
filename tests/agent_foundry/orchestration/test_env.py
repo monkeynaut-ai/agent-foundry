@@ -13,7 +13,7 @@ def test_build_container_env_includes_required_keys() -> None:
         role_instructions_path="/home/claude/role-instructions.md",
     )
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-abc"
-    assert env["ACP_ROLE_INSTRUCTIONS_PATH"] == "/home/claude/role-instructions.md"
+    assert env["AGENT_ROLE_INSTRUCTIONS_PATH"] == "/home/claude/role-instructions.md"
 
 
 def test_build_container_env_merges_extra() -> None:

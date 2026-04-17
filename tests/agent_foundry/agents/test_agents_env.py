@@ -16,7 +16,7 @@ class TestBuildLockdownEnv:
         self,
     ):
         env = build_lockdown_env(role_instructions_path="/home/claude/.claude/CLAUDE-writer.md")
-        assert env["ACP_ROLE_INSTRUCTIONS_PATH"] == "/home/claude/.claude/CLAUDE-writer.md"
+        assert env["AGENT_ROLE_INSTRUCTIONS_PATH"] == "/home/claude/.claude/CLAUDE-writer.md"
 
     def test_given_no_dirs_when_built_then_env_is_empty(self):
         env = build_lockdown_env()
@@ -34,4 +34,4 @@ class TestBuildLockdownEnv:
         )
         assert "WORKSPACE_HIDDEN_DIRS" in env
         assert "WORKSPACE_READONLY_DIRS" in env
-        assert "ACP_ROLE_INSTRUCTIONS_PATH" in env
+        assert "AGENT_ROLE_INSTRUCTIONS_PATH" in env

@@ -46,8 +46,8 @@ fi
 # ── Role-specific instructions ──
 # Append role-specific content to CLAUDE.md rather than overwriting,
 # so base-image and product-image instructions are preserved.
-if [ -n "$ACP_ROLE_INSTRUCTIONS_PATH" ] && [ -f "$ACP_ROLE_INSTRUCTIONS_PATH" ]; then
-  cat "$ACP_ROLE_INSTRUCTIONS_PATH" >> /home/claude/.claude/CLAUDE.md
+if [ -n "$AGENT_ROLE_INSTRUCTIONS_PATH" ] && [ -f "$AGENT_ROLE_INSTRUCTIONS_PATH" ]; then
+  cat "$AGENT_ROLE_INSTRUCTIONS_PATH" >> /home/claude/.claude/CLAUDE.md
 fi
 echo "=== CLAUDE.md after role append ===" >&2
 if [ -f /home/claude/.claude/CLAUDE.md ]; then
@@ -65,47 +65,33 @@ fi
 gosu claude claude plugin marketplace add anthropics/claude-plugins-official
 gosu claude claude plugin install pyright-lsp@claude-plugins-official --scope user
 
-# ── Product-specific init hook ──
-# Source product init script if it exists (products drop this in via Dockerfile)
-if [ -f /home/claude/product-init.sh ]; then
-  gosu claude sh -c '. /home/claude/product-init.sh'
-fi
-
 # ── Host-driven mode ──
-# When ACP_HOST_DRIVEN=1 the container finishes setup and idles,
+# When AGENT_HOST_DRIVEN=1 the container finishes setup and idles,
 # waiting for `docker exec` calls from the host to invoke `claude`
 # directly. Used by the Plan 2 host-driven executor, which runs each
 # turn as `claude --resume <session-id> -p <prompt>` via exec_run.
 #
 # /tmp/.container-ready is the marker file consumed by the Dockerfile's
 # HEALTHCHECK. Touching it here — AFTER all setup (auth, lockdown,
-# role-instructions append, LSP plugin install, product-init hook) has
-# finished — is the signal that the container is ready to receive work.
-# Host-side code polls `container.attrs["State"]["Health"]["Status"]`
-# until it reads ``healthy``.
-if [ "${ACP_HOST_DRIVEN:-0}" = "1" ]; then
+# role-instructions append, LSP plugin install) has finished — is the
+# signal that the container is ready to receive work. Host-side code
+# polls `container.attrs["State"]["Health"]["Status"]` until it reads
+# ``healthy``.
+if [ "${AGENT_HOST_DRIVEN:-0}" = "1" ]; then
   touch /tmp/.container-ready
   exec tail -f /dev/null
 fi
 
 # ── Adapter launch ──
-# ACP_WS_URL is the generic env var for adapter WebSocket connection.
-# Also support ARCHIPELAGO_WS_URL for backward compatibility.
-WS_URL="${ACP_WS_URL:-$ARCHIPELAGO_WS_URL}"
-
-if [ -n "$WS_URL" ]; then
-  TURN_TIMEOUT="${ACP_TURN_TIMEOUT:-${ARCHIPELAGO_TURN_TIMEOUT:-3600}}"
+if [ -n "$AGENT_WS_URL" ]; then
+  TURN_TIMEOUT="${AGENT_TURN_TIMEOUT:-3600}"
   SKIP_PERMS_FLAG=""
-  if [ "${ACP_SKIP_PERMISSIONS:-${ARCHIPELAGO_SKIP_PERMISSIONS:-0}}" = "1" ]; then
+  if [ "${AGENT_SKIP_PERMISSIONS:-0}" = "1" ]; then
     SKIP_PERMS_FLAG="--dangerously-skip-permissions"
   fi
-  MARKER_CONFIG_FLAG=""
-  if [ -f /home/claude/marker-config.json ]; then
-    MARKER_CONFIG_FLAG="--marker-config /home/claude/marker-config.json"
-  fi
   export PATH="/home/claude/.local/bin:$PATH"
-  exec gosu claude python /home/claude/adapter.py --protocol "$WS_URL" \
-    --timeout "$TURN_TIMEOUT" $SKIP_PERMS_FLAG $MARKER_CONFIG_FLAG
+  exec gosu claude python /home/claude/adapter.py --protocol "$AGENT_WS_URL" \
+    --timeout "$TURN_TIMEOUT" $SKIP_PERMS_FLAG
 fi
 
 # ── Interactive/headless fallback ──

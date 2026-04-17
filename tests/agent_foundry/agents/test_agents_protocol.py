@@ -7,10 +7,8 @@ import pytest
 from agent_foundry.agents.errors import ProtocolError
 from agent_foundry.agents.protocol import (
     AdapterMessage,
-    AgentEventMessage,
     ControlMessage,
     InputMessage,
-    MarkerMapping,
     OutputMessage,
     StatusMessage,
     StructuredOutputMessage,
@@ -29,51 +27,6 @@ class TestOutputMessage:
     def test_given_output_message_when_stream_omitted_then_defaults_to_stdout(self):
         msg = OutputMessage(session_id="s1", text="hi", timestamp=1.0)
         assert msg.stream == "stdout"
-
-
-class TestAgentEventMessage:
-    def test_given_task_complete_event_when_constructed_then_event_type_stored(self):
-        msg = AgentEventMessage(
-            session_id="s1",
-            event_type="task_complete",
-            payload={},
-            raw_line="DONE",
-            timestamp=1.0,
-        )
-        assert msg.type == "agent_event"
-        assert msg.event_type == "task_complete"
-
-    def test_given_clarification_event_when_constructed_then_payload_stored(self):
-        payload = {"question": "Which branch?", "options": ["main", "dev"]}
-        msg = AgentEventMessage(
-            session_id="s1",
-            event_type="clarification_requested",
-            payload=payload,
-            raw_line="NEED_CLARIFICATION {...}",
-            timestamp=1.0,
-        )
-        assert msg.payload == payload
-        assert msg.raw_line == "NEED_CLARIFICATION {...}"
-
-    def test_given_permission_event_when_constructed_then_fields_valid(self):
-        msg = AgentEventMessage(
-            session_id="s1",
-            event_type="permission_requested",
-            payload={"action": "delete branch"},
-            raw_line="NEED_PERMISSION {...}",
-            timestamp=1.0,
-        )
-        assert msg.event_type == "permission_requested"
-
-    def test_given_stuck_event_when_constructed_then_fields_valid(self):
-        msg = AgentEventMessage(
-            session_id="s1",
-            event_type="stuck",
-            payload={"reason": "tests won't compile"},
-            raw_line="STUCK {...}",
-            timestamp=1.0,
-        )
-        assert msg.event_type == "stuck"
 
 
 class TestStatusMessage:
@@ -119,27 +72,6 @@ class TestControlMessage:
         assert msg.args == {"rows": 24, "cols": 80}
 
 
-class TestMarkerMapping:
-    def test_given_marker_mapping_when_constructed_then_fields_stored(self):
-        m = MarkerMapping(
-            pattern=r"^TASK_COMPLETE$",
-            event_type="task_complete",
-        )
-        assert m.pattern == r"^TASK_COMPLETE$"
-        assert m.event_type == "task_complete"
-        assert m.payload_group is None
-
-    def test_given_marker_mapping_with_payload_group_when_constructed_then_group_stored(
-        self,
-    ):
-        m = MarkerMapping(
-            pattern=r"^NEED_HELP\s+(\{.*\})$",
-            event_type="clarification_requested",
-            payload_group=1,
-        )
-        assert m.payload_group == 1
-
-
 class TestParseProtocolMessage:
     def test_given_valid_output_json_when_parsed_then_returns_output_message(self):
         data = {
@@ -151,21 +83,6 @@ class TestParseProtocolMessage:
         msg = parse_protocol_message(json.dumps(data))
         assert isinstance(msg, OutputMessage)
         assert msg.text == "hello"
-
-    def test_given_valid_agent_event_json_when_parsed_then_returns_agent_event_message(
-        self,
-    ):
-        data = {
-            "type": "agent_event",
-            "session_id": "s1",
-            "event_type": "task_complete",
-            "payload": {},
-            "raw_line": "DONE",
-            "timestamp": 1.0,
-        }
-        msg = parse_protocol_message(json.dumps(data))
-        assert isinstance(msg, AgentEventMessage)
-        assert msg.event_type == "task_complete"
 
     def test_given_valid_status_json_when_parsed_then_returns_status_message(self):
         data = {
@@ -199,12 +116,9 @@ class TestParseProtocolMessage:
         with pytest.raises(ProtocolError, match="Unknown message type"):
             parse_protocol_message(json.dumps({"type": "bogus", "session_id": "s1"}))
 
-    def test_given_all_adapter_message_types_when_checked_then_union_includes_agent_event(
-        self,
-    ):
-        # AdapterMessage should include OutputMessage, AgentEventMessage, StatusMessage
+    def test_given_adapter_message_union_when_checked_then_includes_core_types(self):
         assert OutputMessage in AdapterMessage.__args__
-        assert AgentEventMessage in AdapterMessage.__args__
+        assert StructuredOutputMessage in AdapterMessage.__args__
         assert StatusMessage in AdapterMessage.__args__
 
 

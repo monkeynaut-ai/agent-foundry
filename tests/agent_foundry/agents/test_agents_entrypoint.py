@@ -1,4 +1,4 @@
-"""Tests for ACP base entrypoint and lockdown script structure.
+"""Tests for base entrypoint and lockdown script structure.
 
 Validates that the entrypoint script sources the lockdown script,
 contains the required sections in the correct order, and that the
@@ -31,11 +31,11 @@ class TestFilesystemLockdown:
         lockdown_pos = content.index("Filesystem lockdown")
         assert lockdown_pos > clone_pos
 
-    def test_given_entrypoint_when_read_then_lockdown_before_product_init(self):
+    def test_given_entrypoint_when_read_then_lockdown_before_role_instructions(self):
         content = _read_entrypoint()
         lockdown_pos = content.index("Filesystem lockdown")
-        product_init_pos = content.index("Product-specific init hook")
-        assert lockdown_pos < product_init_pos
+        role_pos = content.index("Role-specific instructions")
+        assert lockdown_pos < role_pos
 
 
 class TestLockdownScript:
@@ -57,17 +57,17 @@ class TestLockdownScript:
 class TestRoleInstructions:
     def test_given_entrypoint_when_read_then_contains_role_instructions_handling(self):
         content = _read_entrypoint()
-        assert "ACP_ROLE_INSTRUCTIONS_PATH" in content
+        assert "AGENT_ROLE_INSTRUCTIONS_PATH" in content
 
     def test_given_entrypoint_when_read_then_appends_rather_than_overwrites(self):
         content = _read_entrypoint()
         assert ">> /home/claude/.claude/CLAUDE.md" in content
 
-    def test_given_entrypoint_when_read_then_role_instructions_before_product_init(self):
+    def test_given_entrypoint_when_read_then_role_instructions_before_lsp_plugins(self):
         content = _read_entrypoint()
         role_pos = content.index("Role-specific instructions")
-        product_init_pos = content.index("Product-specific init hook")
-        assert role_pos < product_init_pos
+        lsp_pos = content.index("LSP plugins")
+        assert role_pos < lsp_pos
 
 
 class TestGosuUserDrop:
@@ -86,7 +86,3 @@ class TestGosuUserDrop:
     def test_given_entrypoint_when_read_then_lsp_plugins_use_gosu(self):
         content = _read_entrypoint()
         assert "gosu claude claude plugin" in content
-
-    def test_given_entrypoint_when_read_then_product_init_uses_gosu(self):
-        content = _read_entrypoint()
-        assert "gosu claude sh -c" in content

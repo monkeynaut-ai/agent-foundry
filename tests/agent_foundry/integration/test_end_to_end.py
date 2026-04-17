@@ -129,7 +129,7 @@ async def test_end_to_end_real_claude_code(tmp_path: Path) -> None:
     except Exception as e:
         pytest.skip(f"docker daemon unavailable: {e}")
 
-    base_image = os.environ.get("ACP_BASE_IMAGE", "agent-worker:latest")
+    base_image = os.environ.get("AGENT_BASE_IMAGE", "agent-worker:latest")
     workspace_volume = f"plan2-e2e-{uuid.uuid4().hex[:8]}"
 
     # --- Build the plan ----------------------------------------------------
