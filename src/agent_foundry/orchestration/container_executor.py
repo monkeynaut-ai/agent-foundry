@@ -33,7 +33,6 @@ import re
 import sys
 import uuid
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -72,13 +71,28 @@ logger = logging.getLogger(__name__)
 MAX_RESPONDER_ITERATIONS = 20
 
 
+class TurnResult(BaseModel):
+    """Result of one ``RunTurn`` invocation.
+
+    ``envelope`` is the raw dict payload matching ``AgentTurnEnvelope[O]``;
+    the caller validates it against the product's declared output type.
+    ``raw_output`` is the full executor stream (claude JSONL for the
+    default implementation, or equivalent for alternative ``RunTurn``
+    implementations) — ``run_agent_in_container`` tees this to stderr
+    and to the per-turn ``stream.jsonl`` artifact on every turn,
+    regardless of outcome, so stream persistence is free for every
+    ``RunTurn`` implementation.
+    """
+
+    envelope: dict[str, Any]
+    session_id: str | None
+    raw_output: bytes
+
+
 # Contract for the ``run_turn`` callable threaded through
 # :func:`run_agent_in_container`. Tests inject fakes matching this
 # signature via the ``run_turn=`` keyword argument.
-RunTurn = Callable[
-    ...,
-    Awaitable[tuple[dict[str, Any], str | None]],
-]
+RunTurn = Callable[..., Awaitable[TurnResult]]
 
 
 async def _run_claude_turn(
@@ -87,10 +101,10 @@ async def _run_claude_turn(
     prompt: str,
     resume_session_id: str | None,
     schema: dict[str, Any],
-    turn_dir: Path | None = None,
-) -> tuple[dict[str, Any], str | None]:
-    """Invoke ``claude`` once inside the live container and return the
-    parsed envelope dict plus the captured session id.
+) -> TurnResult:
+    """Invoke ``claude`` once inside the live container and return a
+    :class:`TurnResult` carrying the parsed envelope dict, captured
+    session id, and the full raw JSONL stream.
 
     This is the production helper that :func:`run_agent_in_container`
     calls by default. It shells out via
@@ -106,10 +120,13 @@ async def _run_claude_turn(
         ``--json-schema`` flag.
 
     Raises ``RuntimeError`` if claude exits non-zero or no envelope
-    can be extracted.
+    can be extracted. Stream persistence (stderr tee + per-turn
+    ``stream.jsonl``) is performed by the caller on the returned
+    ``TurnResult.raw_output``, not here — so every ``RunTurn``
+    implementation gets it for free.
     """
 
-    def _do_exec() -> tuple[dict[str, Any], str | None]:
+    def _do_exec() -> TurnResult:
         cmd = [
             "claude",
             "-p",
@@ -123,16 +140,6 @@ async def _run_claude_turn(
         if resume_session_id:
             cmd.extend(["--resume", resume_session_id])
         exit_code, output = live.handle._container.exec_run(cmd, demux=False, user="claude")
-        # Tee the raw stream to stderr and to a per-turn file so every
-        # claude emission is observable, regardless of outcome. Stdout is
-        # already used by StdinResponder for interactive prompts.
-        sys.stderr.write(output.decode(errors="replace"))
-        sys.stderr.flush()
-        if turn_dir is not None:
-            try:
-                (turn_dir / "stream.jsonl").write_bytes(output)
-            except Exception:
-                logger.warning("failed to persist stream.jsonl")
         if exit_code != 0:
             logs = live.handle._container.logs(tail=80).decode(errors="replace")
             raise RuntimeError(
@@ -184,7 +191,7 @@ async def _run_claude_turn(
                 f"{output.decode(errors='replace')}\n"
                 f"--- container logs ---\n{logs}"
             )
-        return envelope, session_id
+        return TurnResult(envelope=envelope, session_id=session_id, raw_output=output)
 
     return await asyncio.to_thread(_do_exec)
 
@@ -429,13 +436,23 @@ async def run_agent_in_container(
             except Exception:
                 logger.warning("failed to persist prompt.txt for turn %s", turn_number)
 
-            raw, captured_sid = await run_turn(
+            result = await run_turn(
                 live,
                 prompt=current_prompt,
                 resume_session_id=current_resume,
                 schema=schema,
-                turn_dir=turn_dir,
             )
+
+            # Tee the raw stream regardless of outcome so every RunTurn
+            # implementation gets stderr + stream.jsonl persistence for
+            # free by populating result.raw_output. Stdout is already
+            # used by StdinResponder for interactive prompts.
+            sys.stderr.write(result.raw_output.decode(errors="replace"))
+            sys.stderr.flush()
+            try:
+                (turn_dir / "stream.jsonl").write_bytes(result.raw_output)
+            except Exception:
+                logger.warning("failed to persist stream.jsonl for turn %s", turn_number)
 
             # Persist the raw envelope payload as soon as we have it,
             # regardless of outcome.
@@ -443,7 +460,7 @@ async def run_agent_in_container(
                 import json as _json
 
                 (turn_dir / "envelope.json").write_text(
-                    _json.dumps(raw, default=str, indent=2), encoding="utf-8"
+                    _json.dumps(result.envelope, default=str, indent=2), encoding="utf-8"
                 )
             except Exception:
                 logger.warning("failed to persist envelope.json for turn %s", turn_number)
@@ -451,13 +468,13 @@ async def run_agent_in_container(
             # Capture and record the session id as soon as we have one —
             # regardless of envelope outcome — so REUSE_RESUME continuations
             # (within and across invocations) have something to thread.
-            if captured_sid:
-                current_session_id = captured_sid
-                if live.session_id != captured_sid:
-                    registry.record_session_id(primitive, captured_sid)
+            if result.session_id:
+                current_session_id = result.session_id
+                if live.session_id != result.session_id:
+                    registry.record_session_id(primitive, result.session_id)
 
             try:
-                envelope = envelope_type.model_validate(raw)
+                envelope = envelope_type.model_validate(result.envelope)
             except ValidationError as exc:
                 raise AgentFailedError(
                     reason=f"payload validation failed: {exc}",
