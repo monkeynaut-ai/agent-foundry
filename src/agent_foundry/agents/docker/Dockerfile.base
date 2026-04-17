@@ -64,8 +64,14 @@ COPY --chown=claude:claude src/agent_foundry/agents/protocol.py /home/claude/lib
 COPY --chown=claude:claude src/agent_foundry/agents/errors.py /home/claude/lib/agent_foundry/agents/errors.py
 ENV PYTHONPATH="/home/claude/lib"
 
-# Copy the ACP Claude Code adapter
+# Copy the Claude Code adapter
 COPY --chown=claude:claude src/agent_foundry/agents/adapters/claude_code.py /home/claude/adapter.py
+
+# Generic agent brief and skills shipped with the base image. Products
+# may append role-specific instruction files at runtime via
+# write_file_to_container.
+COPY --chown=claude:claude src/agent_foundry/agents/docker/CLAUDE.md /home/claude/.claude/CLAUDE.md
+COPY --chown=claude:claude src/agent_foundry/agents/docker/skills/lessons-learned/SKILL.md /home/claude/.claude/skills/lessons-learned/SKILL.md
 
 WORKDIR /workspace
 
