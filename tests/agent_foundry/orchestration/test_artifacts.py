@@ -18,7 +18,7 @@ from agent_foundry.orchestration.artifacts import (
 
 RUN_ID = "run-abc"
 WORKSPACE_VOLUME = "run-abc-ws"
-BASE_IMAGE_TAG = "acp-cc-worker:latest"
+BASE_IMAGE_TAG = "agent-worker:latest"
 
 
 def test_bootstrap_creates_run_dir_and_returns_its_path(tmp_path: Path) -> None:

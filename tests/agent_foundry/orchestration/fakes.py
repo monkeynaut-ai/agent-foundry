@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from agent_foundry.acp.container import ContainerHandleBase, ContainerManagerBase
+from agent_foundry.agents.lifecycle import ContainerHandleBase, ContainerManagerBase
 from agent_foundry.orchestration.container_executor import TurnResult
 from agent_foundry.responders.models import (
     ResponderContext,

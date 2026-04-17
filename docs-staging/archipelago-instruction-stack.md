@@ -36,8 +36,8 @@ Listed from most stable (bottom) to most ephemeral (top):
 
 **Owner:** Agent Foundry platform
 **Scope:** Universal agent protocol, infrastructure, tool usage
-**Mechanism:** CLAUDE.md baked into the base Docker image (`acp-cc-worker`). **Not yet implemented** — the base image currently has no CLAUDE.md.
-**Status:** To be created at `src/agent_foundry/acp/docker/CLAUDE.md`
+**Mechanism:** CLAUDE.md baked into the base Docker image (`agent-worker`). **Not yet implemented** — the base image currently has no CLAUDE.md.
+**Status:** To be created at `src/agent_foundry/agents/docker/CLAUDE.md`
 
 Contains:
 - Clarification request protocol: when the agent encounters ambiguity or needs input, emit `CLAUDE_CODE_CLARIFICATION_REQUEST` with a structured JSON payload

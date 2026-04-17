@@ -1,4 +1,4 @@
-"""Foundation smoke test — proves base ACP image + ContainerManager +
+"""Foundation smoke test — proves base Agent Container image + ContainerManager +
 host-driven `docker exec` of `claude --json-schema` + stream-json
 parsing + AgentTurnEnvelope validation work end-to-end against real
 Claude Code. If this fails, the orchestration stack cannot run.
@@ -21,9 +21,9 @@ import pytest
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from agent_foundry.acp.agent_turn_envelope import AgentTurnEnvelope
-from agent_foundry.acp.container import ContainerManager
-from agent_foundry.acp.schema_tools import to_claude_code_schema
+from agent_foundry.agents.agent_turn_envelope import AgentTurnEnvelope
+from agent_foundry.agents.lifecycle import ContainerManager
+from agent_foundry.agents.schema_tools import to_claude_code_schema
 
 # Load .env from the repo root so CLAUDE_CODE_OAUTH_TOKEN is available
 # when running via `pdm test-integration`.
@@ -49,7 +49,7 @@ def test_foundation_smoke_real_claude_code() -> None:
     except Exception as e:
         pytest.skip(f"docker daemon unavailable: {e}")
 
-    base_image = os.environ.get("ACP_BASE_IMAGE", "acp-cc-worker:latest")
+    base_image = os.environ.get("AGENT_BASE_IMAGE", "agent-worker:latest")
     workspace_volume = f"foundation-smoke-{uuid.uuid4().hex[:8]}"
 
     manager = ContainerManager(client=client, default_image=base_image)
@@ -66,8 +66,8 @@ def test_foundation_smoke_real_claude_code() -> None:
         workspace_volume=workspace_volume,
         extra_env={
             "CLAUDE_CODE_OAUTH_TOKEN": oauth_token,
-            "ACP_HOST_DRIVEN": "1",
-            "ACP_ROLE_INSTRUCTIONS_PATH": role_instructions_path,
+            "AGENT_HOST_DRIVEN": "1",
+            "AGENT_ROLE_INSTRUCTIONS_PATH": role_instructions_path,
         },
     )
     try:

@@ -27,7 +27,7 @@ Agent containers are not limited to code. They support any task an AI agent can 
 ┌─────────────────────────────────────────────────┐
 │ Docker Image                                    │
 │                                                 │
-│  Base Image (acp-cc-worker)                     │
+│  Base Image (agent-worker)                     │
 │  ├── Claude Code CLI                            │
 │  ├── ACP adapter (claude_code.py)               │
 │  ├── Generic entrypoint.sh                      │
@@ -74,7 +74,7 @@ Copy and modify these files to define a new product that runs an AI agent in a c
 ### Dockerfile
 
 ```dockerfile
-FROM acp-cc-worker:latest
+FROM agent-worker:latest
 
 # Product-specific tools (optional)
 RUN pip install --no-cache-dir <your-tools>
@@ -169,7 +169,7 @@ claude plugin install pyright-lsp@claude-plugins-official --scope user
 
 ```sh
 # Build base image (once)
-docker build -t acp-cc-worker:latest -f src/agent_foundry/acp/docker/Dockerfile.base .
+docker build -t agent-worker:latest -f src/agent_foundry/agents/docker/Dockerfile.base .
 
 # Build product image
 docker build -t myproduct-worker:latest -f path/to/Dockerfile .
@@ -194,7 +194,7 @@ docker run -it \
 
 ```python
 import docker
-from agent_foundry.acp.container import ContainerManager, ContainerConfig
+from agent_foundry.agents.container import ContainerManager, ContainerConfig
 
 client = docker.from_env()
 mgr = ContainerManager(
@@ -233,7 +233,7 @@ class CapabilityStack(BaseModel):
     extra_env: dict[str, str] = {}           # Static env vars to inject
 ```
 
-Source: `agent_foundry.acp.capability_stack.CapabilityStack`
+Source: `agent_foundry.agents.capability_stack.CapabilityStack`
 
 ### Field reference
 
@@ -337,7 +337,7 @@ Control commands:
 
 ### Message schemas
 
-All messages are JSON objects with a `type` discriminator field. Parse with `parse_protocol_message(json_str)` from `agent_foundry.acp.protocol`.
+All messages are JSON objects with a `type` discriminator field. Parse with `parse_protocol_message(json_str)` from `agent_foundry.agents.protocol`.
 
 #### OutputMessage (agent → orchestrator)
 
@@ -474,7 +474,7 @@ class MarkerMapping(BaseModel):
     payload_group: int | None = None  # Regex group index containing JSON payload
 ```
 
-Source: `agent_foundry.acp.protocol.MarkerMapping`
+Source: `agent_foundry.agents.protocol.MarkerMapping`
 
 ### How matching works
 
@@ -542,7 +542,7 @@ class ContainerConfig(BaseModel):
     pids_limit: int = 256          # Docker --pids-limit
 ```
 
-Source: `agent_foundry.acp.container.ContainerConfig`
+Source: `agent_foundry.agents.container.ContainerConfig`
 
 ### ContainerManager
 
@@ -556,7 +556,7 @@ ContainerManager(
 )
 ```
 
-Source: `agent_foundry.acp.container.ContainerManager`
+Source: `agent_foundry.agents.container.ContainerManager`
 
 #### Methods
 
@@ -622,7 +622,7 @@ An adapter is the in-container bridge between an AI agent CLI and the ACP WebSoc
 ### AdapterBase interface
 
 ```python
-from agent_foundry.acp.adapter import AdapterBase, TurnResult
+from agent_foundry.agents.adapter import AdapterBase, TurnResult
 
 class AdapterBase(ABC):
 
@@ -662,8 +662,8 @@ class TurnResult:
 The first adapter implementation. Runs `claude -p --output-format stream-json --verbose` and translates the structured JSON output into ACP messages.
 
 ```python
-from agent_foundry.acp.adapters.claude_code import ClaudeCodeAdapter
-from agent_foundry.acp.protocol import MarkerMapping
+from agent_foundry.agents.adapters.claude_code import ClaudeCodeAdapter
+from agent_foundry.agents.protocol import MarkerMapping
 
 adapter = ClaudeCodeAdapter(
     marker_mappings=[
@@ -675,7 +675,7 @@ adapter = ClaudeCodeAdapter(
 )
 ```
 
-Source: `agent_foundry.acp.adapters.claude_code.ClaudeCodeAdapter`
+Source: `agent_foundry.agents.adapters.claude_code.ClaudeCodeAdapter`
 
 #### Claude Code stream-json event mapping
 
@@ -711,7 +711,7 @@ If `PROMPT` is omitted, the adapter waits for the first `InputMessage` before ru
 
 To support a non-Claude-Code agent:
 
-1. Create `agent_foundry/acp/adapters/your_agent.py`
+1. Create `agent_foundry/agents/adapters/your_agent.py`
 2. Subclass `AdapterBase`
 3. Implement `run_turn()`:
    - Launch the agent CLI with the prompt
@@ -732,12 +732,12 @@ To support a non-Claude-Code agent:
 
 ## 8. Docker Images
 
-### Base image: acp-cc-worker
+### Base image: agent-worker
 
 Build from project root:
 
 ```sh
-docker build -t acp-cc-worker:latest -f src/agent_foundry/acp/docker/Dockerfile.base .
+docker build -t agent-worker:latest -f src/agent_foundry/agents/docker/Dockerfile.base .
 ```
 
 Contents:
@@ -810,7 +810,7 @@ Executed as PID 1 when the container starts.
 Products layer on the base image:
 
 ```dockerfile
-FROM acp-cc-worker:latest
+FROM agent-worker:latest
 
 # Product-specific tools
 RUN pip install --no-cache-dir pyright && pyright --version
@@ -864,12 +864,12 @@ class WorkspaceSnapshot(BaseModel):
     transcript_path: str | None    # Path to copied transcript file
 ```
 
-Source: `agent_foundry.acp.recovery.WorkspaceSnapshot`
+Source: `agent_foundry.agents.recovery.WorkspaceSnapshot`
 
 ### capture_workspace_state()
 
 ```python
-from agent_foundry.acp.recovery import capture_workspace_state
+from agent_foundry.agents.recovery import capture_workspace_state
 
 # Host mode — workspace is a local directory
 snapshot = capture_workspace_state(
@@ -900,7 +900,7 @@ Host mode uses `subprocess.check_output` for git commands. Container mode uses `
 `WorkspaceSnapshot` captures only git state. Products compose with domain-specific data:
 
 ```python
-from agent_foundry.acp.recovery import WorkspaceSnapshot, capture_workspace_state
+from agent_foundry.agents.recovery import WorkspaceSnapshot, capture_workspace_state
 
 class MyProductSnapshot(BaseModel):
     base: WorkspaceSnapshot
@@ -919,7 +919,7 @@ product_snapshot = MyProductSnapshot(
 
 ## 10. Error Types
 
-All errors are in `agent_foundry.acp.errors`.
+All errors are in `agent_foundry.agents.errors`.
 
 | Error | Raised when | Context fields | Catch when |
 |---|---|---|---|
@@ -962,7 +962,7 @@ handle = mgr.create_container(
 ```
 
 **Files:**
-- `docker/Dockerfile` — product overlay on `acp-cc-worker:latest`
+- `docker/Dockerfile` — product overlay on `agent-worker:latest`
 - `docker/CLAUDE.md` — agent instructions
 - `docker/marker-config.json` — marker mappings
 - `docker/product-init.sh` — Pyright plugin install, version check

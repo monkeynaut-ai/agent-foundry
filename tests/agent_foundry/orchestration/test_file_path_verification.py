@@ -19,8 +19,8 @@ from typing import Annotated
 
 from pydantic import BaseModel
 
-from agent_foundry.acp.agent_turn_envelope import AgentTurnEnvelope
-from agent_foundry.acp.schema_tools import to_claude_code_schema
+from agent_foundry.agents.agent_turn_envelope import AgentTurnEnvelope
+from agent_foundry.agents.schema_tools import to_claude_code_schema
 from agent_foundry.models.markers import (
     PLATFORM_DEFAULT_MAX_FILE_BYTES,
     AgentFilePath,

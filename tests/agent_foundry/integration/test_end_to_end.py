@@ -1,6 +1,6 @@
 """End-to-end integration test for the orchestration stack.
 
-Drives the full orchestration stack against the real ``acp-cc-worker:latest``
+Drives the full orchestration stack against the real ``agent-worker:latest``
 base image and real Claude Code via ``CLAUDE_CODE_OAUTH_TOKEN`` from
 ``.env``. The plan under test is a ``Sequence[StateA, StateC]`` of
 
@@ -129,7 +129,7 @@ async def test_end_to_end_real_claude_code(tmp_path: Path) -> None:
     except Exception as e:
         pytest.skip(f"docker daemon unavailable: {e}")
 
-    base_image = os.environ.get("ACP_BASE_IMAGE", "acp-cc-worker:latest")
+    base_image = os.environ.get("AGENT_BASE_IMAGE", "agent-worker:latest")
     workspace_volume = f"plan2-e2e-{uuid.uuid4().hex[:8]}"
 
     # --- Build the plan ----------------------------------------------------
