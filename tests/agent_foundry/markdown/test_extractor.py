@@ -45,3 +45,33 @@ class TestExtractMultiMatch:
         md = "# Top\n\n## Section\n\nfirst\n\n## Section\n\nsecond\n"
         with pytest.raises(MarkdownExtractionError, match="multiple"):
             extract_subtree(md, heading_level=2, title_match="Section")
+
+
+class TestExtractAndValidate:
+    """End-to-end: extract a Finding subtree from a Reviewer document and
+    validate it against the Finding model."""
+
+    def test_extract_finding_then_validate(self):
+        from agent_foundry.markdown.parser import validate_markdown
+        from tests.agent_foundry.markdown.fixtures.sample_models import Finding
+
+        md = (
+            "# Review\n\n"
+            "## Findings\n\n"
+            "### Finding 1 - missing tests\n\n"
+            "```python\nx = 1\n```\n\n"
+            "- t1\n- t2\n\n"
+            "#### Description\n\nNo tests.\n\n"
+            "#### Rationale\n\nTDD is required.\n\n"
+            "### Finding 2 - other\n\n"
+            "```python\ny = 2\n```\n\n"
+            "- t3\n\n"
+            "#### Description\n\nOther.\n\n"
+            "#### Rationale\n\nOther reason.\n"
+        )
+        fragment = extract_subtree(md, heading_level=3, title_match="Finding 1 - missing tests")
+        finding = validate_markdown(fragment, Finding)
+        assert finding.title == "missing tests"
+        assert finding.code.strip() == "x = 1"
+        assert finding.tags == ["t1", "t2"]
+        assert "No tests" in finding.description
