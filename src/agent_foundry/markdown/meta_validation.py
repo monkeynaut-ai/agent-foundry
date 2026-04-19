@@ -25,6 +25,7 @@ from agent_foundry.markdown.annotations import (
     AsHeading,
     AsNumberedList,
     AsTable,
+    TextTemplate,
 )
 from agent_foundry.markdown.errors import MarkdownTemplateError
 
@@ -48,8 +49,7 @@ def validate_template_class(cls: type[MarkdownHeader]) -> None:
     _check_title_rule(cls)
     _check_body_order_rule(cls)
     _check_frontmatter_rule(cls)
-    # Subsequent rules added in following tasks:
-    #   _check_type_compatibility_rule(cls)
+    _check_type_compatibility_rule(cls)
 
 
 def _check_title_rule(cls: type[MarkdownHeader]) -> None:
@@ -149,6 +149,95 @@ def _check_frontmatter_rule(cls: type[MarkdownHeader]) -> None:
         )
 
 
+def _check_type_compatibility_rule(cls: type[MarkdownHeader]) -> None:
+    """Each annotation has an allowed underlying type:
+       AsHeading       -> str
+       AsCodeBlock     -> str
+       AsTable         -> list[BaseModel-subclass]
+       AsBulletList    -> list[str]
+       AsNumberedList  -> list[str]
+       TextTemplate    -> str (title field) OR a list[MarkdownHeader-subclass] (wrapper)
+    Mismatches raise MarkdownTemplateError naming the field, the annotation,
+    and the allowed type.
+    """
+    for name, field in cls.model_fields.items():
+        if name in ("title", "frontmatter"):
+            continue
+        ann = _get_role_annotation(field)
+        field_type = field.annotation
+        _enforce_compat(cls, name, ann, field_type)
+
+
+def _enforce_compat(cls: type, field_name: str, ann: object | None, field_type: object) -> None:
+    from agent_foundry.markdown.template_model import MarkdownHeader
+
+    if ann is None:
+        return  # untyped body field; allowed (passthrough — see body-order rule)
+    if isinstance(ann, AsHeading):
+        if field_type is not str:
+            _raise_compat(cls, field_name, "AsHeading", "str", field_type)
+    elif isinstance(ann, AsCodeBlock):
+        if field_type is not str:
+            _raise_compat(cls, field_name, "AsCodeBlock", "str", field_type)
+    elif isinstance(ann, AsBulletList):
+        if not _is_list_of(field_type, str):
+            _raise_compat(cls, field_name, "AsBulletList", "list[str]", field_type)
+    elif isinstance(ann, AsNumberedList):
+        if not _is_list_of(field_type, str):
+            _raise_compat(cls, field_name, "AsNumberedList", "list[str]", field_type)
+    elif isinstance(ann, AsTable):
+        if not _is_list_of_basemodel(field_type):
+            _raise_compat(cls, field_name, "AsTable", "list[BaseModel]", field_type)
+    elif isinstance(ann, TextTemplate) and not _is_list_of_markdown_header(
+        field_type, MarkdownHeader
+    ):
+        # TextTemplate is allowed only on:
+        #   - MarkdownHeader.title field (str) — skipped above
+        #   - heading-introducing list-wrapper fields: list[MarkdownHeader-subclass]
+        # Any other use is a definition-time error.
+        _raise_compat(
+            cls,
+            field_name,
+            "TextTemplate",
+            "MarkdownHeader.title (str) or list[MarkdownHeader-subclass]",
+            field_type,
+        )
+
+
+def _is_list_of_markdown_header(field_type: object, markdown_header_cls: type) -> bool:
+    if get_origin(field_type) is not list:
+        return False
+    args = get_args(field_type)
+    return len(args) == 1 and isinstance(args[0], type) and issubclass(args[0], markdown_header_cls)
+
+
+def _is_list_of(field_type: object, expected: type) -> bool:
+    if get_origin(field_type) is not list:
+        return False
+    args = get_args(field_type)
+    return len(args) == 1 and args[0] is expected
+
+
+def _is_list_of_basemodel(field_type: object) -> bool:
+    if get_origin(field_type) is not list:
+        return False
+    args = get_args(field_type)
+    return len(args) == 1 and isinstance(args[0], type) and issubclass(args[0], _BaseModel)
+
+
+def _raise_compat(
+    cls: type,
+    field_name: str,
+    ann_name: str,
+    expected: str,
+    actual: object,
+) -> None:
+    raise MarkdownTemplateError(
+        f"{cls.__name__}.{field_name}: {ann_name} requires field type {expected}, "
+        f"got {actual!r}. Either change the field's type, or use a different annotation."
+    )
+
+
 def _is_optional_basemodel(annotation: object) -> bool:
     """True iff the annotation is `BaseModel-subclass | None`."""
     origin = get_origin(annotation)
@@ -188,6 +277,6 @@ def _get_role_annotation(field: object) -> object | None:
 
     metadata = getattr(field, "metadata", []) or []
     for m in metadata:
-        if isinstance(m, (*_NON_HEADING_ANNOTATIONS, AsHeading)):
+        if isinstance(m, (*_NON_HEADING_ANNOTATIONS, AsHeading, TextTemplate)):
             return m
     return None

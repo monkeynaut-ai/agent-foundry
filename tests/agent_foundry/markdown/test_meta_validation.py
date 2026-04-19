@@ -149,3 +149,126 @@ class TestFrontmatterRule:
             class BadDoc(MarkdownDocument):
                 summary: Annotated[str, AsHeading()]  # before frontmatter — bad
                 frontmatter: FmSchema | None = None
+
+    def test_frontmatter_non_optional_raises(self):
+        from pydantic import BaseModel
+
+        from agent_foundry.markdown.template_model import MarkdownDocument
+
+        class FmSchema(BaseModel):
+            x: int
+
+        with pytest.raises(MarkdownTemplateError, match="frontmatter"):
+
+            class BadDoc(MarkdownDocument):
+                frontmatter: FmSchema  # missing | None — required type union
+
+
+class TestTypeCompatibilityRule:
+    """Each annotation has an allowed underlying type. Mismatches raise."""
+
+    def test_as_heading_on_str_passes(self):
+        class OkA(MarkdownHeader):
+            description: Annotated[str, AsHeading()]
+
+    def test_as_heading_on_int_raises(self):
+        with pytest.raises(MarkdownTemplateError, match="AsHeading"):
+
+            class BadA(MarkdownHeader):
+                description: Annotated[int, AsHeading()]  # type: ignore[arg-type]
+
+    def test_as_code_block_on_str_passes(self):
+        class OkB(MarkdownHeader):
+            code: Annotated[str, AsCodeBlock(language="python")]
+
+    def test_as_code_block_on_int_raises(self):
+        with pytest.raises(MarkdownTemplateError, match="AsCodeBlock"):
+
+            class BadB(MarkdownHeader):
+                code: Annotated[int, AsCodeBlock()]  # type: ignore[arg-type]
+
+    def test_as_bullet_list_on_list_str_passes(self):
+        class OkC(MarkdownHeader):
+            tags: Annotated[list[str], AsBulletList()]
+
+    def test_as_bullet_list_on_list_int_raises(self):
+        with pytest.raises(MarkdownTemplateError, match="AsBulletList"):
+
+            class BadC(MarkdownHeader):
+                tags: Annotated[list[int], AsBulletList()]  # type: ignore[arg-type]
+
+    def test_as_table_on_list_basemodel_passes(self):
+        from pydantic import BaseModel
+
+        class Row(BaseModel):
+            a: str
+            b: int
+
+        class OkD(MarkdownHeader):
+            rows: Annotated[list[Row], AsTable()]
+
+    def test_as_table_on_list_str_raises(self):
+        with pytest.raises(MarkdownTemplateError, match="AsTable"):
+
+            class BadD(MarkdownHeader):
+                rows: Annotated[list[str], AsTable()]  # type: ignore[arg-type]
+
+
+class TestTextTemplateCompatibility:
+    """TextTemplate has two valid contexts: MarkdownHeader.title (str) and
+    list[MarkdownHeader-subclass] wrapper. All other uses raise."""
+
+    def test_text_template_on_title_passes(self):
+        from agent_foundry.markdown.annotations import TextTemplate
+
+        class WithTemplate(MarkdownHeader):
+            title: Annotated[str, TextTemplate("Section {value}")]
+
+    def test_text_template_on_list_of_markdown_header_passes(self):
+        from agent_foundry.markdown.annotations import TextTemplate
+
+        class Item(MarkdownHeader):
+            pass
+
+        class HasItems(MarkdownHeader):
+            items: Annotated[list[Item], TextTemplate("Custom Wrapper")]
+
+    def test_text_template_on_str_body_field_raises(self):
+        from agent_foundry.markdown.annotations import TextTemplate
+
+        with pytest.raises(MarkdownTemplateError, match="TextTemplate"):
+
+            class Bad(MarkdownHeader):
+                description: Annotated[str, TextTemplate("Section {value}")]
+
+    def test_text_template_on_list_str_raises(self):
+        from agent_foundry.markdown.annotations import TextTemplate
+
+        with pytest.raises(MarkdownTemplateError, match="TextTemplate"):
+
+            class Bad(MarkdownHeader):
+                tags: Annotated[list[str], TextTemplate("X")]
+
+
+class TestBodyOrderRuleListOfHeader:
+    """list[MarkdownHeader-subclass] is heading-introducing; non-heading after it raises."""
+
+    def test_non_heading_after_list_of_header_raises(self):
+        class Item(MarkdownHeader):
+            pass
+
+        with pytest.raises(MarkdownTemplateError, match="non-heading"):
+
+            class Bad(MarkdownHeader):
+                items: list[Item]  # heading-introducing
+                code: Annotated[str, AsCodeBlock()]  # non-heading after
+
+    def test_non_heading_after_single_header_raises(self):
+        class Sub(MarkdownHeader):
+            pass
+
+        with pytest.raises(MarkdownTemplateError, match="non-heading"):
+
+            class Bad(MarkdownHeader):
+                child: Sub  # heading-introducing
+                code: Annotated[str, AsCodeBlock()]  # non-heading after
