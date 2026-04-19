@@ -7,11 +7,13 @@ from typing import Annotated
 from pydantic import BaseModel
 
 from agent_foundry.markdown.annotations import AsBulletList, AsCodeBlock, AsNumberedList, AsTable
-from agent_foundry.markdown.renderer import render_template
+from agent_foundry.markdown.renderer import render_instance, render_template
 from agent_foundry.markdown.template_model import MarkdownHeader
 from tests.agent_foundry.markdown.fixtures.sample_models import (
     Finding,
     HeaderWithSummary,
+    ReviewerMetadata,
+    ReviewerOutput,
     SimpleHeader,
 )
 
@@ -98,3 +100,52 @@ class TestRenderHeadingIntroducingFields:
         # The Finding subdocument's title carries TextTemplate("Finding {ordinal} - {value}")
         # In skeleton form, ordinal is shown as "{ordinal}" or a literal placeholder.
         assert "Finding {ordinal}" in out or "### Finding 1" in out
+
+
+class TestRenderInstance:
+    def test_simple_header_with_summary(self):
+        h = HeaderWithSummary(title="My Doc", summary="The work is good.")
+        out = render_instance(h)
+        assert out.startswith("# My Doc")
+        assert "## Summary" in out
+        assert "The work is good." in out
+
+    def test_finding_uses_text_template(self):
+        f = Finding(
+            title="missing tests",
+            code="def foo(): pass",
+            tags=["test", "coverage"],
+            description="No unit tests exist.",
+            rationale="Project requires TDD.",
+        )
+        out = render_instance(f, current_level=3)
+        assert "### Finding 1 - missing tests" in out
+        assert "```python" in out
+        assert "def foo(): pass" in out
+        assert "- test" in out
+        assert "- coverage" in out
+
+    def test_full_reviewer_output_with_frontmatter(self):
+        review = ReviewerOutput(
+            title="Review of cs7-plan4",
+            frontmatter=ReviewerMetadata(change_set_name="cs7", commit_range="abc..def"),
+            next_steps=["A", "B"],
+            summary="Looks good.",
+            findings=[
+                Finding(
+                    title="t1",
+                    code="x",
+                    tags=[],
+                    description="d",
+                    rationale="r",
+                )
+            ],
+        )
+        out = render_instance(review)
+        assert out.startswith("---\n")
+        assert "change_set_name: cs7" in out
+        assert "# Review of cs7-plan4" in out
+        assert "1. A" in out
+        assert "## Summary" in out
+        assert "## Findings" in out
+        assert "### Finding 1 - t1" in out
