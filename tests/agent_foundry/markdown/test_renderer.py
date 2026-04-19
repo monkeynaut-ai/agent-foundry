@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
+from agent_foundry.markdown.annotations import AsBulletList, AsCodeBlock, AsNumberedList
 from agent_foundry.markdown.renderer import render_template
+from agent_foundry.markdown.template_model import MarkdownHeader
 from tests.agent_foundry.markdown.fixtures.sample_models import HeaderWithSummary, SimpleHeader
 
 
@@ -30,3 +34,29 @@ class TestRenderHeadingBodyFields:
         out = render_template(HeaderWithSummary)
         assert "## Summary" in out
         assert "## summary" not in out
+
+
+class TestRenderNonHeadingBodyFields:
+    """Code blocks, bullet lists, numbered lists render as their markdown forms."""
+
+    def test_code_block_template_emits_fenced_block(self):
+        class WithCode(MarkdownHeader):
+            snippet: Annotated[str, AsCodeBlock(language="python")]
+
+        out = render_template(WithCode)
+        assert "```python" in out
+        assert "```" in out
+
+    def test_bullet_list_template_emits_dash_placeholder(self):
+        class WithBullets(MarkdownHeader):
+            tags: Annotated[list[str], AsBulletList()]
+
+        out = render_template(WithBullets)
+        assert "- " in out
+
+    def test_numbered_list_template_emits_one_dot_placeholder(self):
+        class WithNumbers(MarkdownHeader):
+            steps: Annotated[list[str], AsNumberedList()]
+
+        out = render_template(WithNumbers)
+        assert "1. " in out
