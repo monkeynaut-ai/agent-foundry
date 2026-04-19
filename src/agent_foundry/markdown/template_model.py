@@ -9,6 +9,8 @@ class-definition time.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -22,6 +24,15 @@ class MarkdownHeader(BaseModel):
     """
 
     title: str
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        # Defer the import to avoid circularity (meta_validation imports template_model
+        # only via TYPE_CHECKING).
+        from agent_foundry.markdown.meta_validation import validate_template_class
+
+        validate_template_class(cls)
 
 
 class MarkdownDocument(MarkdownHeader):
