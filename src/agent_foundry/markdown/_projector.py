@@ -90,11 +90,21 @@ def _project_body_field(
         return idx + 1, code.content  # type: ignore[attr-defined]
 
     if isinstance(ann, AsBulletList):
-        idx, bl = _find_next_of_type(blocks, cursor, MarkdownBulletList, model_class, name)
+        # An empty list produces no element in the rendered markdown; treat a
+        # missing BulletList as an empty list rather than a validation error.
+        result = _find_next_of_type_optional(blocks, cursor, MarkdownBulletList)
+        if result is None:
+            return cursor, []
+        idx, bl = result
         return idx + 1, bl.items  # type: ignore[attr-defined]
 
     if isinstance(ann, AsNumberedList):
-        idx, nl = _find_next_of_type(blocks, cursor, MarkdownNumberedList, model_class, name)
+        # Same as AsBulletList: an empty list renders as nothing, so absence
+        # of the element is valid and represents [].
+        result = _find_next_of_type_optional(blocks, cursor, MarkdownNumberedList)
+        if result is None:
+            return cursor, []
+        idx, nl = result
         return idx + 1, nl.items  # type: ignore[attr-defined]
 
     if isinstance(ann, AsTable):
@@ -168,6 +178,20 @@ def _find_next_of_type(
         f"{model_class.__name__}.{field_name}: expected {element_type.__name__} "
         f"not found after position {cursor}."
     )
+
+
+def _find_next_of_type_optional(
+    blocks: list[BlockElement],
+    cursor: int,
+    element_type: type,
+) -> tuple[int, BlockElement] | None:
+    """Like `_find_next_of_type` but returns None instead of raising when the
+    element is absent. Used for list fields where an empty list renders as no
+    element in the document."""
+    for i in range(cursor, len(blocks)):
+        if isinstance(blocks[i], element_type):
+            return i, blocks[i]
+    return None
 
 
 def _snake_to_title(name: str) -> str:

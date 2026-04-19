@@ -141,6 +141,32 @@ def _description_comment(field: object) -> str:
     return "<!-- field body -->"
 
 
+def _rebase_headings_in_body(text: str, *, target_level: int) -> str:
+    """Rebase heading markers in a body string so the shallowest heading ends
+    up at `target_level` in the rendered document.
+
+    The stored value uses `##` for its top-level sub-headings (level 2). When
+    the `AsHeading` field is rendered at document level `L`, its content should
+    start at level `L+1`. This function shifts all heading markers by
+    `(target_level - 2)` levels so that `##` → `#{target_level}`.
+
+    If `target_level <= 2` (field rendered at level 1), no shift is needed and
+    the text is returned unchanged. Lines that are not heading markers are
+    passed through verbatim."""
+    import re
+
+    delta = target_level - 2
+    if delta <= 0:
+        return text
+
+    def _shift(m: re.Match[str]) -> str:
+        hashes = m.group(1)
+        new_level = len(hashes) + delta
+        return "#" * new_level + m.group(2)
+
+    return re.sub(r"^(#{1,6})([ \t])", _shift, text, flags=re.MULTILINE)
+
+
 def _guard_heading_level(model_class: type, level: int) -> None:
     if level > _MAX_HEADING_LEVEL:
         raise MarkdownTemplateError(
@@ -236,6 +262,12 @@ def _render_body_field_instance(
         _guard_heading_level(owning_class, level)
         heading_text = _snake_to_title(name)
         body_text = str(value) if value is not None else ""
+        # Rebase heading markers in body text so that `## Sub` (level 2 in the
+        # stored value) becomes `#{level+1} Sub` in the document, ensuring the
+        # normalizer nests it inside this heading rather than treating it as a
+        # sibling. `_serialize_block_body` undoes this by emitting `##` for
+        # first-level sub-headings when reconstructing the field value.
+        body_text = _rebase_headings_in_body(body_text, target_level=level + 1)
         return f"{'#' * level} {heading_text}\n\n{body_text}"
     if isinstance(ann, AsCodeBlock):
         lang = ann.language or ""
