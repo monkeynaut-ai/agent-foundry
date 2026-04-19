@@ -91,6 +91,22 @@ class TestNormalizeFrontmatter:
         assert doc.frontmatter.parsed == {"name": "x", "version": 1}
         assert "name: x" in doc.frontmatter.raw_yaml
 
+    def test_frontmatter_syntax_below_top_is_ignored(self):
+        """Frontmatter is recognized only at byte 0. `---\\nkey: val\\n---` content
+        appearing under a heading is legitimate prose (e.g., docs about frontmatter,
+        embedded markdown templates, ADR samples) and must NOT be extracted as the
+        document's frontmatter. markdown-it parses such content as a thematic-break /
+        paragraph / thematic-break sequence — none of which map to MarkdownFrontmatter.
+        """
+        md = (
+            "# Top\n\n"
+            "## Frontmatter Reference\n\n"
+            "Posts begin with frontmatter:\n\n"
+            "---\nfake: yaml\n---\n"
+        )
+        doc = normalize(md)
+        assert doc.frontmatter is None
+
 
 class TestNormalizeParagraph:
     """Paragraphs INSIDE a heading body must be captured as MarkdownParagraph
