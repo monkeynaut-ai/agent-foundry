@@ -4,9 +4,17 @@ from __future__ import annotations
 
 from typing import Annotated
 
+import pytest
 from pydantic import BaseModel
 
-from agent_foundry.markdown.annotations import AsBulletList, AsCodeBlock, AsNumberedList, AsTable
+from agent_foundry.markdown.annotations import (
+    AsBulletList,
+    AsCodeBlock,
+    AsHeading,
+    AsNumberedList,
+    AsTable,
+)
+from agent_foundry.markdown.errors import MarkdownTemplateError
 from agent_foundry.markdown.renderer import render_instance, render_template
 from agent_foundry.markdown.template_model import MarkdownHeader
 from tests.agent_foundry.markdown.fixtures.sample_models import (
@@ -149,3 +157,30 @@ class TestRenderInstance:
         assert "## Summary" in out
         assert "## Findings" in out
         assert "### Finding 1 - t1" in out
+
+
+class TestDepthGuard:
+    def test_seven_levels_deep_raises(self):
+        class L7(MarkdownHeader):
+            inner: Annotated[str, AsHeading()]
+
+        class L6(MarkdownHeader):
+            inner: L7
+
+        class L5(MarkdownHeader):
+            inner: L6
+
+        class L4(MarkdownHeader):
+            inner: L5
+
+        class L3(MarkdownHeader):
+            inner: L4
+
+        class L2(MarkdownHeader):
+            inner: L3
+
+        class L1(MarkdownHeader):
+            inner: L2
+
+        with pytest.raises(MarkdownTemplateError, match="level 7"):
+            render_template(L1)
