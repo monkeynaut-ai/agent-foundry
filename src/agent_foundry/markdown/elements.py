@@ -22,6 +22,7 @@ class MarkdownKind(StrEnum):
     BULLET_LIST = "bullet_list"
     NUMBERED_LIST = "numbered_list"
     FRONTMATTER = "frontmatter"
+    PARAGRAPH = "paragraph"
 
 
 class MarkdownHeading(BaseModel):
@@ -101,9 +102,23 @@ class MarkdownFrontmatter(BaseModel):
     parsed: dict
 
 
+class MarkdownParagraph(BaseModel):
+    """A parsed paragraph of inline text. Internal AST element used by the
+    AST normalizer to preserve prose content inside heading bodies. Not
+    referenced from any annotation; not part of the public API."""
+
+    kind: Literal[MarkdownKind.PARAGRAPH] = MarkdownKind.PARAGRAPH
+    content: str
+
+
 # Forward-declared until other element classes are added.
 BlockElement = Annotated[
-    MarkdownHeading | MarkdownCodeBlock | MarkdownTable | MarkdownBulletList | MarkdownNumberedList,
+    MarkdownHeading
+    | MarkdownCodeBlock
+    | MarkdownTable
+    | MarkdownBulletList
+    | MarkdownNumberedList
+    | MarkdownParagraph,
     Field(discriminator="kind"),
 ]
 

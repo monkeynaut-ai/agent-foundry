@@ -12,6 +12,7 @@ from agent_foundry.markdown.elements import (
     MarkdownHeading,
     MarkdownKind,
     MarkdownNumberedList,
+    MarkdownParagraph,
     MarkdownTable,
     MarkdownTableRow,
 )
@@ -102,3 +103,13 @@ class TestMarkdownFrontmatter:
 
         union_args = get_args(get_args(BlockElement)[0])
         assert MarkdownFrontmatter not in union_args
+
+
+class TestMarkdownParagraph:
+    """MarkdownParagraph captures a single paragraph of inline text. Internal
+    AST representation; not addressable via any annotation."""
+
+    def test_given_content_when_constructed_then_fields_match(self):
+        p = MarkdownParagraph(content="Some prose.")
+        assert p.kind == MarkdownKind.PARAGRAPH
+        assert p.content == "Some prose."
