@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import get_args, get_origin
 
 from pydantic import BaseModel
+from pydantic import ValidationError as _PydanticValidationError
 
 from agent_foundry.markdown._ast_normalizer import NormalizedDocument
 from agent_foundry.markdown.annotations import (
@@ -53,7 +54,13 @@ def project_to_model(
         fm_field_type = model_class.model_fields["frontmatter"].annotation
         fm_class = _extract_basemodel_arg(fm_field_type)
         if fm_class is not None:
-            instance_kwargs["frontmatter"] = fm_class.model_validate(doc.frontmatter.parsed)
+            try:
+                instance_kwargs["frontmatter"] = fm_class.model_validate(doc.frontmatter.parsed)
+            except _PydanticValidationError as exc:
+                raise MarkdownValidationError(
+                    f"{model_class.__name__}.frontmatter: YAML content does not match "
+                    f"{fm_class.__name__} schema. {exc}"
+                ) from exc
 
     body_blocks = top_heading.body
     cursor = 0

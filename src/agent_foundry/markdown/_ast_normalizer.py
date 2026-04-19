@@ -25,6 +25,7 @@ from agent_foundry.markdown.elements import (
     MarkdownTable,
     MarkdownTableRow,
 )
+from agent_foundry.markdown.errors import MarkdownValidationError
 
 
 @dataclass
@@ -58,7 +59,10 @@ def _split_frontmatter(markdown: str) -> tuple[MarkdownFrontmatter | None, str]:
         return None, markdown
     raw_yaml = markdown[4 : end + 1]
     rest = markdown[end + len("\n---\n") :]
-    parsed = yaml.safe_load(raw_yaml) or {}
+    try:
+        parsed = yaml.safe_load(raw_yaml) or {}
+    except yaml.YAMLError as exc:
+        raise MarkdownValidationError(f"Frontmatter YAML is malformed: {exc}") from exc
     return MarkdownFrontmatter(raw_yaml=raw_yaml, parsed=parsed), rest
 
 

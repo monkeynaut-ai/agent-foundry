@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel
+
 from agent_foundry.markdown.errors import MarkdownTemplateError
 
 if TYPE_CHECKING:
@@ -231,11 +233,10 @@ def _resolve_title_text(instance: MarkdownHeader, *, ordinal: int | None) -> str
     return instance.title
 
 
-def _render_frontmatter_instance(frontmatter: object) -> str:
+def _render_frontmatter_instance(frontmatter: BaseModel) -> str:
     import yaml
-    from pydantic import BaseModel
 
-    data = frontmatter.model_dump() if isinstance(frontmatter, BaseModel) else dict(frontmatter)  # type: ignore[call-overload]
+    data = frontmatter.model_dump()
     yaml_text = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
     return f"---\n{yaml_text}---"
 

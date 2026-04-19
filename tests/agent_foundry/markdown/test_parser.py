@@ -51,3 +51,17 @@ class TestValidateMarkdown:
     def test_invalid_markdown_raises_validation_error(self):
         with pytest.raises(MarkdownValidationError):
             validate_markdown("just text\n", HeaderWithSummary)
+
+    def test_malformed_frontmatter_yaml_raises_markdown_validation_error(self):
+        bad = "---\nkey: [unclosed\n---\n\n# Doc\n\n## Summary\n\ntext\n"
+        with pytest.raises(MarkdownValidationError, match=r"[Ff]rontmatter"):
+            validate_markdown(bad, HeaderWithSummary)
+
+    def test_frontmatter_schema_mismatch_raises_markdown_validation_error(self):
+        # ReviewerMetadata requires both change_set_name and commit_range.
+        # Omit commit_range to force a pydantic.ValidationError at the boundary.
+        bad = (
+            "---\nchange_set_name: cs7\n---\n\n# Doc\n\n1. step\n\n## Summary\n\nx\n\n## Findings\n"
+        )
+        with pytest.raises(MarkdownValidationError, match=r"[Ff]rontmatter"):
+            validate_markdown(bad, ReviewerOutput)
