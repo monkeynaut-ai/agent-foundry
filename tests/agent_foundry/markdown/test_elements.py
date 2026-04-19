@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from agent_foundry.markdown.elements import MarkdownHeading, MarkdownKind
+from agent_foundry.markdown.elements import MarkdownCodeBlock, MarkdownHeading, MarkdownKind
 
 
 class TestMarkdownHeading:
@@ -25,3 +25,17 @@ class TestMarkdownHeading:
         """The kind field cannot be set to a non-HEADING value."""
         with pytest.raises(ValidationError):
             MarkdownHeading(kind="not_a_heading", text="Goal")  # type: ignore[arg-type]
+
+
+class TestMarkdownCodeBlock:
+    """MarkdownCodeBlock represents a fenced code block."""
+
+    def test_given_language_and_content_when_constructed_then_fields_match(self):
+        c = MarkdownCodeBlock(language="python", content="def foo(): pass")
+        assert c.kind == MarkdownKind.CODE_BLOCK
+        assert c.language == "python"
+        assert c.content == "def foo(): pass"
+
+    def test_given_no_language_when_constructed_then_language_is_none(self):
+        c = MarkdownCodeBlock(content="raw text")
+        assert c.language is None

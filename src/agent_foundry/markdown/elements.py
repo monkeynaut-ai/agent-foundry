@@ -39,7 +39,23 @@ class MarkdownHeading(BaseModel):
     body: list[BlockElement] = Field(default_factory=list)
 
 
+class MarkdownCodeBlock(BaseModel):
+    """A parsed fenced code block.
+
+    `language` is the fence's language tag (e.g. 'python'); None when no
+    language tag was present (``` followed immediately by code).
+    `content` is the raw text inside the fences.
+    """
+
+    kind: Literal[MarkdownKind.CODE_BLOCK] = MarkdownKind.CODE_BLOCK
+    language: str | None = None
+    content: str
+
+
 # Forward-declared until other element classes are added.
-BlockElement = Annotated[MarkdownHeading, Field(discriminator="kind")]
+BlockElement = Annotated[
+    MarkdownHeading | MarkdownCodeBlock,
+    Field(discriminator="kind"),
+]
 
 MarkdownHeading.model_rebuild()
