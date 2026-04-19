@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from agent_foundry.markdown._shared import get_role_annotation, resolve_wrapper_text, snake_to_title
 from agent_foundry.markdown.errors import MarkdownTemplateError
 
 if TYPE_CHECKING:
@@ -67,15 +68,14 @@ def _render_body_field_template(name: str, field: object, level: int, owning_cla
         AsNumberedList,
         AsTable,
     )
-    from agent_foundry.markdown.meta_validation import _get_role_annotation
     from agent_foundry.markdown.template_model import MarkdownHeader
 
-    ann = _get_role_annotation(field)
+    ann = get_role_annotation(field)
     field_type = field.annotation  # type: ignore[attr-defined]
 
     if isinstance(ann, AsHeading):
         _guard_heading_level(owning_class, level)
-        heading_text = _snake_to_title(name)
+        heading_text = snake_to_title(name)
         description_comment = _description_comment(field)
         return f"{'#' * level} {heading_text}\n\n{description_comment}"
     if isinstance(ann, AsCodeBlock):
@@ -94,7 +94,7 @@ def _render_body_field_template(name: str, field: object, level: int, owning_cla
     if get_origin(field_type) is list:
         args = get_args(field_type)
         if args and isinstance(args[0], type) and issubclass(args[0], MarkdownHeader):
-            wrapper_text = _resolve_wrapper_text_render(name, field)
+            wrapper_text = resolve_wrapper_text(name, field)
             _guard_heading_level(owning_class, level)
             wrapper = f"{'#' * level} {wrapper_text}"
             item_template = render_template(args[0], current_level=level + 1)
@@ -113,27 +113,11 @@ def _render_table_template(name: str, field: object) -> str:
     inner = get_args(field_type)[0]
     if not (isinstance(inner, type) and issubclass(inner, BaseModel)):
         return ""
-    column_names = [_snake_to_title(fname) for fname in inner.model_fields]
+    column_names = [snake_to_title(fname) for fname in inner.model_fields]
     header = "| " + " | ".join(column_names) + " |"
     sep = "|" + "|".join(["---"] * len(column_names)) + "|"
     placeholder = "| " + " | ".join([f"<!-- {fn} -->" for fn in inner.model_fields]) + " |"
     return f"{header}\n{sep}\n{placeholder}"
-
-
-def _resolve_wrapper_text_render(field_name: str, field: object) -> str:
-    """TextTemplate (literal-only on lists) overrides field-name-derived default."""
-    from agent_foundry.markdown.annotations import TextTemplate
-
-    metadata = getattr(field, "metadata", []) or []
-    for m in metadata:
-        if isinstance(m, TextTemplate):
-            return m.template
-    return _snake_to_title(field_name)
-
-
-def _snake_to_title(name: str) -> str:
-    """Convert snake_case to Title Case (e.g. 'change_set_name' → 'Change Set Name')."""
-    return " ".join(word.capitalize() for word in name.split("_"))
 
 
 def _description_comment(field: object) -> str:
@@ -253,15 +237,14 @@ def _render_body_field_instance(
         AsNumberedList,
         AsTable,
     )
-    from agent_foundry.markdown.meta_validation import _get_role_annotation
     from agent_foundry.markdown.template_model import MarkdownHeader
 
-    ann = _get_role_annotation(field)
+    ann = get_role_annotation(field)
     field_type = field.annotation  # type: ignore[attr-defined]
 
     if isinstance(ann, AsHeading):
         _guard_heading_level(owning_class, level)
-        heading_text = _snake_to_title(name)
+        heading_text = snake_to_title(name)
         body_text = str(value) if value is not None else ""
         # Rebase heading markers in body text so that `## Sub` (level 2 in the
         # stored value) becomes `#{level+1} Sub` in the document, ensuring the
@@ -286,7 +269,7 @@ def _render_body_field_instance(
     if get_origin(field_type) is list:
         args = get_args(field_type)
         if args and isinstance(args[0], type) and issubclass(args[0], MarkdownHeader):
-            wrapper_text = _resolve_wrapper_text_render(name, field)
+            wrapper_text = resolve_wrapper_text(name, field)
             _guard_heading_level(owning_class, level)
             wrapper = f"{'#' * level} {wrapper_text}"
             items_list = cast(list[MarkdownHeader], value or [])
@@ -304,7 +287,7 @@ def _render_table_instance(field_type: object, value: list[object]) -> str:
     from typing import get_args
 
     inner = get_args(field_type)[0]
-    column_names = [_snake_to_title(fname) for fname in inner.model_fields]
+    column_names = [snake_to_title(fname) for fname in inner.model_fields]
     header = "| " + " | ".join(column_names) + " |"
     sep = "|" + "|".join(["---"] * len(column_names)) + "|"
     rows = []

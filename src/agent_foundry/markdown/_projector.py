@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from pydantic import ValidationError as _PydanticValidationError
 
 from agent_foundry.markdown._ast_normalizer import NormalizedDocument
+from agent_foundry.markdown._shared import get_role_annotation, resolve_wrapper_text, snake_to_title
 from agent_foundry.markdown.annotations import (
     AsBulletList,
     AsCodeBlock,
@@ -81,13 +82,11 @@ def _project_body_field(
     cursor: int,
     model_class: type,
 ) -> tuple[int, object]:
-    from agent_foundry.markdown.meta_validation import _get_role_annotation
-
-    ann = _get_role_annotation(field)
+    ann = get_role_annotation(field)
     field_type = field.annotation  # type: ignore[attr-defined]
 
     if isinstance(ann, AsHeading):
-        expected_text = _snake_to_title(name)
+        expected_text = snake_to_title(name)
         idx, heading = _find_next_heading(blocks, cursor, expected_text, model_class, name)
         body_text = _serialize_block_body(heading)
         return idx + 1, body_text
@@ -117,7 +116,7 @@ def _project_body_field(
     if isinstance(ann, AsTable):
         idx, t = _find_next_of_type(blocks, cursor, MarkdownTable, model_class, name)
         inner = get_args(field_type)[0]
-        expected_cols = [_snake_to_title(k) for k in _field_keys(inner)]
+        expected_cols = [snake_to_title(k) for k in _field_keys(inner)]
         if t.columns != expected_cols:  # type: ignore[attr-defined]
             raise MarkdownValidationError(
                 f"{model_class.__name__}.{name}: table column mismatch. "
@@ -141,7 +140,7 @@ def _project_body_field(
     if get_origin(field_type) is list:
         args = get_args(field_type)
         if args and isinstance(args[0], type) and issubclass(args[0], MarkdownHeader):
-            wrapper_text = _resolve_wrapper_text(name, field)
+            wrapper_text = resolve_wrapper_text(name, field)
             idx, wrapper = _find_next_heading(blocks, cursor, wrapper_text, model_class, name)
             items = []
             for child in wrapper.body:
@@ -201,22 +200,8 @@ def _find_next_of_type_optional(
     return None
 
 
-def _snake_to_title(name: str) -> str:
-    return " ".join(w.capitalize() for w in name.split("_"))
-
-
 def _field_keys(model: type[BaseModel]) -> list[str]:
     return list(model.model_fields.keys())
-
-
-def _resolve_wrapper_text(field_name: str, field: object) -> str:
-    from agent_foundry.markdown.annotations import TextTemplate
-
-    metadata = getattr(field, "metadata", []) or []
-    for m in metadata:
-        if isinstance(m, TextTemplate):
-            return m.template
-    return _snake_to_title(field_name)
 
 
 def _serialize_block_body(heading: MarkdownHeading, *, _depth: int = 0) -> str:

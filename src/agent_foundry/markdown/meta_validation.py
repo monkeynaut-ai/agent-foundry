@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Union, get_args, get_origin
 
 from pydantic import BaseModel as _BaseModel
 
+from agent_foundry.markdown._shared import get_role_annotation
 from agent_foundry.markdown.annotations import (
     AsBulletList,
     AsCodeBlock,
@@ -31,14 +32,6 @@ from agent_foundry.markdown.errors import MarkdownTemplateError
 
 if TYPE_CHECKING:
     from agent_foundry.markdown.template_model import MarkdownHeader
-
-# Annotation types that DO NOT open a heading scope.
-_NON_HEADING_ANNOTATIONS: tuple[type, ...] = (
-    AsCodeBlock,
-    AsTable,
-    AsBulletList,
-    AsNumberedList,
-)
 
 
 def validate_template_class(cls: type[MarkdownHeader]) -> None:
@@ -85,7 +78,7 @@ def _check_body_order_rule(cls: type[MarkdownHeader]) -> None:
         elif seen_heading:
             raise MarkdownTemplateError(
                 f"{cls.__name__}.{name} is non-heading "
-                f"(annotation type {type(_get_role_annotation(field)).__name__}) "
+                f"(annotation type {type(get_role_annotation(field)).__name__}) "
                 f"and follows {cls.__name__}.{seen_heading_name} "
                 f"which is heading-introducing. Within a MarkdownHeader subclass's "
                 f"body, all non-heading fields must precede all heading-introducing "
@@ -163,7 +156,7 @@ def _check_type_compatibility_rule(cls: type[MarkdownHeader]) -> None:
     for name, field in cls.model_fields.items():
         if name in ("title", "frontmatter"):
             continue
-        ann = _get_role_annotation(field)
+        ann = get_role_annotation(field)
         field_type = field.annotation
         _enforce_compat(cls, name, ann, field_type)
 
@@ -257,7 +250,7 @@ def _is_heading_introducing(field: object) -> bool:
 
     from agent_foundry.markdown.template_model import MarkdownHeader
 
-    ann = _get_role_annotation(field)
+    ann = get_role_annotation(field)
     if isinstance(ann, AsHeading):
         return True
     field_type = field.annotation  # type: ignore[attr-defined]
@@ -269,14 +262,3 @@ def _is_heading_introducing(field: object) -> bool:
         if args and isinstance(args[0], type) and issubclass(args[0], MarkdownHeader):
             return True
     return False
-
-
-def _get_role_annotation(field: object) -> object | None:
-    """Extract the first markdown-role annotation from the field's metadata,
-    or None if there isn't one."""
-
-    metadata = getattr(field, "metadata", []) or []
-    for m in metadata:
-        if isinstance(m, (*_NON_HEADING_ANNOTATIONS, AsHeading, TextTemplate)):
-            return m
-    return None
