@@ -8,7 +8,10 @@
 
 ## Status
 
-Accepted. Agent Foundry will build its declarative markdown-document machinery around **Option (iii): annotation-driven domain models**. Options (i) and (ii), considered during the brainstorm, are rejected for the reasons documented below.
+Accepted. Phase 1 implemented in `agent_foundry.markdown` (committed 2026-04-19).
+Subsequent phases will extend the machinery (instruction-appendix generation,
+to_claude_code_schema integration, semantic validation, additional annotation types)
+and build the four Archipelago agents on top.
 
 ## Context
 
@@ -292,3 +295,7 @@ These do not block acceptance of this ADR, but they surface during implementatio
 ## Change log
 
 - **2026-04-17** — ADR created. Decision accepted. Captures the brainstorm from CS7 Plan 4 design session.
+- **2026-04-19** — Phase 1 implemented. Two base classes (`MarkdownHeader`, `MarkdownDocument`),
+  six annotations, six element classes, deterministic renderer, parser/validator, subtree
+  extractor. Live in `agent_foundry.markdown`. See
+  `archipelago/docs/plans/2026-04-17-cs7-plan4-phase1-implementation-plan.md` for task list.
