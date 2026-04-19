@@ -71,9 +71,25 @@ class MarkdownTable(BaseModel):
     rows: list[MarkdownTableRow]
 
 
+class MarkdownBulletList(BaseModel):
+    """A parsed unordered (bullet) list. Items are flat strings; nested lists
+    are not supported in Phase 1."""
+
+    kind: Literal[MarkdownKind.BULLET_LIST] = MarkdownKind.BULLET_LIST
+    items: list[str]
+
+
+class MarkdownNumberedList(BaseModel):
+    """A parsed ordered (numbered) list. Items are flat strings; nested lists
+    are not supported in Phase 1."""
+
+    kind: Literal[MarkdownKind.NUMBERED_LIST] = MarkdownKind.NUMBERED_LIST
+    items: list[str]
+
+
 # Forward-declared until other element classes are added.
 BlockElement = Annotated[
-    MarkdownHeading | MarkdownCodeBlock | MarkdownTable,
+    MarkdownHeading | MarkdownCodeBlock | MarkdownTable | MarkdownBulletList | MarkdownNumberedList,
     Field(discriminator="kind"),
 ]
 

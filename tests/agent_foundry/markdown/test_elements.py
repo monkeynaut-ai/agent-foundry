@@ -6,9 +6,11 @@ import pytest
 from pydantic import ValidationError
 
 from agent_foundry.markdown.elements import (
+    MarkdownBulletList,
     MarkdownCodeBlock,
     MarkdownHeading,
     MarkdownKind,
+    MarkdownNumberedList,
     MarkdownTable,
     MarkdownTableRow,
 )
@@ -66,3 +68,17 @@ class TestMarkdownTable:
     def test_given_zero_rows_when_constructed_then_rows_is_empty(self):
         t = MarkdownTable(columns=["A", "B"], rows=[])
         assert t.rows == []
+
+
+class TestMarkdownBulletList:
+    def test_given_items_when_constructed_then_fields_match(self):
+        bl = MarkdownBulletList(items=["alpha", "beta"])
+        assert bl.kind == MarkdownKind.BULLET_LIST
+        assert bl.items == ["alpha", "beta"]
+
+
+class TestMarkdownNumberedList:
+    def test_given_items_when_constructed_then_fields_match(self):
+        nl = MarkdownNumberedList(items=["first", "second"])
+        assert nl.kind == MarkdownKind.NUMBERED_LIST
+        assert nl.items == ["first", "second"]
