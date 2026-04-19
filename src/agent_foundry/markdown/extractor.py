@@ -53,8 +53,8 @@ def _find_matching_heading(tokens: list[Token], level: int, text: str) -> int | 
             matches.append(i)
     if len(matches) > 1:
         raise MarkdownExtractionError(
-            f"Multiple ({len(matches)}) headings at level {level} with text "
-            f"{text!r} found. extract_subtree requires a unique match in Phase 1."
+            f"Found multiple ({len(matches)}) headings at level {level} with text "
+            f"{text!r}; extract_subtree requires a unique match in Phase 1."
         )
     return matches[0] if matches else None
 

@@ -38,3 +38,10 @@ class TestExtractSubtree:
         assert out.startswith("# Finding 2 - bar")
         # Original Description was at level 4; should now be level 2.
         assert "## Description" in out
+
+
+class TestExtractMultiMatch:
+    def test_multiple_matches_raises(self):
+        md = "# Top\n\n## Section\n\nfirst\n\n## Section\n\nsecond\n"
+        with pytest.raises(MarkdownExtractionError, match="multiple"):
+            extract_subtree(md, heading_level=2, title_match="Section")
