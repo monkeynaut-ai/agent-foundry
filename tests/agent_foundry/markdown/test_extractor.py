@@ -75,3 +75,19 @@ class TestExtractAndValidate:
         assert finding.code.strip() == "x = 1"
         assert finding.tags == ["t1", "t2"]
         assert "No tests" in finding.description
+
+
+class TestExtractSubtreePreservesContent:
+    def test_extract_preserves_table_in_subtree(self):
+        md = (
+            "# Top\n\n"
+            "## Section With Table\n\n"
+            "| Path | Lines |\n"
+            "|------|-------|\n"
+            "| a.py | 12    |\n"
+            "| b.py | 7     |\n"
+        )
+        out = extract_subtree(md, heading_level=2, title_match="Section With Table")
+        assert "| Path | Lines |" in out
+        assert "| a.py | 12 |" in out
+        assert "| b.py | 7 |" in out

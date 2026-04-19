@@ -123,6 +123,34 @@ def _render_tokens_to_markdown(tokens: list[Token]) -> str:
                 i += 1
             parts.append("\n".join(f"{n + 1}. {it}" for n, it in enumerate(items)))
             i += 1
+        elif t.type == "table_open":
+            i += 1
+            header_cells: list[str] = []
+            data_rows: list[list[str]] = []
+            cur_row: list[str] = []
+            in_header = False
+            while tokens[i].type != "table_close":
+                tt = tokens[i]
+                if tt.type == "thead_open":
+                    in_header = True
+                elif tt.type == "thead_close":
+                    in_header = False
+                elif tt.type == "tr_open":
+                    cur_row = []
+                elif tt.type == "tr_close":
+                    if in_header:
+                        header_cells = cur_row
+                    else:
+                        data_rows.append(cur_row)
+                elif tt.type in ("th_open", "td_open"):
+                    cur_row.append(tokens[i + 1].content)
+                i += 1
+            sep = "|" + "|".join(["---"] * len(header_cells)) + "|"
+            parts.append("| " + " | ".join(header_cells) + " |")
+            parts.append(sep)
+            for row in data_rows:
+                parts.append("| " + " | ".join(row) + " |")
+            i += 1  # skip table_close
         else:
             i += 1
     return "\n\n".join(parts) + "\n"
