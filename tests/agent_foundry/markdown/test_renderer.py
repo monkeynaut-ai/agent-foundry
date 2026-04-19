@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from agent_foundry.markdown.annotations import AsBulletList, AsCodeBlock, AsNumberedList
+from pydantic import BaseModel
+
+from agent_foundry.markdown.annotations import AsBulletList, AsCodeBlock, AsNumberedList, AsTable
 from agent_foundry.markdown.renderer import render_template
 from agent_foundry.markdown.template_model import MarkdownHeader
 from tests.agent_foundry.markdown.fixtures.sample_models import HeaderWithSummary, SimpleHeader
@@ -60,3 +62,17 @@ class TestRenderNonHeadingBodyFields:
 
         out = render_template(WithNumbers)
         assert "1. " in out
+
+
+class TestRenderTable:
+    def test_table_template_emits_pipe_header_and_separator(self):
+        class Row(BaseModel):
+            path: str
+            lines: int
+
+        class WithTable(MarkdownHeader):
+            files: Annotated[list[Row], AsTable()]
+
+        out = render_template(WithTable)
+        assert "| Path | Lines |" in out
+        assert "|---|---|" in out
