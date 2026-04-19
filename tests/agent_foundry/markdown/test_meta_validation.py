@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import pytest
 
+from agent_foundry.markdown.annotations import (
+    AsBulletList,
+    AsCodeBlock,
+    AsHeading,
+    AsTable,
+)
 from agent_foundry.markdown.errors import MarkdownTemplateError
 from agent_foundry.markdown.template_model import MarkdownHeader
 
@@ -18,8 +26,6 @@ class TestTitleRule:
             pass
 
     def test_subclass_overrides_title_to_str_passes(self):
-        from typing import Annotated
-
         from agent_foundry.markdown.annotations import TextTemplate
 
         class SimpleHeader(MarkdownHeader):
@@ -34,8 +40,6 @@ class TestTitleRule:
     def test_subclass_overrides_title_with_annotated_int_raises(self):
         """TextTemplate-annotated title is fine when underlying type is str;
         annotating a non-str type should still raise."""
-        from typing import Annotated
-
         from agent_foundry.markdown.annotations import TextTemplate
 
         with pytest.raises(MarkdownTemplateError, match="title"):
@@ -63,3 +67,44 @@ class TestMetaValidationFiresWithFullFields:
         # The hook fires at class definition; body field must be visible.
         assert "extra_field" in observed["fields"]
         assert "title" in observed["fields"]
+
+
+class TestBodyOrderRule:
+    """Within a MarkdownHeader's body, non-heading fields must precede heading
+    fields. Title is exempt (always the container heading); frontmatter is exempt
+    (always rendered at top)."""
+
+    def test_only_non_heading_body_fields_passes(self):
+        class OkA(MarkdownHeader):
+            code: Annotated[str, AsCodeBlock()]
+            tags: Annotated[list[str], AsBulletList()]
+
+    def test_only_heading_body_fields_passes(self):
+        class OkB(MarkdownHeader):
+            description: Annotated[str, AsHeading()]
+            rationale: Annotated[str, AsHeading()]
+
+    def test_non_heading_then_heading_passes(self):
+        class OkC(MarkdownHeader):
+            code: Annotated[str, AsCodeBlock()]
+            description: Annotated[str, AsHeading()]
+
+    def test_heading_then_non_heading_raises(self):
+        with pytest.raises(MarkdownTemplateError, match="non-heading"):
+
+            class Bad(MarkdownHeader):
+                description: Annotated[str, AsHeading()]
+                code: Annotated[str, AsCodeBlock()]
+
+    def test_heading_then_table_raises(self):
+        from pydantic import BaseModel
+
+        class Row(BaseModel):
+            a: str
+            b: str
+
+        with pytest.raises(MarkdownTemplateError, match="non-heading"):
+
+            class Bad(MarkdownHeader):
+                description: Annotated[str, AsHeading()]
+                table: Annotated[list[Row], AsTable()]
