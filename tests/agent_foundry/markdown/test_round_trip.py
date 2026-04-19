@@ -101,3 +101,21 @@ class TestRoundTrip:
         # Body content survives — sub-heading text and prose both present
         assert "Sub-section" in recovered.details
         assert "Nested content here." in recovered.details
+
+    def test_as_heading_body_with_two_level_sub_headings_round_trips(self):
+        """Two-level sub-heading nesting inside an AsHeading body must be
+        preserved on round-trip. Bug fix: prior recursive serialization
+        emitted both levels as level 2, collapsing the hierarchy."""
+
+        class WithDeepBody(MarkdownHeader):
+            details: Annotated[str, AsHeading()]
+
+        original = WithDeepBody(
+            title="Doc",
+            details="## Sub-section\n\n### Sub-sub-section\n\nDeep content.",
+        )
+        rendered = render_instance(original)
+        recovered = validate_markdown(rendered, WithDeepBody)
+        assert "## Sub-section" in recovered.details
+        assert "### Sub-sub-section" in recovered.details
+        assert "Deep content." in recovered.details

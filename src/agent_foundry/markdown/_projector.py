@@ -212,16 +212,26 @@ def _resolve_wrapper_text(field_name: str, field: object) -> str:
     return _snake_to_title(field_name)
 
 
-def _serialize_block_body(heading: MarkdownHeading) -> str:
+def _serialize_block_body(heading: MarkdownHeading, *, _depth: int = 0) -> str:
     """Serialize the body of a heading back to markdown text. Used to reconstitute
-    an `Annotated[str, AsHeading()]` field's value."""
+    an `Annotated[str, AsHeading()]` field's value.
+
+    `_depth` tracks the nesting of sub-headings inside the body. The first level
+    of sub-heading emits at `##` (depth 0); each recursive level adds one `#`.
+    Without depth tracking, multi-level heading bodies collapse to a single
+    sibling level on round-trip.
+
+    Note: depths beyond 4 would produce heading levels > 6 (markdown maximum),
+    but such deep nesting is uncommon in practice and text remains readable.
+    """
     parts: list[str] = []
     for b in heading.body:
         if isinstance(b, MarkdownParagraph):
             parts.append(b.content)
         elif isinstance(b, MarkdownHeading):
-            parts.append(f"## {b.text}")
-            sub_body = _serialize_block_body(b)
+            level = 2 + _depth
+            parts.append(f"{'#' * level} {b.text}")
+            sub_body = _serialize_block_body(b, _depth=_depth + 1)
             if sub_body:
                 parts.append(sub_body)
         elif isinstance(b, MarkdownCodeBlock):
