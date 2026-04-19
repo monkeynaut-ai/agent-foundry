@@ -9,7 +9,11 @@ from pydantic import BaseModel
 from agent_foundry.markdown.annotations import AsBulletList, AsCodeBlock, AsNumberedList, AsTable
 from agent_foundry.markdown.renderer import render_template
 from agent_foundry.markdown.template_model import MarkdownHeader
-from tests.agent_foundry.markdown.fixtures.sample_models import HeaderWithSummary, SimpleHeader
+from tests.agent_foundry.markdown.fixtures.sample_models import (
+    Finding,
+    HeaderWithSummary,
+    SimpleHeader,
+)
 
 
 class TestRenderTemplateSimpleHeader:
@@ -76,3 +80,21 @@ class TestRenderTable:
         out = render_template(WithTable)
         assert "| Path | Lines |" in out
         assert "|---|---|" in out
+
+
+class TestRenderHeadingIntroducingFields:
+    def test_list_of_finding_template_emits_wrapper_heading(self):
+        class WithFindings(MarkdownHeader):
+            findings: list[Finding]
+
+        out = render_template(WithFindings)
+        assert "## Findings" in out  # wrapper heading
+
+    def test_finding_item_template_emits_ordinal_placeholder(self):
+        class WithFindings(MarkdownHeader):
+            findings: list[Finding]
+
+        out = render_template(WithFindings)
+        # The Finding subdocument's title carries TextTemplate("Finding {ordinal} - {value}")
+        # In skeleton form, ordinal is shown as "{ordinal}" or a literal placeholder.
+        assert "Finding {ordinal}" in out or "### Finding 1" in out
