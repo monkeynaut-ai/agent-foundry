@@ -52,9 +52,28 @@ class MarkdownCodeBlock(BaseModel):
     content: str
 
 
+class MarkdownTableRow(BaseModel):
+    """One row of a parsed markdown table. Cells are flat strings; rich
+    inline content within cells is flattened to plain text in Phase 1."""
+
+    cells: list[str]
+
+
+class MarkdownTable(BaseModel):
+    """A parsed GFM markdown table.
+
+    `columns` are the header labels in column order.
+    `rows` are the data rows; each row's cells must align with columns.
+    """
+
+    kind: Literal[MarkdownKind.TABLE] = MarkdownKind.TABLE
+    columns: list[str]
+    rows: list[MarkdownTableRow]
+
+
 # Forward-declared until other element classes are added.
 BlockElement = Annotated[
-    MarkdownHeading | MarkdownCodeBlock,
+    MarkdownHeading | MarkdownCodeBlock | MarkdownTable,
     Field(discriminator="kind"),
 ]
 

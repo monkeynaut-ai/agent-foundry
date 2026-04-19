@@ -5,7 +5,13 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from agent_foundry.markdown.elements import MarkdownCodeBlock, MarkdownHeading, MarkdownKind
+from agent_foundry.markdown.elements import (
+    MarkdownCodeBlock,
+    MarkdownHeading,
+    MarkdownKind,
+    MarkdownTable,
+    MarkdownTableRow,
+)
 
 
 class TestMarkdownHeading:
@@ -39,3 +45,24 @@ class TestMarkdownCodeBlock:
     def test_given_no_language_when_constructed_then_language_is_none(self):
         c = MarkdownCodeBlock(content="raw text")
         assert c.language is None
+
+
+class TestMarkdownTable:
+    """MarkdownTable represents a GFM-style markdown table."""
+
+    def test_given_columns_and_rows_when_constructed_then_fields_match(self):
+        t = MarkdownTable(
+            columns=["Path", "Lines"],
+            rows=[
+                MarkdownTableRow(cells=["src/foo.py", "120"]),
+                MarkdownTableRow(cells=["src/bar.py", "45"]),
+            ],
+        )
+        assert t.kind == MarkdownKind.TABLE
+        assert t.columns == ["Path", "Lines"]
+        assert len(t.rows) == 2
+        assert t.rows[0].cells == ["src/foo.py", "120"]
+
+    def test_given_zero_rows_when_constructed_then_rows_is_empty(self):
+        t = MarkdownTable(columns=["A", "B"], rows=[])
+        assert t.rows == []
