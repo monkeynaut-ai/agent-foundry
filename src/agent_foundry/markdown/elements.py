@@ -87,6 +87,20 @@ class MarkdownNumberedList(BaseModel):
     items: list[str]
 
 
+class MarkdownFrontmatter(BaseModel):
+    """A parsed YAML frontmatter block. Document-root-only — never appears
+    inside a heading body (and is excluded from the BlockElement union).
+
+    `raw_yaml` is the literal text between the opening and closing `---` fences.
+    `parsed` is the YAML decoded into a dict; the projector then validates this
+    dict against the model's `frontmatter` field type (a typed BaseModel).
+    """
+
+    kind: Literal[MarkdownKind.FRONTMATTER] = MarkdownKind.FRONTMATTER
+    raw_yaml: str
+    parsed: dict
+
+
 # Forward-declared until other element classes are added.
 BlockElement = Annotated[
     MarkdownHeading | MarkdownCodeBlock | MarkdownTable | MarkdownBulletList | MarkdownNumberedList,

@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from agent_foundry.markdown.elements import (
     MarkdownBulletList,
     MarkdownCodeBlock,
+    MarkdownFrontmatter,
     MarkdownHeading,
     MarkdownKind,
     MarkdownNumberedList,
@@ -82,3 +83,22 @@ class TestMarkdownNumberedList:
         nl = MarkdownNumberedList(items=["first", "second"])
         assert nl.kind == MarkdownKind.NUMBERED_LIST
         assert nl.items == ["first", "second"]
+
+
+class TestMarkdownFrontmatter:
+    """Frontmatter is a document-root-only element; not part of BlockElement."""
+
+    def test_given_raw_yaml_when_constructed_then_fields_match(self):
+        fm = MarkdownFrontmatter(raw_yaml="key: value\n", parsed={"key": "value"})
+        assert fm.kind == MarkdownKind.FRONTMATTER
+        assert fm.raw_yaml == "key: value\n"
+        assert fm.parsed == {"key": "value"}
+
+    def test_frontmatter_not_in_block_element_union(self):
+        """Frontmatter cannot appear inside a heading body."""
+        from typing import get_args
+
+        from agent_foundry.markdown.elements import BlockElement
+
+        union_args = get_args(get_args(BlockElement)[0])
+        assert MarkdownFrontmatter not in union_args
