@@ -14,7 +14,10 @@ reaches runtime use.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, get_args, get_origin
+from types import UnionType
+from typing import TYPE_CHECKING, Union, get_args, get_origin
+
+from pydantic import BaseModel as _BaseModel
 
 from agent_foundry.markdown.annotations import (
     AsBulletList,
@@ -44,8 +47,8 @@ def validate_template_class(cls: type[MarkdownHeader]) -> None:
 
     _check_title_rule(cls)
     _check_body_order_rule(cls)
+    _check_frontmatter_rule(cls)
     # Subsequent rules added in following tasks:
-    #   _check_frontmatter_rule(cls)
     #   _check_type_compatibility_rule(cls)
 
 
@@ -89,6 +92,74 @@ def _check_body_order_rule(cls: type[MarkdownHeader]) -> None:
                 f"fields. Reorder so '{name}' comes before '{seen_heading_name}', "
                 f"or move '{name}' into '{seen_heading_name}''s body."
             )
+
+
+def _check_frontmatter_rule(cls: type[MarkdownHeader]) -> None:
+    """Frontmatter constraints:
+       (a) declared (non-default) only on MarkdownDocument subclasses
+       (b) when declared in the subclass body, must be the first field
+       (c) type must be BaseModel | None
+    Note: subclasses that inherit MarkdownDocument's default `frontmatter: BaseModel|None = None`
+    without overriding it pass trivially. MarkdownDocument itself is exempt (it defines
+    the canonical frontmatter field).
+    """
+    # Detect whether the subclass declares 'frontmatter' itself (not just inherits).
+    # Use raw __annotations__ for the name-presence and ordering check (we only need
+    # field names; values are strings under `from __future__ import annotations` but
+    # that doesn't matter for name-based checks).
+    own_annotation_names = list(getattr(cls, "__annotations__", {}).keys())
+    if "frontmatter" not in own_annotation_names:
+        return  # nothing declared in this subclass; rule passes
+
+    # Rule (a): only MarkdownDocument subclasses may declare frontmatter.
+    # We check by MRO class names to avoid circular import (MarkdownDocument is being
+    # constructed when this runs for the first time).
+    mro_names = {c.__name__ for c in cls.__mro__}
+    is_markdown_document_itself = cls.__name__ == "MarkdownDocument"
+    is_markdown_document_subclass = (
+        "MarkdownDocument" in mro_names and not is_markdown_document_itself
+    )
+
+    if is_markdown_document_itself:
+        return  # MarkdownDocument itself defines the frontmatter field; always valid.
+
+    if not is_markdown_document_subclass:
+        raise MarkdownTemplateError(
+            f"{cls.__name__} declares 'frontmatter' but inherits from MarkdownHeader, "
+            f"not MarkdownDocument. Frontmatter is allowed only on MarkdownDocument "
+            f"subclasses. Either change the base class to MarkdownDocument, or remove "
+            f"the frontmatter field."
+        )
+
+    # Rule (b): must be the first field declared in this subclass.
+    if own_annotation_names[0] != "frontmatter":
+        raise MarkdownTemplateError(
+            f"{cls.__name__}: 'frontmatter' must be the first declared field "
+            f"(currently field {own_annotation_names.index('frontmatter') + 1} of "
+            f"{len(own_annotation_names)}). Move it to the top of the class body."
+        )
+
+    # Rule (c): type must be (BaseModel-subclass) | None.
+    # Use model_fields (Pydantic-resolved) rather than raw annotations (string forms).
+    field_type = cls.model_fields["frontmatter"].annotation  # type: ignore[attr-defined]
+    if not _is_optional_basemodel(field_type):
+        raise MarkdownTemplateError(
+            f"{cls.__name__}.frontmatter has type {field_type!r}, expected a "
+            f"BaseModel-subclass union with None (e.g. `MyFrontmatter | None`). "
+        )
+
+
+def _is_optional_basemodel(annotation: object) -> bool:
+    """True iff the annotation is `BaseModel-subclass | None`."""
+    origin = get_origin(annotation)
+    if origin not in (Union, UnionType):
+        return False
+    args = get_args(annotation)
+    if len(args) != 2:
+        return False
+    has_none = type(None) in args
+    has_basemodel = any(isinstance(a, type) and issubclass(a, _BaseModel) for a in args)
+    return has_none and has_basemodel
 
 
 def _is_heading_introducing(field: object) -> bool:

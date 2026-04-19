@@ -108,3 +108,44 @@ class TestBodyOrderRule:
             class Bad(MarkdownHeader):
                 description: Annotated[str, AsHeading()]
                 table: Annotated[list[Row], AsTable()]
+
+
+class TestFrontmatterRule:
+    """Frontmatter is allowed only on MarkdownDocument subclasses, only as the
+    first declared field, and only with type BaseModel | None."""
+
+    def test_frontmatter_on_markdown_document_passes(self):
+        from pydantic import BaseModel
+
+        from agent_foundry.markdown.template_model import MarkdownDocument
+
+        class FmSchema(BaseModel):
+            x: int
+
+        class Doc(MarkdownDocument):
+            frontmatter: FmSchema | None = None
+
+    def test_frontmatter_on_markdown_header_raises(self):
+        from pydantic import BaseModel
+
+        class FmSchema(BaseModel):
+            x: int
+
+        with pytest.raises(MarkdownTemplateError, match="frontmatter"):
+
+            class BadHdr(MarkdownHeader):
+                frontmatter: FmSchema | None = None  # not allowed: not a MarkdownDocument
+
+    def test_frontmatter_not_first_field_raises(self):
+        from pydantic import BaseModel
+
+        from agent_foundry.markdown.template_model import MarkdownDocument
+
+        class FmSchema(BaseModel):
+            x: int
+
+        with pytest.raises(MarkdownTemplateError, match="first"):
+
+            class BadDoc(MarkdownDocument):
+                summary: Annotated[str, AsHeading()]  # before frontmatter — bad
+                frontmatter: FmSchema | None = None
