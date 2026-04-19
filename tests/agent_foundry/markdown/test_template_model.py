@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from agent_foundry.markdown.template_model import MarkdownHeader
+from agent_foundry.markdown.template_model import MarkdownDocument, MarkdownHeader
 
 
 class TestMarkdownHeaderTitle:
@@ -32,3 +32,38 @@ class TestMarkdownHeaderTitle:
         w = WithBody(title="X", description="Y")
         assert w.title == "X"
         assert w.description == "Y"
+
+
+class FrontmatterSchema(BaseModel):
+    name: str
+    version: int
+
+
+class TestMarkdownDocument:
+    """MarkdownDocument extends MarkdownHeader with an optional frontmatter field."""
+
+    def test_inherits_title_from_markdown_header(self):
+        class Doc(MarkdownDocument):
+            pass
+
+        d = Doc(title="hello")
+        assert d.title == "hello"
+        assert d.frontmatter is None
+
+    def test_subclass_can_override_frontmatter_type(self):
+        class Doc(MarkdownDocument):
+            frontmatter: FrontmatterSchema | None = None
+
+        d = Doc(title="hello", frontmatter=FrontmatterSchema(name="x", version=1))
+        assert d.frontmatter is not None
+        assert d.frontmatter.name == "x"
+
+    def test_frontmatter_optional_default_none(self):
+        class Doc(MarkdownDocument):
+            frontmatter: FrontmatterSchema | None = None
+
+        d = Doc(title="hello")
+        assert d.frontmatter is None
+
+    def test_markdown_document_is_markdown_header(self):
+        assert issubclass(MarkdownDocument, MarkdownHeader)

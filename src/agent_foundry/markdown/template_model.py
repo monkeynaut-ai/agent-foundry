@@ -22,3 +22,15 @@ class MarkdownHeader(BaseModel):
     """
 
     title: str
+
+
+class MarkdownDocument(MarkdownHeader):
+    """Base class for top-level markdown documents.
+
+    Adds an optional `frontmatter: BaseModel | None = None` field. Subclasses
+    may override this with a more specific BaseModel schema. The renderer
+    always emits frontmatter at the very top of the document, before the
+    title heading.
+    """
+
+    frontmatter: BaseModel | None = None
