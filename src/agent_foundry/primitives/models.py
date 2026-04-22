@@ -155,9 +155,11 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     # naming and log/event labelling; never for composition or lookup.
     name: str = Field(min_length=1)
 
-    # Product-side collaborators
+    # Product-side collaborators. Both receive the input-state slice so
+    # prompts and instructions can be resolved against per-run data (e.g.
+    # Jinja-templated instructions via archetype.templating).
     prompt_builder: Callable[[I], str]
-    instructions_provider: Callable[[], str]
+    instructions_provider: Callable[[I], str]
 
     # Executor — required, no default. The callable that actually runs the
     # agent and returns an instance of ``O``. The default is

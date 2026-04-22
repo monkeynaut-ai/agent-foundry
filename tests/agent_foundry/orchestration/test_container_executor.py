@@ -86,7 +86,7 @@ def _make_primitive(
     return AgentAction[InputModel, output_type](  # type: ignore[valid-type]
         name="test-agent",
         prompt_builder=lambda s: f"do: {s.task}",
-        instructions_provider=lambda: "Be precise.",
+        instructions_provider=lambda _s: "Be precise.",
         executor=run_agent_in_container,
         reuse_policy=reuse_policy,
     )
@@ -430,7 +430,7 @@ def _make_smoke_primitive() -> AgentAction[InputModel, OutputModel]:
     return AgentAction[InputModel, OutputModel](
         name="test-agent",
         prompt_builder=lambda s: f"do: {s.task}",
-        instructions_provider=lambda: "Be precise.",
+        instructions_provider=lambda _s: "Be precise.",
         executor=run_agent_in_container,
         reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )

@@ -515,7 +515,7 @@ def _stub_prompt_builder_for_validator(state):
     return "prompt"
 
 
-def _stub_instructions_for_validator() -> str:
+def _stub_instructions_for_validator(_state: object) -> str:
     return "# instructions"
 
 

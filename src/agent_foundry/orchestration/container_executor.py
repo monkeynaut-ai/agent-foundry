@@ -354,6 +354,7 @@ async def run_agent_in_container(
     prompt: str,
     run_ctx: AgentRunContext,
     run_turn: RunTurn | None = None,
+    instructions: str | None = None,
 ) -> BaseModel:
     """Execute one invocation of an AgentAction in its container.
 
@@ -382,6 +383,7 @@ async def run_agent_in_container(
         primitive,
         lifecycle_writer=lifecycle,
         agent_name=agent_name,
+        instructions=instructions,
     )
 
     # Invocation number: per-container counter stamped on the live

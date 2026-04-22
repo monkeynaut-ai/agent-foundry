@@ -107,11 +107,19 @@ class AgentContainerRegistry:
         *,
         lifecycle_writer: LifecycleWriter,
         agent_name: str,
+        instructions: str | None = None,
     ) -> LiveContainer:
         """Return the live container for ``primitive``, creating it if absent.
 
         Emits an ``agent_container_started`` lifecycle event on first
         creation (not on cache hits). Identity-keyed by ``id(primitive)``.
+
+        If ``instructions`` is provided and this registry is configured to
+        inject instructions, the string is written into the container at
+        creation time. The caller (typically the compiler) is responsible
+        for resolving ``primitive.instructions_provider(input_state)``
+        against the per-invocation input state before calling; the registry
+        takes the pre-resolved text.
         """
         pid = id(primitive)
         async with self._lock:
@@ -132,13 +140,12 @@ class AgentContainerRegistry:
             # If configured to inject role instructions, write them before
             # start so the base-image entrypoint's append block sees them
             # on boot (matches ``create_for_invocation`` semantics).
-            if self._inject_instructions:
-                instructions_text = primitive.instructions_provider()
+            if self._inject_instructions and instructions is not None:
                 await asyncio.to_thread(
                     manager.write_file_to_container,
                     handle,
                     ROLE_INSTRUCTIONS_PATH,
-                    instructions_text,
+                    instructions,
                 )
             await asyncio.to_thread(manager.start, handle)
             if self._wait_for_health:

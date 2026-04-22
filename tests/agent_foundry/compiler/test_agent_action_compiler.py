@@ -33,7 +33,7 @@ def _record_prompt_builder(state: AgentInput) -> str:
     return prompt
 
 
-def _stub_instructions() -> str:
+def _stub_instructions(_state: object) -> str:
     return "instructions"
 
 
@@ -89,7 +89,7 @@ class TestAgentActionCompiler:
     def test_executor_called_with_primitive_and_prompt(self):
         captured: dict[str, Any] = {}
 
-        def _executor(*, primitive, prompt, run_ctx):
+        def _executor(*, primitive, prompt, instructions, run_ctx):
             captured["primitive"] = primitive
             captured["prompt"] = prompt
             return AgentOutput(answer="42")
@@ -110,8 +110,71 @@ class TestAgentActionCompiler:
         assert captured["prompt"] == "Q: hello"
         assert captured["primitive"] is action
 
+    def test_instructions_provider_receives_input_state(self):
+        """The compiler resolves instructions against the input state and
+        passes the resolved string to the executor. Signature: Callable[[I], str]."""
+        captured: dict[str, Any] = {}
+
+        def _recording_instructions_provider(state: AgentInput) -> str:
+            captured["state"] = state
+            return f"Instructions for query={state.query!r}"
+
+        def _executor(*, primitive, prompt, instructions, run_ctx):
+            captured["instructions"] = instructions
+            return AgentOutput(answer="42")
+
+        action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
+            prompt_builder=_record_prompt_builder,
+            instructions_provider=_recording_instructions_provider,
+            executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+        )
+        plan = PrimitivePlan(root=action)
+        graph = _compile_primitive(plan)
+
+        graph.invoke({"query": "probe"})
+
+        # Provider was invoked with the validated input state.
+        assert isinstance(captured["state"], AgentInput)
+        assert captured["state"].query == "probe"
+        # The resolved string was threaded through to the executor.
+        assert captured["instructions"] == "Instructions for query='probe'"
+
+    def test_instructions_provider_using_render_instructions(self):
+        """An agent whose instructions_provider calls resolve
+        against state produces a rendered string for the executor. This is
+        the end-to-end shape Archipelago's Designer will use."""
+        from archetype.templating import resolve
+
+        captured: dict[str, Any] = {}
+
+        def _jinja_instructions_provider(state: AgentInput) -> str:
+            return resolve(
+                "Query was: {{ state.query }}",
+                state=state,
+            )
+
+        def _executor(*, primitive, prompt, instructions, run_ctx):
+            captured["instructions"] = instructions
+            return AgentOutput(answer="ok")
+
+        action = AgentAction[AgentInput, AgentOutput](
+            name="test-agent",
+            prompt_builder=_record_prompt_builder,
+            instructions_provider=_jinja_instructions_provider,
+            executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+        )
+        plan = PrimitivePlan(root=action)
+        graph = _compile_primitive(plan)
+
+        graph.invoke({"query": "hello"})
+
+        assert captured["instructions"] == "Query was: hello"
+
     def test_missing_required_input_field_raises(self):
-        def _executor(*, primitive, prompt, run_ctx):
+        def _executor(*, primitive, prompt, instructions, run_ctx):
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
@@ -128,7 +191,7 @@ class TestAgentActionCompiler:
             graph.invoke({})  # missing `query`
 
     def test_executor_output_merged_into_state(self):
-        def _executor(*, primitive, prompt, run_ctx):
+        def _executor(*, primitive, prompt, instructions, run_ctx):
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
@@ -149,7 +212,7 @@ class TestAgentActionCompiler:
         class WrongType(BaseModel):
             other: str
 
-        def _executor(*, primitive, prompt, run_ctx):
+        def _executor(*, primitive, prompt, instructions, run_ctx):
             return WrongType(other="oops")
 
         action = AgentAction[AgentInput, AgentOutput](
@@ -178,7 +241,7 @@ class TestAgentActionCompiler:
         empty dirs.
         """
 
-        def _executor(*, primitive, prompt, run_ctx):
+        def _executor(*, primitive, prompt, instructions, run_ctx):
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
@@ -210,7 +273,7 @@ class TestAgentActionCompiler_ExceptionPropagation:
     """Executor exceptions propagate through the compiled node."""
 
     def test_executor_exception_propagates(self):
-        def _executor(*, primitive, prompt, run_ctx):
+        def _executor(*, primitive, prompt, instructions, run_ctx):
             raise _ExecutorFailure("agent failed")
 
         action = AgentAction[AgentInput, AgentOutput](
@@ -257,7 +320,7 @@ class TestAgentActionCompiler_Composition:
         class AgentStepOutput(BaseModel):
             answer: str
 
-        def _executor(*, primitive, prompt, run_ctx):
+        def _executor(*, primitive, prompt, instructions, run_ctx):
             return AgentStepOutput(answer="42")
 
         agent_step = AgentAction[AgentStepInput, AgentStepOutput](
@@ -308,7 +371,7 @@ class TestAgentActionCompiler_RunCtxThreading:
 
         captured: dict[str, Any] = {}
 
-        def _executor(*, primitive, prompt, run_ctx):
+        def _executor(*, primitive, prompt, instructions, run_ctx):
             captured["primitive"] = primitive
             captured["prompt"] = prompt
             captured["run_ctx"] = run_ctx
@@ -362,7 +425,7 @@ class TestAgentActionCompiler_RunCtxThreading:
 
         observed: list[AgentRunContext] = []
 
-        def _executor(*, primitive, prompt, run_ctx):
+        def _executor(*, primitive, prompt, instructions, run_ctx):
             observed.append(run_ctx)
             return AgentOutput(answer="ok")
 
