@@ -504,6 +504,7 @@ def _compile_agent_action(
     node_id = prefix
     input_type, output_type = get_type_args(action)
     prompt_builder = action.prompt_builder
+    instructions_provider = action.instructions_provider
     executor = action.executor
 
     import inspect as _inspect
@@ -524,10 +525,11 @@ def _compile_agent_action(
             )
         return result.model_dump()
 
-    def _prepare(state: dict[str, Any]) -> tuple[Any, str, Any]:
+    def _prepare(state: dict[str, Any]) -> tuple[Any, str, str, Any]:
         _validate_boundary(state, input_type, node_id)
         model_input = input_type.model_validate(state)
         prompt = prompt_builder(model_input)
+        instructions = instructions_provider(model_input)
 
         # Resolve ContextVar at invocation time. Deferred import avoids
         # any risk of an orchestration -> compiler cycle.
@@ -536,13 +538,18 @@ def _compile_agent_action(
         )
 
         run_ctx = require_current_run_context()
-        return action, prompt, run_ctx
+        return action, prompt, instructions, run_ctx
 
     if executor_is_async:
 
         async def node_fn_async(state: dict[str, Any]) -> dict[str, Any]:
-            primitive, prompt, run_ctx = _prepare(state)
-            result = await executor(primitive=primitive, prompt=prompt, run_ctx=run_ctx)
+            primitive, prompt, instructions, run_ctx = _prepare(state)
+            result = await executor(
+                primitive=primitive,
+                prompt=prompt,
+                instructions=instructions,
+                run_ctx=run_ctx,
+            )
             return _validate_and_return(result)
 
         # No sync function — attempting ``graph.invoke`` on a plan with
@@ -552,8 +559,13 @@ def _compile_agent_action(
     else:
 
         def node_fn_sync(state: dict[str, Any]) -> dict[str, Any]:
-            primitive, prompt, run_ctx = _prepare(state)
-            result = executor(primitive=primitive, prompt=prompt, run_ctx=run_ctx)
+            primitive, prompt, instructions, run_ctx = _prepare(state)
+            result = executor(
+                primitive=primitive,
+                prompt=prompt,
+                instructions=instructions,
+                run_ctx=run_ctx,
+            )
             return _validate_and_return(result)
 
         graph.add_node(node_id, node_fn_sync)

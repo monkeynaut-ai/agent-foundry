@@ -145,7 +145,7 @@ async def test_end_to_end_real_claude_code(tmp_path: Path) -> None:
     # foundation smoke test.
     note_path_in_container = "/home/claude/.claude/CLAUDE.md"
 
-    def _instructions() -> str:
+    def _instructions(_state: object) -> str:
         return (
             "# Role — headline probe\n\n"
             "You are a probe used by Agent Foundry's end-to-end integration test. "

@@ -53,7 +53,7 @@ def _stub_prompt_builder(state: StubInput) -> str:
     return f"prompt: {state.value}"
 
 
-def _stub_instructions_provider() -> str:
+def _stub_instructions_provider(_state: object) -> str:
     return "# Agent instructions\n\nDo the thing."
 
 
@@ -132,7 +132,7 @@ class TestAgentActionRequiredFields:
             executor=_stub_executor_for_required,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        text = action.instructions_provider()
+        text = action.instructions_provider(StubInput(value="probe"))
         assert text.startswith("# Agent instructions")
 
 
