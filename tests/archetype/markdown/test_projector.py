@@ -42,3 +42,37 @@ class TestProjectorPassthrough:
         doc = normalize("# Top\n\n## Notes\n\nThis is a note.\n\n## Summary\n\nThe real summary.\n")
         instance = project_to_model(doc, HeaderWithSummary)
         assert "real summary" in instance.summary
+
+
+class TestProjectorHeadingCase:
+    """Heading matching is case-insensitive.
+
+    Authors routinely write sentence-case headings while the model's
+    ``snake_to_title`` default produces Title Case. Both parse; the
+    source casing is preserved on the resulting instance.
+    """
+
+    def test_given_lowercase_heading_when_projected_then_matches_title_case_field(self):
+        doc = normalize("# Top\n\n## summary\n\nBody.\n")
+        instance = project_to_model(doc, HeaderWithSummary)
+        assert "Body." in instance.summary
+
+    def test_given_sentence_case_heading_when_projected_then_matches_title_case_field(self):
+        # 'Summary' (Title Case, single-word) is also sentence case — use a
+        # multi-word heading variant in the fixture to exercise the real case.
+        # HeaderWithSummary has only 'summary', so match against 'SUMMARY'
+        # uppercase to prove case-folding.
+        doc = normalize("# Top\n\n## SUMMARY\n\nBody.\n")
+        instance = project_to_model(doc, HeaderWithSummary)
+        assert "Body." in instance.summary
+
+    def test_given_mixed_case_heading_when_projected_then_matches_title_case_field(self):
+        doc = normalize("# Top\n\n## SuMmArY\n\nBody.\n")
+        instance = project_to_model(doc, HeaderWithSummary)
+        assert "Body." in instance.summary
+
+    def test_given_non_matching_heading_when_projected_then_raises(self):
+        # Guard: case-insensitive doesn't mean content-insensitive.
+        doc = normalize("# Top\n\n## Notes\n\nBody.\n")
+        with pytest.raises(MarkdownValidationError, match="Summary"):
+            project_to_model(doc, HeaderWithSummary)

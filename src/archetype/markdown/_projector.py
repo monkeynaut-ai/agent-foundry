@@ -159,9 +159,17 @@ def _find_next_heading(
     model_class: type,
     field_name: str,
 ) -> tuple[int, MarkdownHeading]:
+    # Heading matching is case-insensitive via casefold. Authors routinely
+    # write sentence-case headings (`## Problem statement`) while the
+    # model's `snake_to_title` default produces Title Case (`Problem
+    # Statement`). Treating these as equivalent at parse time avoids
+    # rejecting otherwise-correct documents over casing. The title value
+    # stored on the resulting instance preserves the source casing, so
+    # re-render reproduces whatever form the author chose.
+    target = expected_text.casefold() if expected_text is not None else None
     for i in range(cursor, len(blocks)):
         b = blocks[i]
-        if isinstance(b, MarkdownHeading) and (expected_text is None or b.text == expected_text):
+        if isinstance(b, MarkdownHeading) and (target is None or b.text.casefold() == target):
             return i, b
     expected_clause = f"with text {expected_text!r}" if expected_text else ""
     raise MarkdownValidationError(
