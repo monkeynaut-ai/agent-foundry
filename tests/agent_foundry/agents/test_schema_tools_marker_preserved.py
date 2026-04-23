@@ -1,10 +1,20 @@
-"""Regression test: ``x-agent-file-path`` markers survive ``to_claude_code_schema``.
+"""Regression test: ``x-agent-file-path`` markers are stripped from the
+Claude-bound schema but preserved on the raw ``model_json_schema()``
+that production file-path verification reads.
 
-The container executor walks the flattened schema returned by
-``to_claude_code_schema`` looking for ``x-agent-file-path`` extension
-keys. If the schema flattener ever strips unknown keys, the executor
-silently loses all file-path validation. This test pins the survival of
-those markers through the flattening transform.
+This file previously asserted markers must SURVIVE
+``to_claude_code_schema``, on the premise that unknown extension keys
+should pass through for future consumers. That premise conflicted with
+Claude Code 2.1.x's observed behavior: any ``x-*`` extension keyword
+makes the CLI silently refuse to inject the ``StructuredOutput`` tool,
+producing ``result.subtype == "success"`` runs with no envelope — the
+exact silent-disable failure class the ``discriminator`` strip already
+guards against.
+
+The container executor reads file-path markers via
+``walk_file_path_fields(output_type.model_json_schema())``
+(``container_executor.py:376``) — i.e. the raw Pydantic schema, never
+the sanitized one. So stripping ``x-*`` from the sanitized copy is safe.
 """
 
 from typing import Annotated, Any
@@ -38,33 +48,34 @@ def _count_markers(node: Any) -> int:
     return count
 
 
-def test_agent_file_path_markers_survive_flattening() -> None:
+def test_raw_schema_still_carries_markers_for_verification() -> None:
+    """Production file-path verification uses ``model_json_schema()`` directly.
+    Those markers must still be present there (nothing here strips them)."""
     raw = _Outer.model_json_schema()
-    # Sanity: the raw schema carries markers on review_path (inline) and on
-    # the $defs entry for _Nested.transcript_path.
+    # inline on review_path + on _Nested.transcript_path inside $defs.
     assert _count_markers(raw) == 2
 
-    flat = to_claude_code_schema(_Outer)
 
-    # $defs must be gone post-flatten; markers must remain on the exact same
-    # properties, now inlined.
+def test_sanitized_schema_has_markers_stripped() -> None:
+    """The schema passed to Claude Code via ``--json-schema`` must be
+    free of ``x-*`` extensions, else 2.1.x silently disables structured
+    output enforcement."""
+    flat = to_claude_code_schema(_Outer)
     assert "$defs" not in flat
-    assert _count_markers(flat) == 2
+    assert _count_markers(flat) == 0
 
 
-def test_outer_marker_preserved_on_exact_property() -> None:
+def test_sanitized_schema_strips_any_x_prefix_key() -> None:
+    """The strip rule is generic: any ``x-*`` key. Not just our own markers."""
     flat = to_claude_code_schema(_Outer)
-    review_path = flat["properties"]["review_path"]
-    marker = review_path["x-agent-file-path"]
-    assert marker == {"max_size_bytes": 10_000_000}
 
+    def has_x_key(node: Any) -> bool:
+        if isinstance(node, dict):
+            if any(isinstance(k, str) and k.startswith("x-") for k in node):
+                return True
+            return any(has_x_key(v) for v in node.values())
+        if isinstance(node, list):
+            return any(has_x_key(item) for item in node)
+        return False
 
-def test_nested_marker_preserved_after_inlining() -> None:
-    flat = to_claude_code_schema(_Outer)
-    nested = flat["properties"]["nested"]
-    # _Nested must be inlined (no $ref), and transcript_path must still
-    # carry its marker with the custom max_size_bytes.
-    assert "$ref" not in nested
-    transcript_path = nested["properties"]["transcript_path"]
-    marker = transcript_path["x-agent-file-path"]
-    assert marker == {"max_size_bytes": 50_000_000}
+    assert not has_x_key(flat)

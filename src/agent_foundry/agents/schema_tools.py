@@ -38,7 +38,8 @@ def _resolve_ref(ref: str, defs: dict[str, Any]) -> dict[str, Any]:
 
 
 def _inline(node: Any, defs: dict[str, Any]) -> Any:
-    """Walk a JSON Schema node, inlining $refs and stripping discriminator / $defs keys."""
+    """Walk a JSON Schema node, inlining $refs and stripping keys that
+    make Claude Code silently disable structured-output enforcement."""
     if isinstance(node, dict):
         if "$ref" in node and len(node) == 1:
             return _inline(deepcopy(_resolve_ref(node["$ref"], defs)), defs)
@@ -47,6 +48,16 @@ def _inline(node: Any, defs: dict[str, Any]) -> Any:
             if key == "discriminator":
                 continue
             if key == "$defs":
+                continue
+            # Claude Code 2.1.x silently refuses to inject the
+            # StructuredOutput tool when the schema carries any `x-*`
+            # extension keyword (empirically verified against 2.1.76 with
+            # `x-agent-file-path`). Same failure class as `discriminator`:
+            # `result.subtype == "success"` but no `structured_output`.
+            # Client-side consumers of extensions (e.g. AgentFilePath
+            # verification) read them from `model.model_json_schema()`
+            # directly, not from this sanitized copy.
+            if isinstance(key, str) and key.startswith("x-"):
                 continue
             result[key] = _inline(value, defs)
         return result
@@ -61,6 +72,8 @@ def to_claude_code_schema(model: type[BaseModel]) -> dict[str, Any]:
     Transforms:
         - Inlines all $defs/$ref references (Claude Code cannot resolve them)
         - Strips the OpenAPI `discriminator` keyword (causes silent schema disable)
+        - Strips all `x-*` JSON Schema extension keywords (same silent-disable
+          failure on Claude Code 2.1.x; `x-agent-file-path` was the smoking gun)
 
     The returned dict is a standalone JSON Schema document ready to pass to
     `claude --json-schema`.
