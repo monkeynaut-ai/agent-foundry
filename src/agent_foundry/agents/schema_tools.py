@@ -38,7 +38,8 @@ def _resolve_ref(ref: str, defs: dict[str, Any]) -> dict[str, Any]:
 
 
 def _inline(node: Any, defs: dict[str, Any]) -> Any:
-    """Walk a JSON Schema node, inlining $refs and stripping discriminator / $defs keys."""
+    """Walk a JSON Schema node, inlining $refs and stripping keys that
+    make Claude Code silently disable structured-output enforcement."""
     if isinstance(node, dict):
         if "$ref" in node and len(node) == 1:
             return _inline(deepcopy(_resolve_ref(node["$ref"], defs)), defs)
@@ -47,6 +48,19 @@ def _inline(node: Any, defs: dict[str, Any]) -> Any:
             if key == "discriminator":
                 continue
             if key == "$defs":
+                continue
+            # AgentFilePath markers (``x-agent-file-path``) are
+            # orchestrator-only metadata — the container executor reads
+            # them from ``model.model_json_schema()`` directly
+            # (``container_executor.py:376``), Claude Code never uses
+            # them. Leaving them in the schema passed to
+            # ``--json-schema`` causes Claude Code 2.1.x to silently
+            # refuse to inject the ``StructuredOutput`` tool (verified
+            # against 2.1.76) — the same failure class as
+            # ``discriminator``: ``result.subtype == "success"`` but no
+            # envelope. Strip just this key; future orchestrator-only
+            # extensions get their own explicit strip when they appear.
+            if key == "x-agent-file-path":
                 continue
             result[key] = _inline(value, defs)
         return result
@@ -61,6 +75,9 @@ def to_claude_code_schema(model: type[BaseModel]) -> dict[str, Any]:
     Transforms:
         - Inlines all $defs/$ref references (Claude Code cannot resolve them)
         - Strips the OpenAPI `discriminator` keyword (causes silent schema disable)
+        - Strips `x-agent-file-path` — orchestrator-only metadata whose
+          presence makes Claude Code 2.1.x silently refuse to inject the
+          `StructuredOutput` tool (same silent-disable class as `discriminator`)
 
     The returned dict is a standalone JSON Schema document ready to pass to
     `claude --json-schema`.
