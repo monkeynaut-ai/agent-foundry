@@ -2,19 +2,21 @@
 Claude-bound schema but preserved on the raw ``model_json_schema()``
 that production file-path verification reads.
 
-This file previously asserted markers must SURVIVE
+This file previously asserted the marker must SURVIVE
 ``to_claude_code_schema``, on the premise that unknown extension keys
 should pass through for future consumers. That premise conflicted with
-Claude Code 2.1.x's observed behavior: any ``x-*`` extension keyword
-makes the CLI silently refuse to inject the ``StructuredOutput`` tool,
-producing ``result.subtype == "success"`` runs with no envelope — the
-exact silent-disable failure class the ``discriminator`` strip already
-guards against.
+Claude Code 2.1.x's observed behavior: ``x-agent-file-path`` makes the
+CLI silently refuse to inject the ``StructuredOutput`` tool, producing
+``result.subtype == "success"`` runs with no envelope — the same
+silent-disable failure class as ``discriminator``.
 
-The container executor reads file-path markers via
-``walk_file_path_fields(output_type.model_json_schema())``
-(``container_executor.py:376``) — i.e. the raw Pydantic schema, never
-the sanitized one. So stripping ``x-*`` from the sanitized copy is safe.
+The fix is narrow: strip only ``x-agent-file-path`` (orchestrator-only
+metadata — the container executor reads it via
+``walk_file_path_fields(output_type.model_json_schema())`` at
+``container_executor.py:376``, i.e. from the raw Pydantic schema, never
+from the sanitized copy). Other ``x-*`` extensions pass through
+unchanged; if a future one breaks injection, it gets its own explicit
+strip at that time.
 """
 
 from typing import Annotated, Any
@@ -65,17 +67,20 @@ def test_sanitized_schema_has_markers_stripped() -> None:
     assert _count_markers(flat) == 0
 
 
-def test_sanitized_schema_strips_any_x_prefix_key() -> None:
-    """The strip rule is generic: any ``x-*`` key. Not just our own markers."""
-    flat = to_claude_code_schema(_Outer)
+def test_sanitized_schema_preserves_other_x_prefix_keys() -> None:
+    """The strip rule is narrow: only ``x-agent-file-path``. Other
+    ``x-*`` extensions must pass through — if a future extension breaks
+    Claude Code injection, it gets its own explicit strip at that time."""
 
-    def has_x_key(node: Any) -> bool:
-        if isinstance(node, dict):
-            if any(isinstance(k, str) and k.startswith("x-") for k in node):
-                return True
-            return any(has_x_key(v) for v in node.values())
-        if isinstance(node, list):
-            return any(has_x_key(item) for item in node)
-        return False
+    class _WithOtherExtension(BaseModel):
+        plain: str
 
-    assert not has_x_key(flat)
+        @classmethod
+        def model_json_schema(cls, **kwargs: Any) -> dict[str, Any]:
+            schema = super().model_json_schema(**kwargs)
+            # Synthesize a different x-* extension in the schema.
+            schema["x-future-extension"] = {"some": "value"}
+            return schema
+
+    flat = to_claude_code_schema(_WithOtherExtension)
+    assert flat.get("x-future-extension") == {"some": "value"}

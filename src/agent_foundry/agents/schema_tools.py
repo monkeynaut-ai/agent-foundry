@@ -49,15 +49,18 @@ def _inline(node: Any, defs: dict[str, Any]) -> Any:
                 continue
             if key == "$defs":
                 continue
-            # Claude Code 2.1.x silently refuses to inject the
-            # StructuredOutput tool when the schema carries any `x-*`
-            # extension keyword (empirically verified against 2.1.76 with
-            # `x-agent-file-path`). Same failure class as `discriminator`:
-            # `result.subtype == "success"` but no `structured_output`.
-            # Client-side consumers of extensions (e.g. AgentFilePath
-            # verification) read them from `model.model_json_schema()`
-            # directly, not from this sanitized copy.
-            if isinstance(key, str) and key.startswith("x-"):
+            # AgentFilePath markers (``x-agent-file-path``) are
+            # orchestrator-only metadata — the container executor reads
+            # them from ``model.model_json_schema()`` directly
+            # (``container_executor.py:376``), Claude Code never uses
+            # them. Leaving them in the schema passed to
+            # ``--json-schema`` causes Claude Code 2.1.x to silently
+            # refuse to inject the ``StructuredOutput`` tool (verified
+            # against 2.1.76) — the same failure class as
+            # ``discriminator``: ``result.subtype == "success"`` but no
+            # envelope. Strip just this key; future orchestrator-only
+            # extensions get their own explicit strip when they appear.
+            if key == "x-agent-file-path":
                 continue
             result[key] = _inline(value, defs)
         return result
@@ -72,8 +75,9 @@ def to_claude_code_schema(model: type[BaseModel]) -> dict[str, Any]:
     Transforms:
         - Inlines all $defs/$ref references (Claude Code cannot resolve them)
         - Strips the OpenAPI `discriminator` keyword (causes silent schema disable)
-        - Strips all `x-*` JSON Schema extension keywords (same silent-disable
-          failure on Claude Code 2.1.x; `x-agent-file-path` was the smoking gun)
+        - Strips `x-agent-file-path` — orchestrator-only metadata whose
+          presence makes Claude Code 2.1.x silently refuse to inject the
+          `StructuredOutput` tool (same silent-disable class as `discriminator`)
 
     The returned dict is a standalone JSON Schema document ready to pass to
     `claude --json-schema`.
