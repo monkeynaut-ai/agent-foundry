@@ -38,14 +38,19 @@ __all__ = [
 
 
 def _default_artifacts_dir() -> Path:
-    """Produce an ephemeral tmp directory for artifacts when none is given.
+    """Produce an ephemeral artifacts directory when none is given.
 
-    Each construction gets a unique path under the system tmp so tests
+    Each construction gets a unique path under ``<cwd>/.tmp/`` so tests
     and ad-hoc uses can't accidentally write into the current working
-    directory. Production code (``run_primitive_plan``) always supplies
-    an explicit ``artifacts_dir``.
+    directory itself, and so leaked dirs stay scoped to the project
+    rather than scattered across the system tmp. ``.tmp/`` is gitignored
+    by convention in this repo (and consumers should add it to their
+    own ``.gitignore``). Production code (``run_primitive_plan``) always
+    supplies an explicit ``artifacts_dir``.
     """
-    return Path(tempfile.mkdtemp(prefix="agent_foundry_run_"))
+    parent = Path.cwd() / ".tmp"
+    parent.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="agent_foundry_run_", dir=str(parent)))
 
 
 class AgentRunContext(BaseModel):
