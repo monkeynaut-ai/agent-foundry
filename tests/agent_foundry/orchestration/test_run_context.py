@@ -176,3 +176,55 @@ def test_require_current_run_context_raises_after_reset(tmp_path: Path) -> None:
     current_run_context.reset(token)
     with pytest.raises(RuntimeError):
         require_current_run_context()
+
+
+class TestDefaultArtifactsDir:
+    """The fallback used when ``AgentRunContext`` is constructed without
+    an explicit ``artifacts_dir``. Must land under ``<cwd>/.tmp/`` so
+    leaked dirs stay scoped to the project and don't accumulate in
+    system /tmp."""
+
+    def test_given_no_artifacts_dir_when_constructed_then_lands_under_cwd_dot_tmp(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        ctx = AgentRunContext(
+            run_id="run-default",
+            container_registry=object(),
+            lifecycle_writer=NoOpLifecycleWriter(),
+            env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+        )
+        assert ctx.artifacts_dir.parent == tmp_path / ".tmp"
+        assert ctx.artifacts_dir.name.startswith("agent_foundry_run_")
+        assert ctx.artifacts_dir.is_dir()
+
+    def test_given_no_dot_tmp_when_constructed_then_creates_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        assert not (tmp_path / ".tmp").exists()
+        AgentRunContext(
+            run_id="run-creates-dot-tmp",
+            container_registry=object(),
+            lifecycle_writer=NoOpLifecycleWriter(),
+            env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+        )
+        assert (tmp_path / ".tmp").is_dir()
+
+    def test_given_two_constructions_when_compared_then_paths_differ(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        a = AgentRunContext(
+            run_id="run-a",
+            container_registry=object(),
+            lifecycle_writer=NoOpLifecycleWriter(),
+            env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+        )
+        b = AgentRunContext(
+            run_id="run-b",
+            container_registry=object(),
+            lifecycle_writer=NoOpLifecycleWriter(),
+            env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+        )
+        assert a.artifacts_dir != b.artifacts_dir
