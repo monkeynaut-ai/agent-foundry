@@ -1,3 +1,6 @@
+This project uses **Jig** for development workflow management.
+See `jig.config.md` for pipeline configuration.
+
 # Agent Foundry
 
 A platform for building agentic workflow systems. Agent Foundry provides composable, typed primitives that compile to executable LangGraph graphs. Users define workflows as primitive trees; the platform handles compilation, execution, and state management.
