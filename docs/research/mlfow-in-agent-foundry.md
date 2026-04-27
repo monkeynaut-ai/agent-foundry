@@ -92,6 +92,10 @@ Net effect on priority ordering
 Same top three (Gateway, Prompt Registry, Tracing), but Tracing's implementation is "OTel‑first, MLflow as backend" rather than "MLflow autolog." No recommendation
 drops; one ordering nuance — Gateway becomes the most obvious early win because it's the most framework‑indifferent piece of the stack.
 
+### Keep in Mind
+
+- MLFlow currently supports only the OLTP/HTTP endpoint. It does not support the OTLP/gRPC endpoint. This is OK for prototyping. If AF deployments end up needing gRPC, run an OTel Collector as a sidecar to bridge gRPC→HTTP.
+
 ## Deeper Dive
 
 ### Traces
