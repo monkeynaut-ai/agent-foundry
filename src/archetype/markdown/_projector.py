@@ -35,11 +35,11 @@ from archetype.markdown.errors import MarkdownValidationError
 from archetype.markdown.template_model import MarkdownDocument, MarkdownHeader
 
 
-def project_to_model(
+def project_to_model[T: MarkdownHeader](
     doc: NormalizedDocument,
-    model_class: type[MarkdownHeader],
-) -> MarkdownHeader:
-    """Project a normalized document onto a domain model instance."""
+    model_class: type[T],
+) -> T:
+    """Project a normalized document onto a domain model instance of ``model_class``."""
 
     if not doc.blocks or not isinstance(doc.blocks[0], MarkdownHeading):
         first_kind = type(doc.blocks[0]).__name__ if doc.blocks else "empty document"
