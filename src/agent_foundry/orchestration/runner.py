@@ -44,6 +44,8 @@ from agent_foundry.orchestration.summary import render_summary
 from agent_foundry.primitives.models import get_type_args
 from agent_foundry.primitives.plan import PrimitivePlan
 from agent_foundry.responders.protocol import ResponderProvider
+from agent_foundry.telemetry import setup as telemetry_setup
+from agent_foundry.telemetry.config import TelemetryConfig
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,7 @@ async def run_primitive_plan(
     on_open: list[Callable[[RunContext], None]] | None = None,
     on_close: list[Callable[[RunContext, BaseException | None, BaseModel | None], None]]
     | None = None,
+    telemetry: TelemetryConfig | None = None,
 ) -> BaseModel:
     """Execute a :class:`PrimitivePlan` with full orchestration wiring.
 
@@ -137,6 +140,22 @@ async def run_primitive_plan(
         workspace_volume=workspace_volume,
         base_image_tag=base_image_tag,
     )
+
+    # Build the per-run TracerProvider BEFORE constructing RunContext so
+    # the context can carry it. NEVER call ``trace.set_tracer_provider``;
+    # provider isolation is per-run, anchored on the context. If the
+    # constructor raises (e.g. bad endpoint URL fails OTLPSpanExporter
+    # init), clean up the already-bootstrapped run_dir before propagating
+    # so failed runs don't leak directories on disk.
+    telemetry_provider = None
+    if telemetry is not None:
+        try:
+            telemetry_provider = telemetry_setup.build_tracer_provider(telemetry)
+        except Exception:
+            import shutil as _shutil
+
+            _shutil.rmtree(run_dir, ignore_errors=True)
+            raise
 
     _, root_out = get_type_args(plan.root)
 
@@ -167,6 +186,8 @@ async def run_primitive_plan(
         env={"CLAUDE_CODE_OAUTH_TOKEN": oauth_token} if oauth_token else {},
         on_open=list(on_open or []),
         on_close=list(on_close or []),
+        telemetry=telemetry,
+        telemetry_provider=telemetry_provider,
     )
 
     # Install SIGINT/SIGTERM handlers — main thread only. Signal-handler
@@ -230,9 +251,20 @@ async def run_primitive_plan(
             final_output,
             label="on_close",
         )
-        #   4. ContextVar reset, signal handler removal, lifecycle.close.
+        #   4. ContextVar reset, signal handler removal, lifecycle.close,
+        #      and per-run TracerProvider shutdown. Wrap shutdown in
+        #      try/except so a hung exporter or unreachable backend
+        #      can't mask the original run exception.
         for sig in installed_signals:
             with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
                 loop.remove_signal_handler(sig)
         current_run_context.reset(token)
         lifecycle.close()
+        if telemetry_provider is not None:
+            try:
+                telemetry_provider.shutdown()
+            except Exception:
+                logger.warning(
+                    "TracerProvider.shutdown raised during teardown",
+                    exc_info=True,
+                )
