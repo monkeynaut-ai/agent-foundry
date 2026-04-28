@@ -1,6 +1,6 @@
 """End-to-end tests for the async ``run_primitive_plan`` entry point.
 
-The async entry point builds an ``RunContext`` from explicit
+The async entry point builds a ``RunContext`` from explicit
 parameters, installs signal handlers (best-effort), sets the
 ``current_run_context`` ContextVar, compiles the plan, runs it via
 ``graph.ainvoke``, and writes ``summary.txt`` in a ``finally`` block.
