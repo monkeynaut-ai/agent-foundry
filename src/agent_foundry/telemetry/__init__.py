@@ -13,6 +13,7 @@ from agent_foundry.telemetry.config import (
     RunStats,
     TelemetryConfig,
 )
+from agent_foundry.telemetry.setup import build_tracer_provider
 
 __all__ = [
     "ArtifactSpec",
@@ -21,4 +22,5 @@ __all__ = [
     "RunStats",
     "TelemetryConfig",
     "attributes",
+    "build_tracer_provider",
 ]
