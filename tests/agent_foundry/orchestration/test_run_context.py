@@ -8,13 +8,13 @@ from pydantic import ValidationError
 
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.run_context import (
-    AgentRunContext,
     NoOpLifecycleWriter,
+    RunContext,
 )
 
 
-def test_agent_run_context_has_required_core_fields() -> None:
-    ctx = AgentRunContext(
+def test_run_context_has_required_core_fields() -> None:
+    ctx = RunContext(
         run_id="run-1",
         container_registry=object(),
         lifecycle_writer=NoOpLifecycleWriter(),
@@ -32,17 +32,17 @@ def test_no_op_lifecycle_writer_accepts_append_and_discards() -> None:
     # No public read surface — the whole point is that it's a sink.
 
 
-def test_agent_run_context_env_is_required() -> None:
+def test_run_context_env_is_required() -> None:
     with pytest.raises(ValidationError):
-        AgentRunContext(  # type: ignore[call-arg]
+        RunContext(  # type: ignore[call-arg]
             run_id="r",
             container_registry=object(),
             lifecycle_writer=NoOpLifecycleWriter(),
         )
 
 
-# -- Full AgentRunContext shape --
-# These tests pin the full AgentRunContext shape: artifacts_dir,
+# -- Full RunContext shape --
+# These tests pin the full RunContext shape: artifacts_dir,
 # responder_provider, cancel_event, frozen=True, and the module-level
 # ContextVar + require_current_run_context() helper.
 
@@ -52,8 +52,8 @@ def _responder_provider_stub() -> object:
     return object()
 
 
-def test_agent_run_context_accepts_full_fields(tmp_path: Path) -> None:
-    ctx = AgentRunContext(
+def test_run_context_accepts_full_fields(tmp_path: Path) -> None:
+    ctx = RunContext(
         run_id="run-full",
         artifacts_dir=tmp_path,
         container_registry=object(),
@@ -67,8 +67,8 @@ def test_agent_run_context_accepts_full_fields(tmp_path: Path) -> None:
     assert isinstance(ctx.cancel_event, asyncio.Event)
 
 
-def test_agent_run_context_cancel_event_starts_unset(tmp_path: Path) -> None:
-    ctx = AgentRunContext(
+def test_run_context_cancel_event_starts_unset(tmp_path: Path) -> None:
+    ctx = RunContext(
         run_id="run-full",
         artifacts_dir=tmp_path,
         container_registry=object(),
@@ -80,8 +80,8 @@ def test_agent_run_context_cancel_event_starts_unset(tmp_path: Path) -> None:
     assert ctx.cancel_event.is_set() is False
 
 
-def test_agent_run_context_is_frozen(tmp_path: Path) -> None:
-    ctx = AgentRunContext(
+def test_run_context_is_frozen(tmp_path: Path) -> None:
+    ctx = RunContext(
         run_id="run-full",
         artifacts_dir=tmp_path,
         container_registry=object(),
@@ -94,12 +94,12 @@ def test_agent_run_context_is_frozen(tmp_path: Path) -> None:
         ctx.run_id = "other"  # type: ignore[misc]
 
 
-def test_agent_run_context_frozen_permits_cancel_event_mutation(
+def test_run_context_frozen_permits_cancel_event_mutation(
     tmp_path: Path,
 ) -> None:
     # frozen=True blocks attribute reassignment but NOT mutation of mutable
     # field values. This is load-bearing — the cancel_event must be settable.
-    ctx = AgentRunContext(
+    ctx = RunContext(
         run_id="run-full",
         artifacts_dir=tmp_path,
         container_registry=object(),
@@ -112,9 +112,9 @@ def test_agent_run_context_frozen_permits_cancel_event_mutation(
     assert ctx.cancel_event.is_set() is True
 
 
-def test_agent_run_context_run_id_nonempty(tmp_path: Path) -> None:
+def test_run_context_run_id_nonempty(tmp_path: Path) -> None:
     with pytest.raises(ValidationError):
-        AgentRunContext(
+        RunContext(
             run_id="",
             artifacts_dir=tmp_path,
             container_registry=object(),
@@ -128,8 +128,8 @@ def test_agent_run_context_run_id_nonempty(tmp_path: Path) -> None:
 # -- ContextVar helpers --
 
 
-def _make_ctx(tmp_path: Path) -> AgentRunContext:
-    return AgentRunContext(
+def _make_ctx(tmp_path: Path) -> RunContext:
+    return RunContext(
         run_id="run-cv",
         artifacts_dir=tmp_path,
         container_registry=object(),
@@ -147,7 +147,7 @@ def test_require_current_run_context_raises_when_unset() -> None:
     )
 
     assert current_run_context.get() is None
-    with pytest.raises(RuntimeError, match="AgentRunContext"):
+    with pytest.raises(RuntimeError, match="RunContext"):
         require_current_run_context()
 
 
@@ -179,7 +179,7 @@ def test_require_current_run_context_raises_after_reset(tmp_path: Path) -> None:
 
 
 class TestDefaultArtifactsDir:
-    """The fallback used when ``AgentRunContext`` is constructed without
+    """The fallback used when ``RunContext`` is constructed without
     an explicit ``artifacts_dir``. Must land under ``<cwd>/.tmp/`` so
     leaked dirs stay scoped to the project and don't accumulate in
     system /tmp."""
@@ -188,7 +188,7 @@ class TestDefaultArtifactsDir:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.chdir(tmp_path)
-        ctx = AgentRunContext(
+        ctx = RunContext(
             run_id="run-default",
             container_registry=object(),
             lifecycle_writer=NoOpLifecycleWriter(),
@@ -203,7 +203,7 @@ class TestDefaultArtifactsDir:
     ) -> None:
         monkeypatch.chdir(tmp_path)
         assert not (tmp_path / ".tmp").exists()
-        AgentRunContext(
+        RunContext(
             run_id="run-creates-dot-tmp",
             container_registry=object(),
             lifecycle_writer=NoOpLifecycleWriter(),
@@ -215,13 +215,13 @@ class TestDefaultArtifactsDir:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.chdir(tmp_path)
-        a = AgentRunContext(
+        a = RunContext(
             run_id="run-a",
             container_registry=object(),
             lifecycle_writer=NoOpLifecycleWriter(),
             env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
         )
-        b = AgentRunContext(
+        b = RunContext(
             run_id="run-b",
             container_registry=object(),
             lifecycle_writer=NoOpLifecycleWriter(),

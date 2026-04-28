@@ -3,7 +3,7 @@
 Two entry points:
 
   * :func:`run_primitive_plan` — async, full orchestration wiring
-    (AgentRunContext, container registry, lifecycle writer, signal
+    (RunContext, container registry, lifecycle writer, signal
     handlers, artifacts). The primary public entry point.
 
   * :func:`run_primitive_plan_sync` — legacy synchronous entry.
@@ -36,7 +36,7 @@ from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import JsonlLifecycleWriter
 from agent_foundry.orchestration.registry import AgentContainerRegistry
 from agent_foundry.orchestration.run_context import (
-    AgentRunContext,
+    RunContext,
     current_run_context,
 )
 from agent_foundry.orchestration.summary import render_summary
@@ -54,8 +54,8 @@ def run_primitive_plan_sync(
 ) -> BaseModel:
     """Legacy synchronous entry point.
 
-    Preserved for call sites that do not build an
-    :class:`AgentRunContext`. Emits a ``DeprecationWarning``; prefer the
+    Preserved for call sites that do not build a
+    :class:`RunContext`. Emits a ``DeprecationWarning``; prefer the
     async :func:`run_primitive_plan` which builds the context and wires
     lifecycle + registry teardown.
     """
@@ -87,7 +87,7 @@ async def run_primitive_plan(
 
     Bootstraps the run artifacts directory, builds a
     :class:`JsonlLifecycleWriter` and :class:`AgentContainerRegistry`,
-    constructs the :class:`AgentRunContext`, installs cooperative
+    constructs the :class:`RunContext`, installs cooperative
     SIGINT/SIGTERM handlers (main thread only), sets the
     ``current_run_context`` ContextVar, and invokes the compiled graph
     via :meth:`ainvoke`.
@@ -124,7 +124,7 @@ async def run_primitive_plan(
     )
     cancel = asyncio.Event()
 
-    run_ctx = AgentRunContext(
+    run_ctx = RunContext(
         run_id=resolved_run_id,
         artifacts_dir=run_dir,
         container_registry=registry,

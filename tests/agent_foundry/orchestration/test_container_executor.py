@@ -33,7 +33,7 @@ from agent_foundry.orchestration.errors import AgentFailedError
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
 from agent_foundry.orchestration.registry import AgentContainerRegistry
-from agent_foundry.orchestration.run_context import AgentRunContext
+from agent_foundry.orchestration.run_context import RunContext
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 from agent_foundry.responders.protocol import static_provider
 
@@ -130,7 +130,7 @@ def _make_ctx(
     cancel_event: asyncio.Event | None = None,
     registry: AgentContainerRegistry | None = None,
     run_id: str = "run-f3",
-) -> tuple[AgentRunContext, AgentContainerRegistry, CapturingLifecycleWriter]:
+) -> tuple[RunContext, AgentContainerRegistry, CapturingLifecycleWriter]:
     writer = writer or CapturingLifecycleWriter()
     fake_mgr = FakeContainerManager()
     if registry is None:
@@ -148,7 +148,7 @@ def _make_ctx(
         workspace_volume="vol-f3",
         base_image_tag="agent-foundry-base:test",
     )
-    ctx = AgentRunContext(
+    ctx = RunContext(
         run_id=run_id,
         artifacts_dir=run_dir,
         container_registry=registry,
@@ -454,7 +454,7 @@ async def test_run_agent_in_container_happy_path(monkeypatch) -> None:
         base_image_tag="agent-foundry-base:test",
         workspace_volume="vol-smoke",
     )
-    ctx = AgentRunContext(
+    ctx = RunContext(
         run_id="run-smoke",
         container_registry=registry,
         lifecycle_writer=NoOpLifecycleWriter(),
@@ -498,7 +498,7 @@ async def test_run_agent_in_container_failure_outcome_raises(monkeypatch) -> Non
         base_image_tag="x",
         workspace_volume="v",
     )
-    ctx = AgentRunContext(
+    ctx = RunContext(
         run_id="r",
         container_registry=registry,
         lifecycle_writer=NoOpLifecycleWriter(),

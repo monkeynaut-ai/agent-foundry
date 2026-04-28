@@ -164,7 +164,7 @@ def _compile_function_action(
     arity = len(inspect.signature(fn).parameters)
 
     def node_fn(state: dict[str, Any]) -> dict[str, Any]:
-        # Resolve the current ``AgentRunContext`` once — we need it to
+        # Resolve the current ``RunContext`` once — we need it to
         # emit ``FUNCTION_ACTION_STARTED`` / ``_COMPLETED`` / ``_FAILED``
         # lifecycle events regardless of callable arity. When no run is
         # in progress (legacy ``run_primitive_plan_sync`` + unit tests

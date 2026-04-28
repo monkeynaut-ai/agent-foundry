@@ -54,7 +54,7 @@ from agent_foundry.orchestration.artifacts import agent_turn_dir
 from agent_foundry.orchestration.errors import AgentFailedError
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.registry import LiveContainer
-from agent_foundry.orchestration.run_context import AgentRunContext
+from agent_foundry.orchestration.run_context import RunContext
 from agent_foundry.primitives.models import (
     AgentAction,
     ContainerReusePolicy,
@@ -294,7 +294,7 @@ def _build_correction_prompt(violations: list[str]) -> str:
 async def _snapshot_files(
     *,
     live: LiveContainer,
-    run_ctx: AgentRunContext,
+    run_ctx: RunContext,
     agent_name: str,
     turn_number: int,
     payload_dict: dict[str, Any],
@@ -352,7 +352,7 @@ async def run_agent_in_container(
     *,
     primitive: AgentAction,
     prompt: str,
-    run_ctx: AgentRunContext,
+    run_ctx: RunContext,
     run_turn: RunTurn | None = None,
     instructions: str | None = None,
 ) -> BaseModel:

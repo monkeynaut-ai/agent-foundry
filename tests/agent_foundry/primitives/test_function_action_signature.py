@@ -56,7 +56,7 @@ def test_function_action_function_annotation_resolves():
 #
 # Pins the end-to-end contract that a FunctionAction whose function
 # calls ``runtime.emit`` inside a running plan reaches the active
-# ``AgentRunContext``'s lifecycle writer.
+# ``RunContext``'s lifecycle writer.
 
 
 def test_function_action_callable_can_emit_via_runtime(tmp_path):
@@ -68,7 +68,7 @@ def test_function_action_callable_can_emit_via_runtime(tmp_path):
     from agent_foundry.compiler.primitive_compiler import _compile_function_action
     from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
     from agent_foundry.orchestration.run_context import (
-        AgentRunContext,
+        RunContext,
         current_run_context,
     )
 
@@ -93,7 +93,7 @@ def test_function_action_callable_can_emit_via_runtime(tmp_path):
     graph = StateGraph(dict)
     node_id, _ = _compile_function_action(graph, action, prefix="fa", gate_ids=[])
 
-    run_ctx = AgentRunContext(
+    run_ctx = RunContext(
         run_id="run-fn-compile",
         artifacts_dir=tmp_path,
         container_registry=object(),

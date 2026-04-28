@@ -1,16 +1,14 @@
-"""AgentRunContext — the per-run context carried through compiled plans.
+"""RunContext — the per-plan-execution context carried through compiled plans.
 
-Fields:
-  - ``artifacts_dir``: per-run artifacts directory
-  - ``responder_provider``: resolves ``responder_id`` -> responder
-    (typed as ``Any``; see ``agent_foundry.responders.protocol`` for the
-    concrete ``ResponderProvider`` protocol).
-  - ``cancel_event``: cooperative cancellation signal
-  - module-level ``current_run_context`` ContextVar + a
-    ``require_current_run_context`` helper used by compiled
-    ``AgentAction`` nodes and by ``agent_foundry.runtime`` accessors
-    that product ``FunctionAction`` callables use to read run-scoped
-    state without threading ``run_ctx`` through their signatures.
+Constructed once at plan start (in ``run_primitive_plan``) before the compiled
+graph runs and remains active through every primitive (Sequence, Loop,
+AgentAction, FunctionAction, …). Carries plan-level state: ``run_id``,
+``artifacts_dir``, ``lifecycle_writer``, ``cancel_event``, container
+registry, responder provider, env.
+
+Module-level ``current_run_context`` ContextVar + ``require_current_run_context``
+helper expose the active context to compiled nodes and to product code via
+``agent_foundry.runtime`` accessors.
 """
 
 from __future__ import annotations
@@ -29,9 +27,9 @@ from agent_foundry.orchestration.lifecycle_writer import (
 )
 
 __all__ = [
-    "AgentRunContext",
     "LifecycleWriter",
     "NoOpLifecycleWriter",
+    "RunContext",
     "current_run_context",
     "require_current_run_context",
 ]
@@ -53,20 +51,17 @@ def _default_artifacts_dir() -> Path:
     return Path(tempfile.mkdtemp(prefix="agent_foundry_run_", dir=str(parent)))
 
 
-class AgentRunContext(BaseModel):
-    """Per-run context threaded through compiled plan execution.
+class RunContext(BaseModel):
+    """Per-plan-execution context threaded through compiled plan execution.
 
     Fields:
       - ``run_id``: unique identifier for this run (non-empty)
       - ``artifacts_dir``: directory for per-run artifacts
       - ``container_registry``: AgentContainerRegistry (duck-typed)
-      - ``responder_provider``: resolves ``responder_id`` -> responder
-        callable. Typed as ``Any``; the concrete ``ResponderProvider``
-        protocol lives in ``agent_foundry.responders.protocol``.
+      - ``responder_provider``: resolves ``responder_id`` -> responder callable
       - ``lifecycle_writer``: a concrete :class:`LifecycleWriter` subclass
-      - ``cancel_event``: cooperative cancellation signal. ``frozen=True``
-        blocks reassignment but callers may still mutate the event
-        (``cancel_event.set()``).
+      - ``cancel_event``: cooperative cancellation signal. ``frozen=True`` blocks
+        reassignment but callers may still mutate the event (``cancel_event.set()``).
       - ``env``: container env dict (must include CLAUDE_CODE_OAUTH_TOKEN)
     """
 
@@ -85,10 +80,8 @@ class AgentRunContext(BaseModel):
     env: dict[str, str]
 
 
-current_run_context: ContextVar[AgentRunContext | None] = ContextVar(
-    "current_run_context", default=None
-)
-"""Thread-/task-local pointer to the active ``AgentRunContext``.
+current_run_context: ContextVar[RunContext | None] = ContextVar("current_run_context", default=None)
+"""Thread-/task-local pointer to the active ``RunContext``.
 
 Compiled nodes read this at invocation time to resolve the active run
 context without having to close over it at compile time. Product code
@@ -97,18 +90,12 @@ inside a ``FunctionAction`` callable reaches it indirectly through
 """
 
 
-def require_current_run_context() -> AgentRunContext:
-    """Return the active ``AgentRunContext`` or raise ``RuntimeError``.
-
-    Used by compiled nodes that need run-scoped context (responders,
-    cancel event, artifacts dir). Raising here surfaces a clear
-    "no run in progress" message rather than an ``AttributeError``
-    three frames deep.
-    """
+def require_current_run_context() -> RunContext:
+    """Return the active ``RunContext`` or raise ``RuntimeError``."""
     ctx = current_run_context.get()
     if ctx is None:
         raise RuntimeError(
-            "No active AgentRunContext: current_run_context ContextVar is unset. "
+            "No active RunContext: current_run_context ContextVar is unset. "
             "A compiled node tried to access run context outside a run."
         )
     return ctx

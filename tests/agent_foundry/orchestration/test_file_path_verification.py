@@ -132,8 +132,8 @@ from agent_foundry.orchestration.container_executor import (  # noqa: E402
 from agent_foundry.orchestration.errors import AgentFailedError  # noqa: E402
 from agent_foundry.orchestration.registry import AgentContainerRegistry  # noqa: E402
 from agent_foundry.orchestration.run_context import (  # noqa: E402
-    AgentRunContext,
     NoOpLifecycleWriter,
+    RunContext,
 )
 from agent_foundry.primitives.models import (  # noqa: E402
     AgentAction,
@@ -163,13 +163,13 @@ def _make_verify_primitive() -> AgentAction[_VerifyInput, _VerifyOutput]:
     )
 
 
-def _make_ctx(fake_mgr: FakeContainerManager) -> AgentRunContext:
+def _make_ctx(fake_mgr: FakeContainerManager) -> RunContext:
     registry = AgentContainerRegistry(
         manager=fake_mgr,
         base_image_tag="agent-foundry-base:test",
         workspace_volume="vol-verify",
     )
-    return AgentRunContext(
+    return RunContext(
         run_id="run-verify",
         container_registry=registry,
         lifecycle_writer=NoOpLifecycleWriter(),

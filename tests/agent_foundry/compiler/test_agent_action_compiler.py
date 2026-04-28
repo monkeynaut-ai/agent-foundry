@@ -46,7 +46,7 @@ def reset_recorded_prompts():
 
 @pytest.fixture(autouse=True)
 def _default_run_context(tmp_path):
-    """Provide a default ``AgentRunContext`` for compiler tests.
+    """Provide a default ``RunContext`` for compiler tests.
 
     The compiled node resolves ``current_run_context`` at invocation
     time, so every ``graph.invoke`` in this file needs an active
@@ -57,12 +57,12 @@ def _default_run_context(tmp_path):
     import asyncio
 
     from agent_foundry.orchestration.run_context import (
-        AgentRunContext,
         NoOpLifecycleWriter,
+        RunContext,
         current_run_context,
     )
 
-    ctx = AgentRunContext(
+    ctx = RunContext(
         run_id="compiler-test-default",
         artifacts_dir=tmp_path,
         container_registry=object(),
@@ -364,8 +364,8 @@ class TestAgentActionCompiler_RunCtxThreading:
         import asyncio
 
         from agent_foundry.orchestration.run_context import (
-            AgentRunContext,
             NoOpLifecycleWriter,
+            RunContext,
             current_run_context,
         )
 
@@ -387,7 +387,7 @@ class TestAgentActionCompiler_RunCtxThreading:
         plan = PrimitivePlan(root=action)
         graph = _compile_primitive(plan)
 
-        run_ctx = AgentRunContext(
+        run_ctx = RunContext(
             run_id="run-g1-agent",
             artifacts_dir=tmp_path,
             container_registry=object(),
@@ -418,12 +418,12 @@ class TestAgentActionCompiler_RunCtxThreading:
         import asyncio
 
         from agent_foundry.orchestration.run_context import (
-            AgentRunContext,
             NoOpLifecycleWriter,
+            RunContext,
             current_run_context,
         )
 
-        observed: list[AgentRunContext] = []
+        observed: list[RunContext] = []
 
         def _executor(*, primitive, prompt, instructions, run_ctx):
             observed.append(run_ctx)
@@ -439,7 +439,7 @@ class TestAgentActionCompiler_RunCtxThreading:
         plan = PrimitivePlan(root=action)
         graph = _compile_primitive(plan)
 
-        run_ctx_a = AgentRunContext(
+        run_ctx_a = RunContext(
             run_id="run-g1-late-bind-a",
             artifacts_dir=tmp_path,
             container_registry=object(),
@@ -448,7 +448,7 @@ class TestAgentActionCompiler_RunCtxThreading:
             cancel_event=asyncio.Event(),
             env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
         )
-        run_ctx_b = AgentRunContext(
+        run_ctx_b = RunContext(
             run_id="run-g1-late-bind-b",
             artifacts_dir=tmp_path,
             container_registry=object(),

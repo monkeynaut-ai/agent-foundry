@@ -1,7 +1,7 @@
 """Runtime accessors for product code inside a running AgentAction / FunctionAction.
 
 Inside a running plan, product code can call these helpers to read or
-write run-scoped state without having to thread ``AgentRunContext``
+write run-scoped state without having to thread ``RunContext``
 through every function signature. The accessors resolve the active
 run context from the ``current_run_context`` ContextVar that the
 compiler sets for every compiled node.
