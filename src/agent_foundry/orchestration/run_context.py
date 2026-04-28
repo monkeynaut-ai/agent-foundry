@@ -20,12 +20,14 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
+from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent_foundry.orchestration.lifecycle_writer import (
     LifecycleWriter,
     NoOpLifecycleWriter,
 )
+from agent_foundry.telemetry.config import TelemetryConfig
 
 __all__ = [
     "LifecycleWriter",
@@ -110,6 +112,21 @@ class RunContext(BaseModel):
     teardown.
 
     Same mutation contract and iteration semantics as ``on_open``.
+    """
+
+    telemetry: TelemetryConfig | None = None
+    """Active telemetry config for this run, or None if telemetry is disabled.
+    Read by compiler nodes to find redaction policy and run-id binding.
+    """
+
+    telemetry_provider: SDKTracerProvider | None = None
+    """Per-run OTel TracerProvider, or None if telemetry is disabled.
+
+    Per-run isolation: each ``run_primitive_plan`` invocation builds its own
+    provider and stores it here. ``emit_span`` resolves the active
+    ``RunContext.telemetry_provider`` via the ContextVar — no process-global
+    tracer-provider state is touched. This is what makes concurrent runs in
+    the same process safe.
     """
 
 
