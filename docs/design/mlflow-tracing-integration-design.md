@@ -243,6 +243,7 @@ Verification:
 
 - The OTLP-ingest path interacts with assessments / dataset promotion / prompt-version linkage in ways not explicitly documented. Not on the critical path for this stage; flagged for the stage that adds those features.
 - Concurrency model: how the OTel `current_run_context`-bound state coexists with AF's own `current_run_context` ContextVar under asyncio. Likely a non-issue (independent ContextVars), but worth a smoke test under concurrent runs before declaring done.
+- **Hard-kill orphaned MLflow runs.** SIGTERM is handled cooperatively — the runner installs SIGINT/SIGTERM handlers that set `cancel_event`, the graph unwinds, `on_close` fires with a `CancelledError`, and the MLflow adapter ends the run as `FAILED`. SIGKILL and OOM-kill cannot run any cleanup code, so the MLflow run remains stuck in `RUNNING` indefinitely. There is no per-run heartbeat or server-side timeout. Acceptable for this stage; flagged for production-ops follow-up (e.g. a janitor sweeping stale `RUNNING` runs after a TTL).
 
 ---
 
