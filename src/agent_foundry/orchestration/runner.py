@@ -25,6 +25,7 @@ import signal
 import threading
 import uuid
 import warnings
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +74,30 @@ def run_primitive_plan_sync(
     return root_out.model_validate(result_dict)
 
 
+def _safe_invoke_hooks(
+    hooks: list[Callable[..., None]],
+    *args: Any,
+    label: str,
+) -> None:
+    """Invoke each hook in order; isolate exceptions, log, continue.
+
+    Iterates the live list (not a snapshot) so a hook may register
+    additional hooks during execution and have them run in the same
+    pass. The MLflow adapter relies on this: an on_open hook calls
+    ``enable()`` which appends MLflow lifecycle hooks to the same
+    on_open/on_close lists.
+
+    Catches BaseException to isolate one hook's failure from another.
+    Hooks must be synchronous and must not re-raise BaseException
+    subclasses that should propagate to the runner.
+    """
+    for hook in hooks:
+        try:
+            hook(*args)
+        except BaseException:
+            logger.exception("RunContext %s hook raised; continuing", label)
+
+
 async def run_primitive_plan(
     plan: PrimitivePlan,
     *,
@@ -82,6 +107,9 @@ async def run_primitive_plan(
     base_image_tag: str,
     responder_provider: ResponderProvider,
     run_id: str | None = None,
+    on_open: list[Callable[[RunContext], None]] | None = None,
+    on_close: list[Callable[[RunContext, BaseException | None, BaseModel | None], None]]
+    | None = None,
 ) -> BaseModel:
     """Execute a :class:`PrimitivePlan` with full orchestration wiring.
 
@@ -89,12 +117,17 @@ async def run_primitive_plan(
     :class:`JsonlLifecycleWriter` and :class:`AgentContainerRegistry`,
     constructs the :class:`RunContext`, installs cooperative
     SIGINT/SIGTERM handlers (main thread only), sets the
-    ``current_run_context`` ContextVar, and invokes the compiled graph
-    via :meth:`ainvoke`.
+    ``current_run_context`` ContextVar, invokes any supplied
+    ``on_open`` hooks, and invokes the compiled graph via
+    :meth:`ainvoke`.
 
-    Teardown (``finally``) always runs: the registry is shut down,
-    ``summary.txt`` is rendered, and the ContextVar + signal handlers
-    are reset — even on cancel or agent failure.
+    Teardown (``finally``) always runs: writes exactly ONE terminal
+    lifecycle event (``RUN_FAILED`` if the body raised, ``RUN_ENDED``
+    otherwise), shuts down the registry, renders ``summary.txt``,
+    invokes ``on_close`` hooks (which receive the context, the caught
+    exception or None, and the final output model or None), then
+    resets the ContextVar and signal handlers — even on cancel or
+    agent failure.
     """
     resolved_run_id = run_id if run_id is not None else uuid.uuid4().hex
 
@@ -132,6 +165,8 @@ async def run_primitive_plan(
         lifecycle_writer=lifecycle,
         cancel_event=cancel,
         env={"CLAUDE_CODE_OAUTH_TOKEN": oauth_token} if oauth_token else {},
+        on_open=list(on_open or []),
+        on_close=list(on_close or []),
     )
 
     # Install SIGINT/SIGTERM handlers — main thread only. Signal-handler
@@ -154,13 +189,29 @@ async def run_primitive_plan(
 
     token = current_run_context.set(run_ctx)
     lifecycle.append(LifecycleEvent.RUN_STARTED, run_id=resolved_run_id)
+    _safe_invoke_hooks(run_ctx.on_open, run_ctx, label="on_open")
 
+    caught_exc: BaseException | None = None
+    final_output: BaseModel | None = None
     try:
         graph = _compile_primitive(plan)
         result_dict = await graph.ainvoke(initial_state.model_dump())
-        lifecycle.append(LifecycleEvent.RUN_ENDED, run_id=resolved_run_id)
-        return root_out.model_validate(result_dict)
+        final_output = root_out.model_validate(result_dict)
+        return final_output
+    except BaseException as exc:
+        caught_exc = exc
+        raise
     finally:
+        # Order matters:
+        #   1. Write the terminal lifecycle event so the JSONL stream has
+        #      a terminal record before downstream consumers (render_summary,
+        #      on_close hooks) read it.
+        terminal = LifecycleEvent.RUN_FAILED if caught_exc is not None else LifecycleEvent.RUN_ENDED
+        lifecycle.append(terminal, run_id=resolved_run_id)
+        #   2. Existing teardown that produces files in artifacts_dir
+        #      (registry.shutdown_all, render_summary). Each remains in
+        #      its own try/except so a teardown failure can't prevent
+        #      on_close from firing.
         try:
             await registry.shutdown_all()
         except Exception:
@@ -169,6 +220,17 @@ async def run_primitive_plan(
             render_summary(run_dir)
         except Exception:
             logger.warning("render_summary raised during teardown", exc_info=True)
+        #   3. on_close hooks fire AFTER render_summary. This lets a
+        #      product's ArtifactSpec entries reference summary.txt and
+        #      anything else render_summary writes.
+        _safe_invoke_hooks(
+            run_ctx.on_close,
+            run_ctx,
+            caught_exc,
+            final_output,
+            label="on_close",
+        )
+        #   4. ContextVar reset, signal handler removal, lifecycle.close.
         for sig in installed_signals:
             with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
                 loop.remove_signal_handler(sig)

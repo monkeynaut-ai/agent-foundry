@@ -76,6 +76,7 @@ def render_summary(run_dir: Path) -> None:
     run_id: str | None = None
     run_started_at: datetime | None = None
     run_ended_at: datetime | None = None
+    run_failed = False
 
     stats: dict[str, _AgentStats] = {}
 
@@ -102,6 +103,9 @@ def render_summary(run_dir: Path) -> None:
                     run_started_at = ts
                 elif event_type == LifecycleEvent.RUN_ENDED.value:
                     run_ended_at = ts
+                elif event_type == LifecycleEvent.RUN_FAILED.value:
+                    run_ended_at = ts
+                    run_failed = True
                 elif event_type == LifecycleEvent.AGENT_INVOCATION_STARTED.value:
                     agent = record.get("agent")
                     if not isinstance(agent, str):
@@ -134,7 +138,8 @@ def render_summary(run_dir: Path) -> None:
     if run_ended_at is not None:
         end_str = run_ended_at.isoformat()
         duration_str = _format_duration(run_started_at, run_ended_at)
-        header = f"Run {display_run_id} — started {start_str}, ended {end_str} ({duration_str})"
+        status = "failed" if run_failed else "completed"
+        header = f"Run {display_run_id} — started {start_str}, {status} {end_str} ({duration_str})"
     else:
         header = f"Run {display_run_id} — started {start_str}, ended (incomplete)"
     if stats:

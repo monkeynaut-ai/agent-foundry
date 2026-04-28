@@ -236,6 +236,52 @@ def test_render_summary_counts_success_and_failure_separately(tmp_path: Path) ->
     assert "1" in builder_line
 
 
+def _run_failed(run_id: str, ts: str) -> dict:
+    return {
+        "type": LifecycleEvent.RUN_FAILED.value,
+        "ts": ts,
+        "run_id": run_id,
+    }
+
+
+def test_render_summary_treats_run_failed_as_terminal(tmp_path: Path) -> None:
+    """RUN_FAILED is a terminal event; ``(incomplete)`` must not appear."""
+    run_id = "run-failed"
+    run_dir = tmp_path / run_id
+    _write_jsonl(
+        run_dir / "lifecycle.jsonl",
+        [
+            _run_started(run_id, "2026-04-15T08:00:00+00:00"),
+            _run_failed(run_id, "2026-04-15T08:00:05+00:00"),
+        ],
+    )
+
+    render_summary(run_dir)
+
+    summary = (run_dir / "summary.txt").read_text(encoding="utf-8")
+    assert "(incomplete)" not in summary
+    assert "2026-04-15T08:00:05" in summary
+
+
+def test_render_summary_marks_run_failed_in_header(tmp_path: Path) -> None:
+    """The summary header surfaces a ``failed`` status for failed runs."""
+    run_id = "run-failed-header"
+    run_dir = tmp_path / run_id
+    _write_jsonl(
+        run_dir / "lifecycle.jsonl",
+        [
+            _run_started(run_id, "2026-04-15T08:00:00+00:00"),
+            _run_failed(run_id, "2026-04-15T08:00:05+00:00"),
+        ],
+    )
+
+    render_summary(run_dir)
+
+    summary = (run_dir / "summary.txt").read_text(encoding="utf-8")
+    header = next((line for line in summary.splitlines() if "failed" in line), None)
+    assert header is not None, f"Expected a 'failed' status in header; got:\n{summary}"
+
+
 def test_render_summary_returns_none(tmp_path: Path) -> None:
     run_id = "run-return"
     run_dir = tmp_path / run_id

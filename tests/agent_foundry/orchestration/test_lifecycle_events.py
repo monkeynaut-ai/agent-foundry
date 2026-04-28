@@ -13,6 +13,7 @@ from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 EXPECTED_MEMBERS = {
     "RUN_STARTED",
     "RUN_ENDED",
+    "RUN_FAILED",
     "AGENT_CONTAINER_STARTED",
     "AGENT_INVOCATION_STARTED",
     "AGENT_INVOCATION_COMPLETED",

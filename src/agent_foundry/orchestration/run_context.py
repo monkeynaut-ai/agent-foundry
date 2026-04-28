@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+from collections.abc import Callable
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,38 @@ class RunContext(BaseModel):
     lifecycle_writer: LifecycleWriter
     cancel_event: asyncio.Event = Field(default_factory=asyncio.Event)
     env: dict[str, str]
+
+    on_open: list[Callable[[RunContext], None]] = Field(default_factory=list)
+    """Callables invoked once the RunContext is constructed and the
+    ``current_run_context`` ContextVar is set, before the compiled graph runs.
+    Each hook receives the context. Hook exceptions are caught, logged, and
+    do not block other hooks or the run itself.
+
+    Mutation contract: append to this list (``ctx.on_open.append(hook)``); do
+    NOT reassign the field (``ctx.on_open = [...]`` raises ValidationError
+    because RunContext has ``frozen=True``).
+
+    Iteration semantics: the runner iterates this list with a live reference
+    (``for hook in ctx.on_open``), not a snapshot. This means a hook may
+    append additional hooks during execution and they will run in the same
+    pass. The MLflow adapter relies on this to register lifecycle hooks from
+    within an on_open hook. Do not change this iteration to a snapshot
+    (``for hook in list(ctx.on_open)``) without auditing all callers.
+    """
+
+    on_close: list[Callable[[RunContext, BaseException | None, BaseModel | None], None]] = Field(
+        default_factory=list
+    )
+    """Callables invoked when the run is exiting, before teardown. Receives:
+      - the context
+      - the exception (or None on success)
+      - the run's final output BaseModel (or None on failure / before output materialises)
+
+    Hook exceptions are caught, logged, and do not block other hooks or
+    teardown.
+
+    Same mutation contract and iteration semantics as ``on_open``.
+    """
 
 
 current_run_context: ContextVar[RunContext | None] = ContextVar("current_run_context", default=None)
