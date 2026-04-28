@@ -33,7 +33,7 @@ mlflow = ["mlflow>=3.6.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 addopts = "-m 'not benchmark' -n 8"
 asyncio_mode = "strict"
 markers = [
