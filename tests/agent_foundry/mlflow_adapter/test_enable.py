@@ -166,3 +166,65 @@ def test_enable_raises_when_run_context_has_no_telemetry_provider(
     ctx = _ctx(tmp_path, run_id="r-no-prov", provider=None)
     with pytest.raises(RuntimeError, match="telemetry_provider"):
         enable(config=config, run_context=ctx, input_model=_In())
+
+
+def test_enable_sets_mlflow_tracking_uri_and_experiment_when_provided(
+    fake_mlflow: FakeMLflow, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When tracking_uri and experiment_id are passed, enable() configures
+    the global mlflow client so subsequent mlflow.start_run / log_params calls
+    target the right server + experiment.
+    """
+    import mlflow
+
+    set_uri_calls: list[str] = []
+    set_exp_calls: list[dict[str, str]] = []
+
+    monkeypatch.setattr(mlflow, "set_tracking_uri", lambda uri: set_uri_calls.append(uri))
+    monkeypatch.setattr(
+        mlflow,
+        "set_experiment",
+        lambda *, experiment_id: set_exp_calls.append({"experiment_id": experiment_id}),
+    )
+
+    provider = TracerProvider()
+    ctx = _ctx(tmp_path, run_id="r-mlflow-config", provider=provider)
+    enable(
+        config=_config(),
+        run_context=ctx,
+        input_model=_In(),
+        tracking_uri="http://localhost:5000",
+        experiment_id="7",
+    )
+
+    assert set_uri_calls == ["http://localhost:5000"]
+    assert set_exp_calls == [{"experiment_id": "7"}]
+    provider.shutdown()
+
+
+def test_enable_omits_mlflow_client_config_when_not_provided(
+    fake_mlflow: FakeMLflow, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """If tracking_uri / experiment_id aren't passed, enable() leaves the
+    mlflow client's global state alone (caller relies on env vars or earlier
+    configuration).
+    """
+    import mlflow
+
+    set_uri_calls: list[str] = []
+    set_exp_calls: list[dict[str, str]] = []
+
+    monkeypatch.setattr(mlflow, "set_tracking_uri", lambda uri: set_uri_calls.append(uri))
+    monkeypatch.setattr(
+        mlflow,
+        "set_experiment",
+        lambda *, experiment_id: set_exp_calls.append({"experiment_id": experiment_id}),
+    )
+
+    provider = TracerProvider()
+    ctx = _ctx(tmp_path, run_id="r-no-mlflow-config", provider=provider)
+    enable(config=_config(), run_context=ctx, input_model=_In())
+
+    assert set_uri_calls == []
+    assert set_exp_calls == []
+    provider.shutdown()

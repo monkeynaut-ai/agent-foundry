@@ -54,11 +54,14 @@ def build_plan() -> PrimitivePlan:
     return PrimitivePlan(root=action)
 
 
+MLFLOW_BASE_URL = os.environ.get("AF_MLFLOW_BASE_URL", "http://localhost:5000")
+MLFLOW_EXPERIMENT_ID = os.environ.get("AF_MLFLOW_EXPERIMENT_ID", "0")
+
+
 def build_telemetry() -> TelemetryConfig:
-    experiment_id = os.environ.get("AF_MLFLOW_EXPERIMENT_ID", "0")
     return TelemetryConfig(
-        otlp_endpoint=os.environ.get("AF_OTLP_ENDPOINT", "http://localhost:5000/v1/traces"),
-        otlp_headers={"x-mlflow-experiment-id": experiment_id},
+        otlp_endpoint=f"{MLFLOW_BASE_URL}/v1/traces",
+        otlp_headers={"x-mlflow-experiment-id": MLFLOW_EXPERIMENT_ID},
         service_name="archipelago-demo",
         attribute_translations=MLFLOW_TRANSLATIONS,
         run_definition=RunDefinition(
@@ -96,7 +99,13 @@ async def main(run_id: str | None = None) -> TicketOutput:
     input_model = TicketInput(ticket_id="42", kind="feature")
 
     def attach_adapter(ctx) -> None:
-        enable_mlflow_adapter(config=config, run_context=ctx, input_model=input_model)
+        enable_mlflow_adapter(
+            config=config,
+            run_context=ctx,
+            input_model=input_model,
+            tracking_uri=MLFLOW_BASE_URL,
+            experiment_id=MLFLOW_EXPERIMENT_ID,
+        )
 
     result = await run_primitive_plan(
         plan,
