@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import Any, cast
 
 import mlflow
 from pydantic import BaseModel
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 def _resolve_tags(tags: dict[str, str] | Any, input_model: BaseModel) -> dict[str, str]:
     if callable(tags):
-        return tags(input_model)
+        return cast(dict[str, str], tags(input_model))
     return dict(tags)
 
 
