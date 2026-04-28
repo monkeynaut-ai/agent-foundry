@@ -1,0 +1,126 @@
+"""Bind MLflow Run lifecycle to RunContext open/close hooks."""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any
+
+import mlflow
+from pydantic import BaseModel
+
+from agent_foundry.orchestration.run_context import RunContext
+from agent_foundry.telemetry.config import (
+    RedactionPolicy,
+    RunDefinition,
+    RunStats,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _resolve_tags(tags: dict[str, str] | Any, input_model: BaseModel) -> dict[str, str]:
+    if callable(tags):
+        return tags(input_model)
+    return dict(tags)
+
+
+def attach_run_hooks(
+    *,
+    run_context: RunContext,
+    run_definition: RunDefinition,
+    redaction: RedactionPolicy | None,
+    input_model: BaseModel,
+) -> None:
+    """Append open/close callables to ``run_context`` that drive an MLflow Run.
+
+    On open: evaluates ``run_definition.name`` / ``params`` / ``tags`` against
+    ``input_model`` (with optional redaction applied to params), calls
+    ``mlflow.start_run``, and logs the params. If any of these raises, the
+    exception propagates to ``_safe_invoke_hooks`` which logs and continues —
+    ``state["mlflow_run_id"]`` stays None and the on_close hook will become
+    a no-op.
+
+    On close: if on_open did not successfully start an MLflow run, this is
+    a no-op (a warning is logged). Otherwise builds a ``RunStats``, evaluates
+    ``run_definition.metrics(output, stats)`` against the run's final
+    OUTPUT (or None on failure), logs metrics + artifacts, and ends the
+    MLflow run with status FINISHED on success or FAILED if an exception
+    was raised.
+    """
+    state: dict[str, Any] = {
+        "start_time": None,
+        "mlflow_run_id": None,
+        "open_clean": False,
+    }
+
+    def on_open(_ctx: RunContext) -> None:
+        state["start_time"] = time.monotonic()
+        name = run_definition.name(input_model)
+        tags = _resolve_tags(run_definition.tags, input_model)
+
+        # Redact the input before evaluating params so secrets never reach mlflow
+        params_input = input_model
+        if redaction is not None and redaction.redact_input is not None:
+            params_input = redaction.redact_input(input_model)
+        params = run_definition.params(params_input)
+
+        run = mlflow.start_run(run_name=name, tags=tags)
+        # Set mlflow_run_id ONLY after start_run succeeds — on_close uses this
+        # as a guard. open_clean stays False until log_params also succeeds.
+        state["mlflow_run_id"] = run.info.run_id
+        mlflow.log_params(params)
+        state["open_clean"] = True
+
+    def on_close(_ctx: RunContext, exc: BaseException | None, output: BaseModel | None) -> None:
+        if state["mlflow_run_id"] is None:
+            # on_open failed before start_run succeeded — no MLflow run to
+            # close. Log a warning so the silent skip isn't truly silent.
+            logger.warning(
+                "MLflow on_close skipped — on_open did not start a run "
+                "(likely mlflow.start_run raised). Spans were emitted but "
+                "no MLflow Run wraps them."
+            )
+            return
+
+        # If on_open partially succeeded (start_run ran but log_params raised),
+        # treat the run as FAILED regardless of the actual run outcome — the
+        # open was incomplete, the recorded params are unreliable. Still close
+        # the run so it doesn't orphan in RUNNING state.
+        status = "FAILED" if (exc is not None or not state["open_clean"]) else "FINISHED"
+
+        # The end_run call MUST always fire to close the MLflow run, even if
+        # log_metrics or log_artifact raise. Use try/finally so an exception in
+        # the middle doesn't orphan the run.
+        try:
+            if state["open_clean"]:
+                duration_ms = (
+                    (time.monotonic() - state["start_time"]) * 1000.0
+                    if state["start_time"] is not None
+                    else 0.0
+                )
+                stats = RunStats(duration_ms=duration_ms)
+
+                try:
+                    metrics = run_definition.metrics(output, stats)
+                    if metrics:
+                        mlflow.log_metrics(metrics)
+                except Exception:
+                    logger.exception(
+                        "RunDefinition.metrics raised; skipping log_metrics. "
+                        "MLflow run will still be closed."
+                    )
+                    status = "FAILED"
+
+                for spec in run_definition.artifacts:
+                    try:
+                        mlflow.log_artifact(str(spec.path), spec.artifact_path)
+                    except Exception:
+                        logger.exception("log_artifact failed for %s; continuing", spec.path)
+                        status = "FAILED"
+        finally:
+            mlflow.end_run(status=status)
+
+    # RunContext is frozen — append to the mutable list rather than reassign.
+    run_context.on_open.append(on_open)
+    run_context.on_close.append(on_close)
