@@ -22,6 +22,7 @@ from agent_foundry.primitives.models import (
     get_type_args,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.telemetry.spans import emit_span
 
 # -- Compiler registry --
 
@@ -516,16 +517,16 @@ def _compile_agent_action(
     # a blanket coroutine-wrap on the sync path.
     executor_is_async = _inspect.iscoroutinefunction(executor)
 
-    def _validate_and_return(result: Any) -> dict[str, Any]:
+    def _validate_typed(result: Any) -> BaseModel:
         if not isinstance(result, output_type):
             raise PrimitiveCompilationError(
                 f"AgentAction {node_id}: executor returned "
                 f"{type(result).__name__}, expected {output_type.__name__}",
                 primitive_type=node_id,
             )
-        return result.model_dump()
+        return result
 
-    def _prepare(state: dict[str, Any]) -> tuple[Any, str, str, Any]:
+    def _prepare(state: dict[str, Any]) -> tuple[Any, str, str, Any, BaseModel]:
         _validate_boundary(state, input_type, node_id)
         model_input = input_type.model_validate(state)
         prompt = prompt_builder(model_input)
@@ -538,19 +539,32 @@ def _compile_agent_action(
         )
 
         run_ctx = require_current_run_context()
-        return action, prompt, instructions, run_ctx
+        return action, prompt, instructions, run_ctx, model_input
 
     if executor_is_async:
 
         async def node_fn_async(state: dict[str, Any]) -> dict[str, Any]:
-            primitive, prompt, instructions, run_ctx = _prepare(state)
-            result = await executor(
-                primitive=primitive,
-                prompt=prompt,
-                instructions=instructions,
-                run_ctx=run_ctx,
-            )
-            return _validate_and_return(result)
+            primitive, prompt, instructions, run_ctx, model_input = _prepare(state)
+            redaction = run_ctx.telemetry.redaction if run_ctx.telemetry is not None else None
+
+            with emit_span(
+                name=f"agent_foundry.AgentAction.{action.name}",
+                primitive_type="AgentAction",
+                primitive_name=action.name,
+                input_model=model_input,
+                run_id=run_ctx.run_id,
+                redaction=redaction,
+            ) as handle:
+                handle.set_operation_name("chat")
+                result = await executor(
+                    primitive=primitive,
+                    prompt=prompt,
+                    instructions=instructions,
+                    run_ctx=run_ctx,
+                )
+                typed = _validate_typed(result)
+                handle.set_output(typed)
+                return typed.model_dump()
 
         # No sync function — attempting ``graph.invoke`` on a plan with
         # an async AgentAction raises a clear TypeError from LangGraph
@@ -559,14 +573,27 @@ def _compile_agent_action(
     else:
 
         def node_fn_sync(state: dict[str, Any]) -> dict[str, Any]:
-            primitive, prompt, instructions, run_ctx = _prepare(state)
-            result = executor(
-                primitive=primitive,
-                prompt=prompt,
-                instructions=instructions,
-                run_ctx=run_ctx,
-            )
-            return _validate_and_return(result)
+            primitive, prompt, instructions, run_ctx, model_input = _prepare(state)
+            redaction = run_ctx.telemetry.redaction if run_ctx.telemetry is not None else None
+
+            with emit_span(
+                name=f"agent_foundry.AgentAction.{action.name}",
+                primitive_type="AgentAction",
+                primitive_name=action.name,
+                input_model=model_input,
+                run_id=run_ctx.run_id,
+                redaction=redaction,
+            ) as handle:
+                handle.set_operation_name("chat")
+                result = executor(
+                    primitive=primitive,
+                    prompt=prompt,
+                    instructions=instructions,
+                    run_ctx=run_ctx,
+                )
+                typed = _validate_typed(result)
+                handle.set_output(typed)
+                return typed.model_dump()
 
         graph.add_node(node_id, node_fn_sync)
 
