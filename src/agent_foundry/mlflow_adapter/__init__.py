@@ -13,5 +13,6 @@ from __future__ import annotations
 
 # Import-guard (raises actionable ImportError if mlflow isn't installed).
 from agent_foundry.mlflow_adapter import extras  # noqa: F401
+from agent_foundry.mlflow_adapter.translation import MLFLOW_TRANSLATIONS
 
-__all__: list[str] = []
+__all__ = ["MLFLOW_TRANSLATIONS"]
