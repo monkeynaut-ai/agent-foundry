@@ -32,7 +32,11 @@ from agent_foundry.telemetry.config import TelemetryConfig
 __all__ = [
     "LifecycleWriter",
     "NoOpLifecycleWriter",
+    "OnRunEndedHook",
+    "OnRunStartingHook",
     "RunContext",
+    "RunEndedEvent",
+    "RunStartingEvent",
     "current_run_context",
     "require_current_run_context",
 ]
@@ -128,6 +132,86 @@ class RunContext(BaseModel):
     tracer-provider state is touched. This is what makes concurrent runs in
     the same process safe.
     """
+
+
+class RunStartingEvent(BaseModel):
+    """Payload delivered to ``on_run_starting`` hooks.
+
+    Fires when the run is in the act of starting: the ``RunContext`` is
+    constructed and bound to the ``current_run_context`` ContextVar, the
+    lifecycle stream has emitted ``RUN_STARTED``, the telemetry provider
+    (if any) is anchored on the context — but the compiled graph has not
+    yet been invoked. Hooks fire as the last step of the starting
+    sequence; immediately after they return, ``graph.ainvoke`` runs.
+
+    Use this hook to register per-run integrations (MLflow Run start,
+    custom dashboards, span enrichment) that need an active
+    ``RunContext`` to bind against. Output and exception are unavailable
+    here by definition — they belong to ``RunEndedEvent``.
+
+    Forward-compatible: new fields can be added without breaking
+    existing hooks. Read fields by name (``event.run_context``).
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    run_context: RunContext
+
+
+class RunEndedEvent(BaseModel):
+    """Payload delivered to ``on_run_ended`` hooks.
+
+    Fires after the run has completed (success or failure). By the time
+    a hook receives this event:
+
+    - The graph has finished or raised.
+    - ``final_output`` has been validated, or an exception captured.
+    - The terminal lifecycle event (``RUN_ENDED`` on success or
+      ``RUN_FAILED`` on exception) has been written.
+    - The container registry has shut down its agents.
+    - ``render_summary`` has written ``summary.txt``.
+
+    Hooks fire BEFORE the very last cleanup steps (ContextVar reset,
+    signal handler removal, ``lifecycle.close()``, TracerProvider
+    shutdown). The ``RunContext`` is still bound at this point.
+
+    The two nullable fields together encode the run's terminal state:
+
+    +----------------+-----------------+----------------+
+    | exception      | output          | meaning        |
+    +================+=================+================+
+    | ``None``       | a ``BaseModel`` | clean success  |
+    +----------------+-----------------+----------------+
+    | exception inst | ``None``        | failure        |
+    +----------------+-----------------+----------------+
+
+    Forward-compatible: new fields can be added without breaking
+    existing hooks. Read fields by name (``event.exception``,
+    ``event.output``) so the meaning is never ambiguous.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    run_context: RunContext
+    exception: BaseException | None = None
+    output: BaseModel | None = None
+
+
+OnRunStartingHook = Callable[[RunStartingEvent], None]
+"""Hook signature for ``RunContext.on_run_starting``.
+
+Receives a :class:`RunStartingEvent`; returns ``None``. Hook exceptions
+are caught and logged by the runner — they do not block other hooks or
+the run itself. Hooks must be synchronous.
+"""
+
+OnRunEndedHook = Callable[[RunEndedEvent], None]
+"""Hook signature for ``RunContext.on_run_ended``.
+
+Receives a :class:`RunEndedEvent`; returns ``None``. Hook exceptions
+are caught and logged by the runner — they do not block other hooks or
+final teardown. Hooks must be synchronous.
+"""
 
 
 current_run_context: ContextVar[RunContext | None] = ContextVar("current_run_context", default=None)
