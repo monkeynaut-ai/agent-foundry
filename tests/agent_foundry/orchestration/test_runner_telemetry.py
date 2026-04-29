@@ -38,9 +38,9 @@ async def test_run_primitive_plan_with_no_telemetry_leaves_run_context_provider_
     """telemetry=None → RunContext.telemetry_provider is None during execution."""
     observed: dict[str, object] = {}
 
-    def capture(ctx) -> None:
-        observed["provider"] = ctx.telemetry_provider
-        observed["telemetry"] = ctx.telemetry
+    def capture(event) -> None:
+        observed["provider"] = event.run_context.telemetry_provider
+        observed["telemetry"] = event.run_context.telemetry
 
     await run_primitive_plan(
         _plan(),
@@ -51,7 +51,7 @@ async def test_run_primitive_plan_with_no_telemetry_leaves_run_context_provider_
         responder_provider=lambda _id: lambda *a, **k: None,
         run_id="r-no-tel",
         telemetry=None,
-        on_open=[capture],
+        on_run_starting=[capture],
     )
 
     assert observed["provider"] is None
@@ -76,8 +76,8 @@ async def test_run_primitive_plan_with_telemetry_anchors_provider_on_run_context
         service_name="archipelago-test",
     )
 
-    def capture(ctx) -> None:
-        observed["provider"] = ctx.telemetry_provider
+    def capture(event) -> None:
+        observed["provider"] = event.run_context.telemetry_provider
 
     await run_primitive_plan(
         _plan(),
@@ -88,7 +88,7 @@ async def test_run_primitive_plan_with_telemetry_anchors_provider_on_run_context
         responder_provider=lambda _id: lambda *a, **k: None,
         run_id="r-with-tel",
         telemetry=config,
-        on_open=[capture],
+        on_run_starting=[capture],
     )
 
     assert isinstance(observed["provider"], TracerProvider)

@@ -37,7 +37,11 @@ from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import JsonlLifecycleWriter
 from agent_foundry.orchestration.registry import AgentContainerRegistry
 from agent_foundry.orchestration.run_context import (
+    OnRunEndedHook,
+    OnRunStartingHook,
     RunContext,
+    RunEndedEvent,
+    RunStartingEvent,
     current_run_context,
 )
 from agent_foundry.orchestration.summary import render_summary
@@ -77,17 +81,19 @@ def run_primitive_plan_sync(
 
 
 def _safe_invoke_hooks(
-    hooks: list[Callable[..., None]],
-    *args: Any,
+    hooks: list[Callable[[Any], None]],
+    event: Any,
+    *,
     label: str,
 ) -> None:
-    """Invoke each hook in order; isolate exceptions, log, continue.
+    """Invoke each hook in order with the given event payload; isolate
+    exceptions, log, continue.
 
     Iterates the live list (not a snapshot) so a hook may register
     additional hooks during execution and have them run in the same
-    pass. The MLflow adapter relies on this: an on_open hook calls
-    ``enable()`` which appends MLflow lifecycle hooks to the same
-    on_open/on_close lists.
+    pass. The MLflow adapter relies on this: an on_run_starting hook
+    calls ``enable()`` which appends MLflow on_run_ended hooks to the
+    same list.
 
     Catches BaseException to isolate one hook's failure from another.
     Hooks must be synchronous and must not re-raise BaseException
@@ -95,7 +101,7 @@ def _safe_invoke_hooks(
     """
     for hook in hooks:
         try:
-            hook(*args)
+            hook(event)
         except BaseException:
             logger.exception("RunContext %s hook raised; continuing", label)
 
@@ -109,9 +115,8 @@ async def run_primitive_plan(
     base_image_tag: str,
     responder_provider: ResponderProvider,
     run_id: str | None = None,
-    on_open: list[Callable[[RunContext], None]] | None = None,
-    on_close: list[Callable[[RunContext, BaseException | None, BaseModel | None], None]]
-    | None = None,
+    on_run_starting: list[OnRunStartingHook] | None = None,
+    on_run_ended: list[OnRunEndedHook] | None = None,
     telemetry: TelemetryConfig | None = None,
 ) -> BaseModel:
     """Execute a :class:`PrimitivePlan` with full orchestration wiring.
@@ -121,13 +126,14 @@ async def run_primitive_plan(
     constructs the :class:`RunContext`, installs cooperative
     SIGINT/SIGTERM handlers (main thread only), sets the
     ``current_run_context`` ContextVar, invokes any supplied
-    ``on_open`` hooks, and invokes the compiled graph via
-    :meth:`ainvoke`.
+    ``on_run_starting`` hooks (each receiving a :class:`RunStartingEvent`),
+    and invokes the compiled graph via :meth:`ainvoke`.
 
     Teardown (``finally``) always runs: writes exactly ONE terminal
     lifecycle event (``RUN_FAILED`` if the body raised, ``RUN_ENDED``
     otherwise), shuts down the registry, renders ``summary.txt``,
-    invokes ``on_close`` hooks (which receive the context, the caught
+    invokes ``on_run_ended`` hooks (each receiving a
+    :class:`RunEndedEvent` carrying the context, the captured
     exception or None, and the final output model or None), then
     resets the ContextVar and signal handlers — even on cancel or
     agent failure.
@@ -184,8 +190,8 @@ async def run_primitive_plan(
         lifecycle_writer=lifecycle,
         cancel_event=cancel,
         env={"CLAUDE_CODE_OAUTH_TOKEN": oauth_token} if oauth_token else {},
-        on_open=list(on_open or []),
-        on_close=list(on_close or []),
+        on_run_starting=list(on_run_starting or []),
+        on_run_ended=list(on_run_ended or []),
         telemetry=telemetry,
         telemetry_provider=telemetry_provider,
     )
@@ -210,7 +216,11 @@ async def run_primitive_plan(
 
     token = current_run_context.set(run_ctx)
     lifecycle.append(LifecycleEvent.RUN_STARTED, run_id=resolved_run_id)
-    _safe_invoke_hooks(run_ctx.on_open, run_ctx, label="on_open")
+    _safe_invoke_hooks(
+        run_ctx.on_run_starting,
+        RunStartingEvent(run_context=run_ctx),
+        label="on_run_starting",
+    )
 
     caught_exc: BaseException | None = None
     final_output: BaseModel | None = None
@@ -241,15 +251,17 @@ async def run_primitive_plan(
             render_summary(run_dir)
         except Exception:
             logger.warning("render_summary raised during teardown", exc_info=True)
-        #   3. on_close hooks fire AFTER render_summary. This lets a
+        #   3. on_run_ended hooks fire AFTER render_summary. This lets a
         #      product's ArtifactSpec entries reference summary.txt and
         #      anything else render_summary writes.
         _safe_invoke_hooks(
-            run_ctx.on_close,
-            run_ctx,
-            caught_exc,
-            final_output,
-            label="on_close",
+            run_ctx.on_run_ended,
+            RunEndedEvent(
+                run_context=run_ctx,
+                exception=caught_exc,
+                output=final_output,
+            ),
+            label="on_run_ended",
         )
         #   4. ContextVar reset, signal handler removal, lifecycle.close,
         #      and per-run TracerProvider shutdown. Wrap shutdown in

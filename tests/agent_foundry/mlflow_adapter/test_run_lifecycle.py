@@ -16,6 +16,8 @@ from agent_foundry.mlflow_adapter.run_lifecycle import attach_run_hooks
 from agent_foundry.orchestration.run_context import (
     NoOpLifecycleWriter,
     RunContext,
+    RunEndedEvent,
+    RunStartingEvent,
 )
 from agent_foundry.telemetry.config import (
     ArtifactSpec,
@@ -92,7 +94,19 @@ def _run_def() -> RunDefinition:
     )
 
 
-def test_on_open_starts_run_and_logs_params(fake_mlflow: FakeMLflow, tmp_path: Path) -> None:
+def _starting(ctx: RunContext) -> RunStartingEvent:
+    return RunStartingEvent(run_context=ctx)
+
+
+def _ended(
+    ctx: RunContext, exc: BaseException | None = None, output: BaseModel | None = None
+) -> RunEndedEvent:
+    return RunEndedEvent(run_context=ctx, exception=exc, output=output)
+
+
+def test_on_run_starting_starts_run_and_logs_params(
+    fake_mlflow: FakeMLflow, tmp_path: Path
+) -> None:
     ctx = _ctx(tmp_path)
     attach_run_hooks(
         run_context=ctx,
@@ -101,8 +115,8 @@ def test_on_open_starts_run_and_logs_params(fake_mlflow: FakeMLflow, tmp_path: P
         input_model=_In(ticket_id="42"),
     )
 
-    for hook in ctx.on_open:
-        hook(ctx)
+    for hook in ctx.on_run_starting:
+        hook(_starting(ctx))
 
     assert fake_mlflow.start_run_calls == [
         {"run_name": "ticket-42", "tags": {"product": "archipelago"}}
@@ -110,7 +124,7 @@ def test_on_open_starts_run_and_logs_params(fake_mlflow: FakeMLflow, tmp_path: P
     assert fake_mlflow.log_params_calls == [{"ticket_id": "42"}]
 
 
-def test_on_close_logs_metrics_with_output_and_ends_run_finished(
+def test_on_run_ended_logs_metrics_with_output_and_ends_run_finished(
     fake_mlflow: FakeMLflow, tmp_path: Path
 ) -> None:
     ctx = _ctx(tmp_path)
@@ -122,10 +136,10 @@ def test_on_close_logs_metrics_with_output_and_ends_run_finished(
     )
     output = _Out(success=True)
 
-    for hook in ctx.on_open:
-        hook(ctx)
-    for hook in ctx.on_close:
-        hook(ctx, None, output)
+    for hook in ctx.on_run_starting:
+        hook(_starting(ctx))
+    for hook in ctx.on_run_ended:
+        hook(_ended(ctx, exc=None, output=output))
 
     assert len(fake_mlflow.log_metrics_calls) == 1
     logged = fake_mlflow.log_metrics_calls[0]
@@ -134,7 +148,7 @@ def test_on_close_logs_metrics_with_output_and_ends_run_finished(
     assert fake_mlflow.end_run_calls == ["FINISHED"]
 
 
-def test_on_close_with_exception_and_none_output_ends_run_failed(
+def test_on_run_ended_with_exception_and_none_output_ends_run_failed(
     fake_mlflow: FakeMLflow, tmp_path: Path
 ) -> None:
     ctx = _ctx(tmp_path)
@@ -145,17 +159,17 @@ def test_on_close_with_exception_and_none_output_ends_run_failed(
         input_model=_In(ticket_id="42"),
     )
 
-    for hook in ctx.on_open:
-        hook(ctx)
-    for hook in ctx.on_close:
-        hook(ctx, RuntimeError("boom"), None)
+    for hook in ctx.on_run_starting:
+        hook(_starting(ctx))
+    for hook in ctx.on_run_ended:
+        hook(_ended(ctx, exc=RuntimeError("boom"), output=None))
 
     assert fake_mlflow.end_run_calls == ["FAILED"]
     assert len(fake_mlflow.log_metrics_calls) == 1
     assert "success" not in fake_mlflow.log_metrics_calls[0]
 
 
-def test_on_close_calls_end_run_even_when_metrics_callable_raises(
+def test_on_run_ended_calls_end_run_even_when_metrics_callable_raises(
     fake_mlflow: FakeMLflow, tmp_path: Path
 ) -> None:
     """Undefended metrics callable raise (e.g. AttributeError on out.success
@@ -175,21 +189,22 @@ def test_on_close_calls_end_run_even_when_metrics_callable_raises(
         input_model=_In(ticket_id="42"),
     )
 
-    for hook in ctx.on_open:
-        hook(ctx)
-    for hook in ctx.on_close:
-        hook(ctx, RuntimeError("plan failed"), None)
+    for hook in ctx.on_run_starting:
+        hook(_starting(ctx))
+    for hook in ctx.on_run_ended:
+        hook(_ended(ctx, exc=RuntimeError("plan failed"), output=None))
 
     assert fake_mlflow.end_run_calls == ["FAILED"]
 
 
-def test_on_close_treats_partial_open_as_failed(
+def test_on_run_ended_treats_partial_open_as_failed(
     fake_mlflow: FakeMLflow,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """If on_open's mlflow.log_params raises after start_run succeeds, on_close
-    must still close the run with FAILED status (no orphan).
+    """If on_run_starting's mlflow.log_params raises after start_run
+    succeeds, on_run_ended must still close the run with FAILED status (no
+    orphan).
     """
 
     def boom_log_params(*a, **k):
@@ -205,24 +220,26 @@ def test_on_close_treats_partial_open_as_failed(
         input_model=_In(ticket_id="42"),
     )
 
-    for hook in ctx.on_open:
+    for hook in ctx.on_run_starting:
         with contextlib.suppress(RuntimeError):
-            hook(ctx)
+            hook(_starting(ctx))
 
-    for hook in ctx.on_close:
-        hook(ctx, None, _Out(success=True))
+    for hook in ctx.on_run_ended:
+        hook(_ended(ctx, exc=None, output=_Out(success=True)))
 
     assert fake_mlflow.end_run_calls == ["FAILED"]
     assert fake_mlflow.log_metrics_calls == []
     assert fake_mlflow.log_artifact_calls == []
 
 
-def test_on_close_skipped_when_on_open_did_not_start_run(
+def test_on_run_ended_skipped_when_on_run_starting_did_not_start_run(
     fake_mlflow: FakeMLflow,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """If on_open's mlflow.start_run raised, on_close must not call MLflow APIs."""
+    """If on_run_starting's mlflow.start_run raised, on_run_ended must not
+    call MLflow APIs.
+    """
 
     def boom_start_run(*a, **k):
         raise RuntimeError("mlflow start_run failed")
@@ -237,21 +254,23 @@ def test_on_close_skipped_when_on_open_did_not_start_run(
         input_model=_In(ticket_id="42"),
     )
 
-    for hook in ctx.on_open:
+    for hook in ctx.on_run_starting:
         with contextlib.suppress(RuntimeError):
-            hook(ctx)
+            hook(_starting(ctx))
 
     with caplog.at_level(logging.WARNING):
-        for hook in ctx.on_close:
-            hook(ctx, None, _Out(success=True))
+        for hook in ctx.on_run_ended:
+            hook(_ended(ctx, exc=None, output=_Out(success=True)))
 
     assert fake_mlflow.log_metrics_calls == []
     assert fake_mlflow.log_artifact_calls == []
     assert fake_mlflow.end_run_calls == []
-    assert any("on_close skipped" in record.message for record in caplog.records)
+    assert any("on_run_ended skipped" in record.message for record in caplog.records)
 
 
-def test_on_open_applies_redaction_to_params(fake_mlflow: FakeMLflow, tmp_path: Path) -> None:
+def test_on_run_starting_applies_redaction_to_params(
+    fake_mlflow: FakeMLflow, tmp_path: Path
+) -> None:
     ctx = _ctx(tmp_path)
     policy = RedactionPolicy(
         redact_input=lambda _m: _In(ticket_id="[REDACTED]"),
@@ -263,13 +282,13 @@ def test_on_open_applies_redaction_to_params(fake_mlflow: FakeMLflow, tmp_path: 
         input_model=_In(ticket_id="42"),
     )
 
-    for hook in ctx.on_open:
-        hook(ctx)
+    for hook in ctx.on_run_starting:
+        hook(_starting(ctx))
 
     assert fake_mlflow.log_params_calls == [{"ticket_id": "[REDACTED]"}]
 
 
-def test_on_close_logs_artifacts(fake_mlflow: FakeMLflow, tmp_path: Path) -> None:
+def test_on_run_ended_logs_artifacts(fake_mlflow: FakeMLflow, tmp_path: Path) -> None:
     ctx = _ctx(tmp_path)
     artifact_path = tmp_path / "result.json"
     artifact_path.write_text("{}")
@@ -288,9 +307,9 @@ def test_on_close_logs_artifacts(fake_mlflow: FakeMLflow, tmp_path: Path) -> Non
         input_model=_In(),
     )
 
-    for hook in ctx.on_open:
-        hook(ctx)
-    for hook in ctx.on_close:
-        hook(ctx, None, _Out(success=True))
+    for hook in ctx.on_run_starting:
+        hook(_starting(ctx))
+    for hook in ctx.on_run_ended:
+        hook(_ended(ctx, exc=None, output=_Out(success=True)))
 
     assert fake_mlflow.log_artifact_calls == [(str(artifact_path), "results")]
