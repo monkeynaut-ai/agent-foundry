@@ -119,8 +119,8 @@ def test_enable_attaches_run_lifecycle_hooks(fake_mlflow: FakeMLflow, tmp_path: 
     ctx = _ctx(tmp_path, run_id="r-hooks", provider=provider)
     enable(config=_config(), run_context=ctx, input_model=_In(ticket_id="7"))
 
-    assert len(ctx.on_open) == 1
-    assert len(ctx.on_close) == 1
+    assert len(ctx.on_run_starting) == 1
+    assert len(ctx.on_run_ended) == 1
     provider.shutdown()
 
 
@@ -131,8 +131,8 @@ def test_enable_is_idempotent_for_same_context(fake_mlflow: FakeMLflow, tmp_path
     enable(config=_config(), run_context=ctx, input_model=_In())
     enable(config=_config(), run_context=ctx, input_model=_In())
 
-    assert len(ctx.on_open) == 1
-    assert len(ctx.on_close) == 1
+    assert len(ctx.on_run_starting) == 1
+    assert len(ctx.on_run_ended) == 1
     provider.shutdown()
 
 
@@ -148,8 +148,8 @@ def test_enable_attaches_separate_hooks_for_distinct_contexts_with_same_run_id(
     enable(config=_config(), run_context=ctx_a, input_model=_In())
     enable(config=_config(), run_context=ctx_b, input_model=_In())
 
-    assert len(ctx_a.on_open) == 1
-    assert len(ctx_b.on_open) == 1
+    assert len(ctx_a.on_run_starting) == 1
+    assert len(ctx_b.on_run_starting) == 1
     provider_a.shutdown()
     provider_b.shutdown()
 

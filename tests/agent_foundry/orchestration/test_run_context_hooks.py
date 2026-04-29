@@ -1,4 +1,4 @@
-"""Tests for RunContext lifecycle hooks (on_open / on_close)."""
+"""Tests for RunContext lifecycle hooks (on_run_starting / on_run_ended)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ from pydantic import BaseModel, ValidationError
 from agent_foundry.orchestration.run_context import (
     NoOpLifecycleWriter,
     RunContext,
+    RunEndedEvent,
+    RunStartingEvent,
 )
 
 
@@ -29,154 +31,155 @@ def _ctx(tmp_path: Path, **overrides) -> RunContext:
     return RunContext(**kwargs)
 
 
-def test_run_context_on_open_default_empty(tmp_path: Path) -> None:
+def test_run_context_on_run_starting_default_empty(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path)
-    assert ctx.on_open == []
+    assert ctx.on_run_starting == []
 
 
-def test_run_context_on_close_default_empty(tmp_path: Path) -> None:
+def test_run_context_on_run_ended_default_empty(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path)
-    assert ctx.on_close == []
+    assert ctx.on_run_ended == []
 
 
-def test_run_context_accepts_on_open_callables(tmp_path: Path) -> None:
-    def hook(ctx: RunContext) -> None:
+def test_run_context_accepts_on_run_starting_callables(tmp_path: Path) -> None:
+    def hook(event: RunStartingEvent) -> None:
         pass
 
-    rc = _ctx(tmp_path, on_open=[hook])
-    assert rc.on_open == [hook]
+    rc = _ctx(tmp_path, on_run_starting=[hook])
+    assert rc.on_run_starting == [hook]
 
 
-def test_run_context_accepts_on_close_callables(tmp_path: Path) -> None:
-    def hook(ctx: RunContext, exc: BaseException | None, output: BaseModel | None) -> None:
+def test_run_context_accepts_on_run_ended_callables(tmp_path: Path) -> None:
+    def hook(event: RunEndedEvent) -> None:
         pass
 
-    rc = _ctx(tmp_path, on_close=[hook])
-    assert rc.on_close == [hook]
+    rc = _ctx(tmp_path, on_run_ended=[hook])
+    assert rc.on_run_ended == [hook]
 
 
-def test_run_context_on_open_field_assignment_raises(tmp_path: Path) -> None:
+def test_run_context_on_run_starting_field_assignment_raises(tmp_path: Path) -> None:
     """frozen=True blocks field reassignment but list.append works.
 
-    Documents the mutation pattern: `ctx.on_open.append(hook)` is the supported way
-    to add a hook after construction; `ctx.on_open = [hook]` raises ValidationError.
+    Documents the mutation pattern: ``ctx.on_run_starting.append(hook)`` is
+    the supported way to add a hook after construction;
+    ``ctx.on_run_starting = [hook]`` raises ValidationError.
     """
     ctx = _ctx(tmp_path)
     with pytest.raises(ValidationError):
-        ctx.on_open = [lambda c: None]
+        ctx.on_run_starting = [lambda _evt: None]
 
 
-def test_run_context_on_open_append_after_construction(tmp_path: Path) -> None:
+def test_run_context_on_run_starting_append_after_construction(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path)
-    ctx.on_open.append(lambda c: None)
-    assert len(ctx.on_open) == 1
+    ctx.on_run_starting.append(lambda _evt: None)
+    assert len(ctx.on_run_starting) == 1
 
 
 # -- Runner-side hook invocation --
 
 
-class _Empty(BaseModel):
+class _State(BaseModel):
     value: str = "x"
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_invokes_on_open_in_order(tmp_path: Path) -> None:
+async def test_run_primitive_plan_invokes_on_run_starting_in_order(tmp_path: Path) -> None:
     from agent_foundry.orchestration.runner import run_primitive_plan
     from agent_foundry.primitives.models import FunctionAction
     from agent_foundry.primitives.plan import PrimitivePlan
 
     observed: list[str] = []
     hooks = [
-        lambda ctx: observed.append(f"open-1:{ctx.run_id}"),
-        lambda ctx: observed.append(f"open-2:{ctx.run_id}"),
+        lambda evt: observed.append(f"open-1:{evt.run_context.run_id}"),
+        lambda evt: observed.append(f"open-2:{evt.run_context.run_id}"),
     ]
 
-    def fn(_: _Empty) -> _Empty:
-        return _Empty()
+    def fn(s: _State) -> _State:
+        return _State(value=s.value)
 
-    action = FunctionAction[_Empty, _Empty](function=fn)
+    action = FunctionAction[_State, _State](function=fn)
     plan = PrimitivePlan(root=action)
 
     await run_primitive_plan(
         plan,
-        initial_state=_Empty(),
+        initial_state=_State(),
         artifacts_dir=tmp_path,
         workspace_volume="vol",
         base_image_tag="img",
         responder_provider=lambda _id: lambda *a, **k: None,
         run_id="run-hooks",
-        on_open=hooks,
+        on_run_starting=hooks,
     )
 
     assert observed == ["open-1:run-hooks", "open-2:run-hooks"]
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_invokes_on_close_with_none_exc_and_output_on_success(
+async def test_run_primitive_plan_invokes_on_run_ended_with_exception_none_and_output_on_success(
     tmp_path: Path,
 ) -> None:
     from agent_foundry.orchestration.runner import run_primitive_plan
     from agent_foundry.primitives.models import FunctionAction
     from agent_foundry.primitives.plan import PrimitivePlan
 
-    observed: list[tuple[BaseException | None, BaseModel | None]] = []
+    observed: list[RunEndedEvent] = []
 
-    def fn(_: _Empty) -> _Empty:
-        return _Empty()
+    def fn(s: _State) -> _State:
+        return _State(value=s.value)
 
-    action = FunctionAction[_Empty, _Empty](function=fn)
+    action = FunctionAction[_State, _State](function=fn)
     plan = PrimitivePlan(root=action)
 
     await run_primitive_plan(
         plan,
-        initial_state=_Empty(),
+        initial_state=_State(),
         artifacts_dir=tmp_path,
         workspace_volume="vol",
         base_image_tag="img",
         responder_provider=lambda _id: lambda *a, **k: None,
         run_id="run-success",
-        on_close=[lambda _ctx, exc, output: observed.append((exc, output))],
+        on_run_ended=[observed.append],
     )
 
     assert len(observed) == 1
-    exc, output = observed[0]
-    assert exc is None
-    assert isinstance(output, _Empty)
+    event = observed[0]
+    assert event.exception is None
+    assert isinstance(event.output, _State)
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_invokes_on_close_with_exception_and_none_output_on_failure(
+async def test_run_primitive_plan_invokes_on_run_ended_with_exception_and_none_output_on_failure(
     tmp_path: Path,
 ) -> None:
     from agent_foundry.orchestration.runner import run_primitive_plan
     from agent_foundry.primitives.models import FunctionAction
     from agent_foundry.primitives.plan import PrimitivePlan
 
-    observed: list[tuple[BaseException | None, BaseModel | None]] = []
+    observed: list[RunEndedEvent] = []
 
-    def boom(_: _Empty) -> _Empty:
+    def boom(_: _State) -> _State:
         raise RuntimeError("boom")
 
-    action = FunctionAction[_Empty, _Empty](function=boom)
+    action = FunctionAction[_State, _State](function=boom)
     plan = PrimitivePlan(root=action)
 
     with pytest.raises(RuntimeError, match="boom"):
         await run_primitive_plan(
             plan,
-            initial_state=_Empty(),
+            initial_state=_State(),
             artifacts_dir=tmp_path,
             workspace_volume="vol",
             base_image_tag="img",
             responder_provider=lambda _id: lambda *a, **k: None,
             run_id="run-fail",
-            on_close=[lambda _ctx, exc, output: observed.append((exc, output))],
+            on_run_ended=[observed.append],
         )
 
     assert len(observed) == 1
-    exc, output = observed[0]
-    assert isinstance(exc, RuntimeError)
-    assert "boom" in str(exc)
-    assert output is None
+    event = observed[0]
+    assert isinstance(event.exception, RuntimeError)
+    assert "boom" in str(event.exception)
+    assert event.output is None
 
 
 @pytest.mark.asyncio
@@ -184,7 +187,8 @@ async def test_run_primitive_plan_writes_run_failed_lifecycle_event(
     tmp_path: Path,
 ) -> None:
     """The lifecycle JSONL must end with RUN_FAILED on the failure path
-    so downstream consumers can distinguish 'died mid-run' from 'in progress'."""
+    so downstream consumers can distinguish 'died mid-run' from 'in progress'.
+    """
     import json
 
     from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
@@ -192,16 +196,16 @@ async def test_run_primitive_plan_writes_run_failed_lifecycle_event(
     from agent_foundry.primitives.models import FunctionAction
     from agent_foundry.primitives.plan import PrimitivePlan
 
-    def boom(_: _Empty) -> _Empty:
+    def boom(_: _State) -> _State:
         raise RuntimeError("boom")
 
-    action = FunctionAction[_Empty, _Empty](function=boom)
+    action = FunctionAction[_State, _State](function=boom)
     plan = PrimitivePlan(root=action)
 
     with pytest.raises(RuntimeError, match="boom"):
         await run_primitive_plan(
             plan,
-            initial_state=_Empty(),
+            initial_state=_State(),
             artifacts_dir=tmp_path,
             workspace_volume="vol",
             base_image_tag="img",
@@ -212,10 +216,6 @@ async def test_run_primitive_plan_writes_run_failed_lifecycle_event(
     lifecycle_path = next(tmp_path.rglob("lifecycle.jsonl"))
     events = [json.loads(line) for line in lifecycle_path.read_text().splitlines()]
     types = [e["type"] for e in events]
-    # Use membership rather than position so a future on_close hook that
-    # emits a domain event doesn't break the test. The contract is "exactly
-    # one terminal event, and it's RUN_FAILED" — not "RUN_FAILED is last".
-    # Use ``.value`` for parity with the existing test_run_primitive_plan tests.
     assert LifecycleEvent.RUN_STARTED.value in types
     assert LifecycleEvent.RUN_FAILED.value in types
     assert LifecycleEvent.RUN_ENDED.value not in types
@@ -232,15 +232,15 @@ async def test_run_primitive_plan_writes_run_ended_lifecycle_event_on_success(
     from agent_foundry.primitives.models import FunctionAction
     from agent_foundry.primitives.plan import PrimitivePlan
 
-    def fn(_: _Empty) -> _Empty:
-        return _Empty()
+    def fn(s: _State) -> _State:
+        return _State(value=s.value)
 
-    action = FunctionAction[_Empty, _Empty](function=fn)
+    action = FunctionAction[_State, _State](function=fn)
     plan = PrimitivePlan(root=action)
 
     await run_primitive_plan(
         plan,
-        initial_state=_Empty(),
+        initial_state=_State(),
         artifacts_dir=tmp_path,
         workspace_volume="vol",
         base_image_tag="img",
@@ -266,28 +266,28 @@ async def test_run_primitive_plan_isolates_hook_exceptions(
 
     observed: list[str] = []
 
-    def fn(_: _Empty) -> _Empty:
-        return _Empty()
+    def fn(s: _State) -> _State:
+        return _State(value=s.value)
 
-    action = FunctionAction[_Empty, _Empty](function=fn)
+    action = FunctionAction[_State, _State](function=fn)
     plan = PrimitivePlan(root=action)
 
-    def bad(_ctx) -> None:
+    def bad(_evt: RunStartingEvent) -> None:
         raise ValueError("hook-1 failed")
 
-    def good(_ctx) -> None:
+    def good(_evt: RunStartingEvent) -> None:
         observed.append("hook-2 ran")
 
     with caplog.at_level(logging.ERROR):
         await run_primitive_plan(
             plan,
-            initial_state=_Empty(),
+            initial_state=_State(),
             artifacts_dir=tmp_path,
             workspace_volume="vol",
             base_image_tag="img",
             responder_provider=lambda _id: lambda *a, **k: None,
             run_id="run-iso",
-            on_open=[bad, good],
+            on_run_starting=[bad, good],
         )
 
     assert observed == ["hook-2 ran"]

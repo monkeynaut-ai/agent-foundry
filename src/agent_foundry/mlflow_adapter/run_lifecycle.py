@@ -1,4 +1,4 @@
-"""Bind MLflow Run lifecycle to RunContext open/close hooks."""
+"""Bind MLflow Run lifecycle to RunContext on_run_starting / on_run_ended hooks."""
 
 from __future__ import annotations
 
@@ -9,7 +9,11 @@ from typing import Any, cast
 import mlflow
 from pydantic import BaseModel
 
-from agent_foundry.orchestration.run_context import RunContext
+from agent_foundry.orchestration.run_context import (
+    RunContext,
+    RunEndedEvent,
+    RunStartingEvent,
+)
 from agent_foundry.telemetry.config import (
     RedactionPolicy,
     RunDefinition,
@@ -32,21 +36,22 @@ def attach_run_hooks(
     redaction: RedactionPolicy | None,
     input_model: BaseModel,
 ) -> None:
-    """Append open/close callables to ``run_context`` that drive an MLflow Run.
+    """Append on_run_starting / on_run_ended hooks to ``run_context`` that
+    drive an MLflow Run.
 
-    On open: evaluates ``run_definition.name`` / ``params`` / ``tags`` against
-    ``input_model`` (with optional redaction applied to params), calls
-    ``mlflow.start_run``, and logs the params. If any of these raises, the
-    exception propagates to ``_safe_invoke_hooks`` which logs and continues —
-    ``state["mlflow_run_id"]`` stays None and the on_close hook will become
-    a no-op.
+    on_run_starting: evaluates ``run_definition.name`` / ``params`` /
+    ``tags`` against ``input_model`` (with optional redaction applied to
+    params), calls ``mlflow.start_run``, and logs the params. If any of
+    these raises, the exception propagates to ``_safe_invoke_hooks``
+    which logs and continues — ``state["mlflow_run_id"]`` stays None and
+    the on_run_ended hook will become a no-op.
 
-    On close: if on_open did not successfully start an MLflow run, this is
-    a no-op (a warning is logged). Otherwise builds a ``RunStats``, evaluates
-    ``run_definition.metrics(output, stats)`` against the run's final
-    OUTPUT (or None on failure), logs metrics + artifacts, and ends the
-    MLflow run with status FINISHED on success or FAILED if an exception
-    was raised.
+    on_run_ended: if on_run_starting did not successfully start an MLflow
+    run, this is a no-op (a warning is logged). Otherwise builds a
+    ``RunStats``, evaluates ``run_definition.metrics(output, stats)``
+    against the run's final OUTPUT (or None on failure), logs metrics +
+    artifacts, and ends the MLflow run with status FINISHED on success
+    or FAILED if an exception was raised.
     """
     state: dict[str, Any] = {
         "start_time": None,
@@ -54,7 +59,7 @@ def attach_run_hooks(
         "open_clean": False,
     }
 
-    def on_open(_ctx: RunContext) -> None:
+    def on_run_starting(_event: RunStartingEvent) -> None:
         state["start_time"] = time.monotonic()
         name = run_definition.name(input_model)
         tags = _resolve_tags(run_definition.tags, input_model)
@@ -66,28 +71,33 @@ def attach_run_hooks(
         params = run_definition.params(params_input)
 
         run = mlflow.start_run(run_name=name, tags=tags)
-        # Set mlflow_run_id ONLY after start_run succeeds — on_close uses this
-        # as a guard. open_clean stays False until log_params also succeeds.
+        # Set mlflow_run_id ONLY after start_run succeeds — on_run_ended uses
+        # this as a guard. open_clean stays False until log_params also
+        # succeeds.
         state["mlflow_run_id"] = run.info.run_id
         mlflow.log_params(params)
         state["open_clean"] = True
 
-    def on_close(_ctx: RunContext, exc: BaseException | None, output: BaseModel | None) -> None:
+    def on_run_ended(event: RunEndedEvent) -> None:
         if state["mlflow_run_id"] is None:
-            # on_open failed before start_run succeeded — no MLflow run to
-            # close. Log a warning so the silent skip isn't truly silent.
+            # on_run_starting failed before start_run succeeded — no MLflow
+            # run to close. Log a warning so the silent skip isn't truly
+            # silent.
             logger.warning(
-                "MLflow on_close skipped — on_open did not start a run "
-                "(likely mlflow.start_run raised). Spans were emitted but "
-                "no MLflow Run wraps them."
+                "MLflow on_run_ended skipped — on_run_starting did not start "
+                "a run (likely mlflow.start_run raised). Spans were emitted "
+                "but no MLflow Run wraps them."
             )
             return
 
-        # If on_open partially succeeded (start_run ran but log_params raised),
-        # treat the run as FAILED regardless of the actual run outcome — the
-        # open was incomplete, the recorded params are unreliable. Still close
-        # the run so it doesn't orphan in RUNNING state.
-        status = "FAILED" if (exc is not None or not state["open_clean"]) else "FINISHED"
+        # If on_run_starting partially succeeded (start_run ran but
+        # log_params raised), treat the run as FAILED regardless of the
+        # actual run outcome — the open was incomplete, the recorded params
+        # are unreliable. Still close the run so it doesn't orphan in
+        # RUNNING state.
+        status = (
+            "FAILED" if (event.exception is not None or not state["open_clean"]) else "FINISHED"
+        )
 
         # The end_run call MUST always fire to close the MLflow run, even if
         # log_metrics or log_artifact raise. Use try/finally so an exception in
@@ -102,7 +112,7 @@ def attach_run_hooks(
                 stats = RunStats(duration_ms=duration_ms)
 
                 try:
-                    metrics = run_definition.metrics(output, stats)
+                    metrics = run_definition.metrics(event.output, stats)
                     if metrics:
                         mlflow.log_metrics(metrics)
                 except Exception:
@@ -122,5 +132,5 @@ def attach_run_hooks(
             mlflow.end_run(status=status)
 
     # RunContext is frozen — append to the mutable list rather than reassign.
-    run_context.on_open.append(on_open)
-    run_context.on_close.append(on_close)
+    run_context.on_run_starting.append(on_run_starting)
+    run_context.on_run_ended.append(on_run_ended)
