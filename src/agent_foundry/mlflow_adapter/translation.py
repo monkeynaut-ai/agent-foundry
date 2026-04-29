@@ -12,7 +12,11 @@ to opt into MLflow-compatible attribute mirroring. AF core stays
 MLflow-agnostic — it just dual-writes per the table.
 """
 
+from mlflow.tracing.constant import SpanAttributeKey
+
+from agent_foundry.telemetry import attributes
+
 MLFLOW_TRANSLATIONS: dict[str, str] = {
-    "agent_foundry.input": "mlflow.spanInputs",
-    "agent_foundry.output": "mlflow.spanOutputs",
+    attributes.AF_INPUT: SpanAttributeKey.INPUTS,
+    attributes.AF_OUTPUT: SpanAttributeKey.OUTPUTS,
 }
