@@ -98,10 +98,10 @@ async def main(run_id: str | None = None) -> TicketOutput:
     config = build_telemetry()
     input_model = TicketInput(ticket_id="42", kind="feature")
 
-    def attach_adapter(ctx) -> None:
+    def attach_adapter(event) -> None:
         enable_mlflow_adapter(
             config=config,
-            run_context=ctx,
+            run_context=event.run_context,
             input_model=input_model,
             tracking_uri=MLFLOW_BASE_URL,
             experiment_id=MLFLOW_EXPERIMENT_ID,
@@ -116,7 +116,7 @@ async def main(run_id: str | None = None) -> TicketOutput:
         responder_provider=lambda _id: lambda *a, **k: None,
         run_id=resolved_run_id,
         telemetry=config,
-        on_open=[attach_adapter],
+        on_run_starting=[attach_adapter],
     )
 
     print(f"Plan completed (run_id={resolved_run_id}). Result: {result!r}")

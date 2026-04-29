@@ -88,10 +88,10 @@ config = TelemetryConfig(
 )
 
 
-def attach_mlflow(ctx) -> None:
+def attach_mlflow(event) -> None:
     enable_mlflow_adapter(
         config=config,
-        run_context=ctx,
+        run_context=event.run_context,
         input_model=plan_input,
         tracking_uri=MLFLOW_BASE_URL,
         experiment_id=EXPERIMENT_ID,
@@ -106,9 +106,16 @@ await run_primitive_plan(
     base_image_tag=base_image_tag,
     responder_provider=responder_provider,
     telemetry=config,
-    on_open=[attach_mlflow],
+    on_run_starting=[attach_mlflow],
 )
 ```
+
+`on_run_starting` hooks receive a `RunStartingEvent` (carrying the active
+`RunContext`); `on_run_ended` hooks receive a `RunEndedEvent` carrying the
+context, the captured exception (or `None` on success), and the run's
+final output model (or `None` on failure). Read fields by name —
+`event.run_context`, `event.exception`, `event.output` — so meanings are
+never ambiguous.
 
 ### Setting the experiment ID
 
@@ -123,7 +130,7 @@ If you skip the `tracking_uri` and `experiment_id` kwargs to `enable()`, the MLf
 
 `telemetry` is an opt-in parameter on `run_primitive_plan`. Pass `None` (or omit) and AF emits no spans, builds no provider, and never imports MLflow. Pass a `TelemetryConfig` and AF builds a per-run `TracerProvider`, anchors it on `RunContext.telemetry_provider`, runs the plan with span emission active, and shuts the provider down on exit. Per-run isolation: the runner never calls `trace.set_tracer_provider`, so concurrent runs in the same process never overwrite each other's providers.
 
-The MLflow adapter is independent — call `enable_mlflow_adapter` from an `on_open` hook only when you want MLflow Run binding. Span emission works without the adapter (you just don't get a wrapping MLflow Run with params/metrics/artifacts).
+The MLflow adapter is independent — call `enable_mlflow_adapter` from an `on_run_starting` hook only when you want MLflow Run binding. Span emission works without the adapter (you just don't get a wrapping MLflow Run with params/metrics/artifacts).
 
 ### Local verification demo
 
