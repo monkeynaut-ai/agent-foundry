@@ -94,9 +94,13 @@ class ContainerHandleBase:
     """Abstract base for container handles.
 
     Declares the attribute surface shared by the production
-    :class:`ContainerHandle` and test fakes. ``_container`` is the
-    Any-typed escape hatch for the underlying docker-SDK container
-    object — production code sets it; fakes leave it ``None``.
+    :class:`ContainerHandle` and test fakes. The base intentionally
+    carries no docker-SDK shape — the production
+    :class:`ContainerHandle` subclass owns that escape hatch
+    (``_container``), so future container backends (codex-in-a-
+    container, podman, k8s) can implement
+    :class:`ContainerManagerBase` against the base without inheriting
+    docker-py types.
 
     Subclasses may add their own fields (e.g. ``created_at`` on the
     production handle, or test-observability fields on fakes).
@@ -105,13 +109,19 @@ class ContainerHandleBase:
     container_id: str
     status: str = "created"
     workspace_path: str = ""
-    _container: Any = field(default=None, repr=False)
 
 
 @dataclass
 class ContainerHandle(ContainerHandleBase):
-    """Handle to a managed Docker container."""
+    """Handle to a managed Docker container.
 
+    ``_container`` is the Any-typed escape hatch for the underlying
+    docker-SDK container object — production :class:`ContainerManager`
+    methods access it directly. Other backends subclass
+    :class:`ContainerHandleBase` without inheriting this field.
+    """
+
+    _container: Any = field(default=None, repr=False)
     created_at: float = field(default_factory=time.time)
 
 

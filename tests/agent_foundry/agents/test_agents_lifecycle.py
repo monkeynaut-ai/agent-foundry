@@ -150,6 +150,33 @@ class TestStartStopDestroy:
             manager.start(handle)
 
 
+class TestContainerHandleBaseEncapsulation:
+    """Regression: the docker-SDK escape hatch is implementation
+    detail of the production ContainerManager + ContainerHandle. The
+    abstract ContainerHandleBase used by managers (and faked by tests)
+    must NOT expose ``_container``. Future container backends
+    (codex-in-a-container, podman, k8s) implement ContainerManagerBase
+    against ContainerHandleBase without inheriting docker-py shape.
+    """
+
+    def test_container_handle_base_has_no_container_field(self):
+        import dataclasses
+
+        from agent_foundry.agents.lifecycle import ContainerHandleBase
+
+        field_names = {f.name for f in dataclasses.fields(ContainerHandleBase)}
+        assert "_container" not in field_names, (
+            "ContainerHandleBase must not expose docker-SDK shape; "
+            "_container belongs on ContainerHandle only."
+        )
+
+    def test_container_handle_subclass_keeps_container_field(self):
+        import dataclasses
+
+        field_names = {f.name for f in dataclasses.fields(ContainerHandle)}
+        assert "_container" in field_names
+
+
 class TestExecResult:
     def test_exec_result_carries_exit_code_and_output(self):
         result = ExecResult(exit_code=0, output=b"hello")
