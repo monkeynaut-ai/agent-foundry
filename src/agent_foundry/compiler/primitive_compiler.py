@@ -482,7 +482,7 @@ def _compile_retry(
             result = compiled_body.invoke(dict(current_state))
             current_state.update(_scope_out(result, body_out))
             # Check until condition
-            model = retry_in.model_validate(current_state)
+            model = _validate_scoped_input(current_state, retry_in, node_id)
             if until_fn(model):
                 break
         return _scope_out(current_state, retry_out)
@@ -492,7 +492,7 @@ def _compile_retry(
         for _ in range(max_attempts):
             result = await compiled_body.ainvoke(dict(current_state))
             current_state.update(_scope_out(result, body_out))
-            model = retry_in.model_validate(current_state)
+            model = _validate_scoped_input(current_state, retry_in, node_id)
             if until_fn(model):
                 break
         return _scope_out(current_state, retry_out)

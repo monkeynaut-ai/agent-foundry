@@ -836,6 +836,42 @@ class TestCompileRetry:
         assert result.attempts == 1
         assert result.done is False
 
+    def test_retry_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+        """Pin scope-then-validate at the Retry's `until` boundary: when
+        an upstream step's output adds fields not in retry_in, those
+        fields must be projected away before validation, even if
+        retry_in forbids extras."""
+        from pydantic import ConfigDict
+
+        class StrictRetryState(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            attempts: int = 0
+            done: bool = False
+
+        class SeqIn(BaseModel):
+            attempts: int = 0
+            done: bool = False
+
+        class Step1Out(BaseModel):
+            attempts: int = 0
+            done: bool = False
+            extra_from_step1: str  # retry_in must NOT see this
+
+        step1 = FunctionAction[SeqIn, Step1Out](
+            function=lambda s: Step1Out(attempts=s.attempts, done=s.done, extra_from_step1="leak"),
+        )
+        body = FunctionAction[StrictRetryState, StrictRetryState](
+            function=lambda s: StrictRetryState(attempts=s.attempts + 1, done=True),
+        )
+        retry = Retry[StrictRetryState, StrictRetryState](
+            max_attempts=3, until=lambda s: s.done, body=body
+        )
+        seq = Sequence[SeqIn, StrictRetryState](steps=[step1, retry])
+        plan = PrimitivePlan(root=seq)
+        result = run_primitive_plan(plan, SeqIn(attempts=0, done=False))
+        assert result.attempts == 1
+        assert result.done is True
+
 
 # ======================================================================
 # GateAction Compilation
