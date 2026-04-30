@@ -62,20 +62,6 @@ def _derive_state_type(input_type: type[BaseModel], output_type: type[BaseModel]
     return TypedDict("PrimitiveState", fields, total=False)  # type: ignore[call-overload]
 
 
-def _validate_boundary(
-    state: dict[str, Any], model_type: type[BaseModel], node_id: str
-) -> dict[str, Any]:
-    """Validate state at a primitive boundary via Pydantic model construction."""
-    try:
-        model_type.model_validate(state)
-    except ValidationError as e:
-        raise PrimitiveCompilationError(
-            f"Boundary validation failed at {node_id}: {e}",
-            primitive_type=node_id,
-        ) from e
-    return state
-
-
 def _scope_in(parent_state: dict[str, Any], child_input_type: type[BaseModel]) -> dict[str, Any]:
     """Scope parent state down to child's input fields. Validates required fields."""
     fields = set(child_input_type.model_fields.keys())
@@ -109,9 +95,7 @@ def _validate_scoped_input(
     Required-field errors include ``node_id`` so a developer reading
     the failure can locate the offending step in a multi-primitive plan.
 
-    This is the inbound counterpart to ``_scope_out`` and supersedes
-    the older ``_validate_boundary`` + ``model_validate(state)`` two-step
-    used by the per-primitive compilers.
+    This is the inbound counterpart to ``_scope_out``.
     """
     fields = set(input_type.model_fields.keys())
     scoped = {k: v for k, v in state.items() if k in fields}

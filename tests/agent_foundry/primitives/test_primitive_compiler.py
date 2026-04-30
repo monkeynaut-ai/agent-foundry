@@ -146,33 +146,6 @@ class TestCompilerRegistry:
 
 
 # ======================================================================
-# Boundary Validation
-# ======================================================================
-
-
-class TestValidateBoundary:
-    def test_valid_state(self):
-        from agent_foundry.compiler.primitive_compiler import _validate_boundary
-
-        result = _validate_boundary({"query": "hello"}, InputState, "test_node")
-        assert result == {"query": "hello"}
-
-    def test_extra_keys_preserved(self):
-        """Extra keys pass through — LangGraph state may contain keys from other primitives."""
-        from agent_foundry.compiler.primitive_compiler import _validate_boundary
-
-        state = {"query": "hello", "other": "stuff"}
-        result = _validate_boundary(state, InputState, "test_node")
-        assert result["query"] == "hello"
-
-    def test_missing_required_field_raises(self):
-        from agent_foundry.compiler.primitive_compiler import _validate_boundary
-
-        with pytest.raises(PrimitiveCompilationError):
-            _validate_boundary({}, InputState, "test_node")
-
-
-# ======================================================================
 # State Scoping
 # ======================================================================
 
