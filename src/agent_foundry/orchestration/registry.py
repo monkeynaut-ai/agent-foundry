@@ -16,11 +16,16 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from agent_foundry.agents.lifecycle import (
+    ContainerHandleBase,
+    ContainerManagerBase,
+    HealthReport,
+    HealthStatus,
+)
 from agent_foundry.orchestration.env import build_container_env
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 
 if TYPE_CHECKING:
-    from agent_foundry.agents.lifecycle import ContainerHandleBase, ContainerManagerBase
     from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
     from agent_foundry.primitives.models import AgentAction
 
@@ -53,10 +58,19 @@ class LiveContainer:
     primitive_id: int | None = None
     agent_name: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    # Per-container invocation counter. Incremented by the executor on
-    # each ``run_agent_in_container`` call against this live container
-    # so lifecycle events can tag which invocation they belong to.
+    # Per-container invocation counter. Mutate via ``next_invocation()``
+    # so the field stays encapsulated; reading is fine.
     _invocation_count: int = 0
+
+    def next_invocation(self) -> int:
+        """Increment and return this container's invocation counter.
+
+        Each call to :func:`run_agent_in_container` against the live
+        container reserves the next invocation number; lifecycle events
+        tag the resulting work with that integer.
+        """
+        self._invocation_count += 1
+        return self._invocation_count
 
 
 class AgentContainerRegistry:
@@ -149,7 +163,7 @@ class AgentContainerRegistry:
                 )
             await asyncio.to_thread(manager.start, handle)
             if self._wait_for_health:
-                await self._wait_until_healthy(handle)
+                await self._wait_until_healthy(manager, handle)
             live = LiveContainer(
                 handle=handle,
                 manager=manager,
@@ -244,51 +258,52 @@ class AgentContainerRegistry:
             role_instructions_path=ROLE_INSTRUCTIONS_PATH,
         )
 
-    async def _wait_until_healthy(self, handle: Any) -> None:
-        """Poll the container's Docker HEALTHCHECK status until ``healthy``.
+    async def _wait_until_healthy(
+        self, manager: ContainerManagerBase, handle: ContainerHandleBase
+    ) -> None:
+        """Poll ``manager.health_status`` until the container reports HEALTHY.
 
         The base Agent Container image declares a HEALTHCHECK that tests for
         ``/tmp/.container-ready`` — a marker file the entrypoint
-        touches as its final setup step. Polling the health state
+        touches as its final setup step. Polling the typed health state
         (rather than sleeping a fixed interval) avoids races between
         the host's ``exec_run`` calls and the entrypoint's setup work
         (auth, lockdown, role-instructions append, plugin install).
 
-        No-op when the handle does not expose a real Docker container
-        (e.g. test fakes) — fakes start in a stable state immediately.
-        Raises ``RuntimeError`` when the container reports ``unhealthy``
-        or when the timeout elapses without reaching ``healthy``.
+        Treats :attr:`HealthStatus.NONE` as ready — a container with no
+        HEALTHCHECK declared is considered ready immediately on the
+        assumption that ``manager.start`` succeeded.
+        Raises ``RuntimeError`` when the container reports
+        :attr:`HealthStatus.UNHEALTHY` or when the timeout elapses
+        without reaching HEALTHY.
         """
-        inner = handle._container
-        if inner is None:
-            return
-
         deadline = time.monotonic() + self._health_wait_timeout_seconds
-        last_status: str | None = None
+        last_report: HealthReport | None = None
         while time.monotonic() < deadline:
-            await asyncio.to_thread(inner.reload)
-            attrs = inner.attrs or {}
-            health = attrs.get("State", {}).get("Health", {}) or {}
-            last_status = health.get("Status")
-            if last_status == "healthy":
+            report = await asyncio.to_thread(manager.health_status, handle)
+            last_report = report
+            if report.status is HealthStatus.HEALTHY:
                 return
-            if last_status == "unhealthy":
+            if report.status is HealthStatus.UNHEALTHY:
                 raise RuntimeError(
                     self._format_health_failure(
-                        inner,
-                        reason=f"container reported unhealthy (health={health!r})",
+                        manager,
+                        handle,
+                        reason=f"container reported unhealthy (health={report.raw!r})",
                     )
                 )
-            # ``starting`` or no HEALTHCHECK configured — keep polling.
-            # If the image has no HEALTHCHECK, ``health`` is empty and
-            # we'd loop forever; fall through to status-based readiness.
-            if not health and inner.status == "running":
+            if report.status is HealthStatus.NONE:
+                # No HEALTHCHECK declared on the image. ``manager.start``
+                # already succeeded; treat as ready and return.
                 return
+            # STARTING — keep polling.
             await asyncio.sleep(_HEALTH_POLL_INTERVAL_SECONDS)
 
+        last_status = last_report.status.value if last_report is not None else None
         raise RuntimeError(
             self._format_health_failure(
-                inner,
+                manager,
+                handle,
                 reason=(
                     f"container did not become healthy within "
                     f"{self._health_wait_timeout_seconds:.1f}s "
@@ -297,10 +312,15 @@ class AgentContainerRegistry:
             )
         )
 
-    def _format_health_failure(self, inner: Any, *, reason: str) -> str:
-        logs = ""
+    def _format_health_failure(
+        self,
+        manager: ContainerManagerBase,
+        handle: ContainerHandleBase,
+        *,
+        reason: str,
+    ) -> str:
         try:
-            raw = inner.logs(tail=80)
+            raw = manager.read_logs(handle, tail=80)
             logs = raw.decode(errors="replace") if isinstance(raw, bytes) else str(raw)
         except Exception:
             logs = "<unable to read container logs>"

@@ -11,10 +11,11 @@ import tarfile
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent_foundry.agents.errors import ContainerCreationError, ContainerLifecycleError
 
@@ -28,6 +29,11 @@ DEFAULT_ENV_ALLOWLIST = {
     "CLAUDE_CODE_OAUTH_TOKEN",
 }
 
+# In-container user that runs the agent. Hardcoded today; TD3 (typed
+# ImageLayout) will lift this onto a per-image config when codex /
+# alternate base images land.
+_AGENT_USER = "claude"
+
 
 class ContainerConfig(BaseModel):
     """Generic container resource constraints.
@@ -40,14 +46,61 @@ class ContainerConfig(BaseModel):
     pids_limit: int = 256
 
 
+class ExecResult(BaseModel):
+    """Typed result of running one command inside a container via
+    :meth:`ContainerManagerBase.exec_run`.
+
+    ``output`` is the combined stdout + stderr blob (the manager always
+    requests demuxed=False so callers don't have to care about the
+    docker SDK's two-tuple shape).
+    """
+
+    exit_code: int
+    output: bytes
+
+
+class HealthStatus(StrEnum):
+    """Container health states surfaced by
+    :meth:`ContainerManagerBase.health_status`.
+
+    Values mirror Docker's reported HEALTHCHECK states with one
+    addition: ``NONE`` covers the case where the image declares no
+    HEALTHCHECK and the container is otherwise running. Callers that
+    want to wait for the container to reach a steady state should treat
+    ``NONE`` as "ready" (no other state is going to arrive).
+    """
+
+    HEALTHY = "healthy"
+    UNHEALTHY = "unhealthy"
+    STARTING = "starting"
+    NONE = "none"
+
+
+class HealthReport(BaseModel):
+    """Snapshot of container health.
+
+    ``status`` drives orchestration decisions; ``raw`` exposes the
+    underlying ``State.Health`` block (FailingStreak, Log entries, …)
+    so a registry that wants to surface a diagnostic message on
+    timeout has the full payload to format.
+    """
+
+    status: HealthStatus
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
 @dataclass
 class ContainerHandleBase:
     """Abstract base for container handles.
 
     Declares the attribute surface shared by the production
-    :class:`ContainerHandle` and test fakes. ``_container`` is the
-    Any-typed escape hatch for the underlying docker-SDK container
-    object — production code sets it; fakes leave it ``None``.
+    :class:`ContainerHandle` and test fakes. The base intentionally
+    carries no docker-SDK shape — the production
+    :class:`ContainerHandle` subclass owns that escape hatch
+    (``_container``), so future container backends (codex-in-a-
+    container, podman, k8s) can implement
+    :class:`ContainerManagerBase` against the base without inheriting
+    docker-py types.
 
     Subclasses may add their own fields (e.g. ``created_at`` on the
     production handle, or test-observability fields on fakes).
@@ -56,13 +109,19 @@ class ContainerHandleBase:
     container_id: str
     status: str = "created"
     workspace_path: str = ""
-    _container: Any = field(default=None, repr=False)
 
 
 @dataclass
 class ContainerHandle(ContainerHandleBase):
-    """Handle to a managed Docker container."""
+    """Handle to a managed Docker container.
 
+    ``_container`` is the Any-typed escape hatch for the underlying
+    docker-SDK container object — production :class:`ContainerManager`
+    methods access it directly. Other backends subclass
+    :class:`ContainerHandleBase` without inheriting this field.
+    """
+
+    _container: Any = field(default=None, repr=False)
     created_at: float = field(default_factory=time.time)
 
 
@@ -109,6 +168,42 @@ class ContainerManagerBase(ABC):
     def write_file_to_container(
         self, handle: ContainerHandleBase, container_path: str, content: str
     ) -> None: ...
+
+    @abstractmethod
+    def exec_run(self, handle: ContainerHandleBase, cmd: list[str]) -> ExecResult:
+        """Run ``cmd`` inside the container as the agent user; return
+        a typed :class:`ExecResult`.
+
+        ``cmd`` is a list of args (no shell). The combined stdout +
+        stderr blob comes back as ``ExecResult.output`` regardless of
+        the underlying transport.
+        """
+
+    @abstractmethod
+    def read_logs(
+        self,
+        handle: ContainerHandleBase,
+        *,
+        tail: int | None = None,
+        stdout: bool = True,
+        stderr: bool = True,
+        timestamps: bool = False,
+    ) -> bytes:
+        """Return container logs as bytes.
+
+        ``tail`` limits the number of trailing lines (``None`` returns
+        the full log). ``stdout`` / ``stderr`` toggle which streams are
+        included. ``timestamps`` prepends per-line timestamps when True.
+        """
+
+    @abstractmethod
+    def health_status(self, handle: ContainerHandleBase) -> HealthReport:
+        """Return a snapshot of container health.
+
+        Implementations are expected to refresh underlying state
+        (``reload`` for the docker SDK) before answering so callers
+        polling for a transition see fresh values.
+        """
 
 
 class ContainerManager(ContainerManagerBase):
@@ -255,6 +350,64 @@ class ContainerManager(ContainerManagerBase):
             tar.addfile(info, io.BytesIO(data))
         buf.seek(0)
         handle._container.put_archive(dir_path, buf)
+
+    def exec_run(self, handle: ContainerHandle, cmd: list[str]) -> ExecResult:
+        """Run ``cmd`` inside the container as the agent user.
+
+        Always passes ``demux=False`` so the docker SDK returns a
+        single combined stdout+stderr blob; always passes
+        ``user=_AGENT_USER`` so the agent process runs as the
+        non-root user the base image set up. Both choices are
+        platform contracts: callers cannot override them.
+        """
+        exit_code, output = handle._container.exec_run(cmd, demux=False, user=_AGENT_USER)
+        return ExecResult(exit_code=exit_code, output=output)
+
+    def read_logs(
+        self,
+        handle: ContainerHandle,
+        *,
+        tail: int | None = None,
+        stdout: bool = True,
+        stderr: bool = True,
+        timestamps: bool = False,
+    ) -> bytes:
+        """Return container logs as bytes.
+
+        ``tail=None`` is mapped to docker's sentinel string ``"all"``
+        (the SDK's documented way of asking for the whole log).
+        """
+        tail_arg: int | str = tail if tail is not None else "all"
+        result = handle._container.logs(
+            stdout=stdout,
+            stderr=stderr,
+            timestamps=timestamps,
+            tail=tail_arg,
+        )
+        return result if isinstance(result, bytes) else b""
+
+    def health_status(self, handle: ContainerHandle) -> HealthReport:
+        """Reload the container's state and return a typed health snapshot.
+
+        Maps ``State.Health.Status`` to :class:`HealthStatus`; absence of
+        a Health subdict (image declares no HEALTHCHECK) maps to
+        :attr:`HealthStatus.NONE`. Unknown status strings also map to
+        ``NONE`` rather than raising — the caller decides whether to
+        treat unknown as fatal.
+        """
+        handle._container.reload()
+        attrs = handle._container.attrs or {}
+        health = attrs.get("State", {}).get("Health", {}) or {}
+        status_str = health.get("Status")
+        if status_str == "healthy":
+            status = HealthStatus.HEALTHY
+        elif status_str == "unhealthy":
+            status = HealthStatus.UNHEALTHY
+        elif status_str == "starting":
+            status = HealthStatus.STARTING
+        else:
+            status = HealthStatus.NONE
+        return HealthReport(status=status, raw=dict(health))
 
     def cleanup_all(self) -> None:
         """Emergency cleanup of all tracked containers."""

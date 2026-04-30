@@ -93,11 +93,11 @@ def _capture_via_container(
     """Capture workspace state from inside a running container."""
     ws = container_handle.workspace_path
 
-    exit_code, output = container_handle._container.exec_run(f"git -C {ws} rev-parse HEAD")
-    commit_sha = output.decode().strip() if exit_code == 0 else "unknown"
+    sha_result = container_mgr.exec_run(container_handle, ["git", "-C", ws, "rev-parse", "HEAD"])
+    commit_sha = sha_result.output.decode().strip() if sha_result.exit_code == 0 else "unknown"
 
-    exit_code, output = container_handle._container.exec_run(f"git -C {ws} diff")
-    diff = output.decode() if exit_code == 0 else ""
+    diff_result = container_mgr.exec_run(container_handle, ["git", "-C", ws, "diff"])
+    diff = diff_result.output.decode() if diff_result.exit_code == 0 else ""
 
     transcript_path = None
     container_mgr.copy_from_container(

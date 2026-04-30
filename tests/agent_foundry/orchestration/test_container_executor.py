@@ -19,20 +19,30 @@ All tests inject a scripted ``FakeClaudeCodeDriver`` via the
 from __future__ import annotations
 
 import asyncio
+import json as _json_test
 from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
 from pydantic import BaseModel
 
+from agent_foundry.agents.lifecycle import ExecResult as _ExecResult
 from agent_foundry.models.markers import AgentFilePath
 from agent_foundry.orchestration import container_executor
 from agent_foundry.orchestration.artifacts import bootstrap_run_artifacts
-from agent_foundry.orchestration.container_executor import run_agent_in_container
+from agent_foundry.orchestration.container_executor import (
+    _run_claude_turn,
+    run_agent_in_container,
+)
 from agent_foundry.orchestration.errors import AgentFailedError
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
-from agent_foundry.orchestration.registry import AgentContainerRegistry
+from agent_foundry.orchestration.registry import (
+    AgentContainerRegistry,
+)
+from agent_foundry.orchestration.registry import (
+    LiveContainer as _LiveContainer,
+)
 from agent_foundry.orchestration.run_context import RunContext
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 from agent_foundry.responders.protocol import static_provider
@@ -508,3 +518,137 @@ async def test_run_agent_in_container_failure_outcome_raises(monkeypatch) -> Non
     with pytest.raises(AgentFailedError) as excinfo:
         await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
     assert "cannot proceed" in excinfo.value.reason
+
+
+# --- _run_claude_turn against a FakeContainerManager ------------------------
+#
+# Until step 5 of the D1 refactor, _run_claude_turn reached past
+# manager via live.handle._container.exec_run — making it impossible to
+# fake the per-turn shell-out via the typed surface. These tests
+# exercise the real production helper against FakeContainerManager
+# (which now implements ContainerManagerBase.exec_run / read_logs)
+# and act as a permanent guard against the executor reintroducing the
+# leak. They cover: success path; non-zero exit → RuntimeError with
+# logs; missing envelope → RuntimeError; ` ```json ` text-block
+# fallback path.
+
+
+def _stream_lines(*events: dict[str, Any]) -> bytes:
+    return ("\n".join(_json_test.dumps(e) for e in events) + "\n").encode()
+
+
+def _make_live_with_fake_mgr(
+    fake_mgr: FakeContainerManager,
+) -> tuple[_LiveContainer, FakeContainerManager]:
+    handle = fake_mgr.create_container()
+    fake_mgr.start(handle)
+    live = _LiveContainer(handle=handle, manager=fake_mgr)
+    return live, fake_mgr
+
+
+@pytest.mark.asyncio
+async def test_run_claude_turn_uses_manager_exec_run_for_success() -> None:
+    fake_mgr = FakeContainerManager()
+    live, _ = _make_live_with_fake_mgr(fake_mgr)
+    payload = {"outcome": {"kind": "success", "payload": {"answer": "42"}}}
+    init_evt = {"type": "system", "subtype": "init", "session_id": "sess-z"}
+    asst_evt = {
+        "type": "assistant",
+        "message": {
+            "content": [{"type": "tool_use", "name": "StructuredOutput", "input": payload}]
+        },
+    }
+    # Script the upcoming exec call. _run_claude_turn assembles the cmd
+    # internally; we script by tuple of args.
+    cmd = (
+        "claude",
+        "-p",
+        "go",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--json-schema",
+        "{}",
+    )
+    fake_mgr.exec_script[cmd] = _ExecResult(exit_code=0, output=_stream_lines(init_evt, asst_evt))
+
+    result = await _run_claude_turn(live, prompt="go", resume_session_id=None, schema={})
+    assert result.envelope == payload
+    assert result.session_id == "sess-z"
+
+
+@pytest.mark.asyncio
+async def test_run_claude_turn_raises_on_nonzero_exit_with_log_tail() -> None:
+    fake_mgr = FakeContainerManager()
+    live, _ = _make_live_with_fake_mgr(fake_mgr)
+    cmd = (
+        "claude",
+        "-p",
+        "go",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--json-schema",
+        "{}",
+    )
+    fake_mgr.exec_script[cmd] = _ExecResult(exit_code=2, output=b"boom-stderr")
+    fake_mgr.logs_script[live.handle.container_id] = b"recent log line\n"
+
+    with pytest.raises(RuntimeError, match="claude exec failed"):
+        await _run_claude_turn(live, prompt="go", resume_session_id=None, schema={})
+    # The diagnostic must have gone through manager.read_logs (not the
+    # docker-SDK escape hatch).
+    assert any(
+        cid == live.handle.container_id and entry["tail"] == 80 for cid, entry in fake_mgr.logs_log
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_claude_turn_raises_when_no_envelope_extractable() -> None:
+    fake_mgr = FakeContainerManager()
+    live, _ = _make_live_with_fake_mgr(fake_mgr)
+    cmd = (
+        "claude",
+        "-p",
+        "go",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--json-schema",
+        "{}",
+    )
+    # No assistant tool_use, no fallback text: just init.
+    init_evt = {"type": "system", "subtype": "init", "session_id": "sess-x"}
+    fake_mgr.exec_script[cmd] = _ExecResult(exit_code=0, output=_stream_lines(init_evt))
+
+    with pytest.raises(RuntimeError, match="no StructuredOutput"):
+        await _run_claude_turn(live, prompt="go", resume_session_id=None, schema={})
+
+
+@pytest.mark.asyncio
+async def test_run_claude_turn_falls_back_to_json_text_block() -> None:
+    """Claude sometimes emits the envelope as a ```json …``` text block
+    rather than a StructuredOutput tool_use, despite --json-schema."""
+    fake_mgr = FakeContainerManager()
+    live, _ = _make_live_with_fake_mgr(fake_mgr)
+    cmd = (
+        "claude",
+        "-p",
+        "go",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--json-schema",
+        "{}",
+    )
+    init_evt = {"type": "system", "subtype": "init", "session_id": "sess-fb"}
+    text = '```json\n{"outcome": {"kind": "success", "payload": {"answer": "fb"}}}\n```'
+    asst_evt = {
+        "type": "assistant",
+        "message": {"content": [{"type": "text", "text": text}]},
+    }
+    fake_mgr.exec_script[cmd] = _ExecResult(exit_code=0, output=_stream_lines(init_evt, asst_evt))
+
+    result = await _run_claude_turn(live, prompt="go", resume_session_id=None, schema={})
+    assert result.envelope["outcome"]["kind"] == "success"
+    assert result.envelope["outcome"]["payload"]["answer"] == "fb"

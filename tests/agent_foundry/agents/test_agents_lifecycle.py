@@ -12,6 +12,9 @@ from agent_foundry.agents.lifecycle import (
     ContainerConfig,
     ContainerHandle,
     ContainerManager,
+    ExecResult,
+    HealthReport,
+    HealthStatus,
 )
 
 
@@ -145,6 +148,168 @@ class TestStartStopDestroy:
         handle._container.start.side_effect = RuntimeError("OOM")
         with pytest.raises(ContainerLifecycleError, match="OOM"):
             manager.start(handle)
+
+
+class TestContainerHandleBaseEncapsulation:
+    """Regression: the docker-SDK escape hatch is implementation
+    detail of the production ContainerManager + ContainerHandle. The
+    abstract ContainerHandleBase used by managers (and faked by tests)
+    must NOT expose ``_container``. Future container backends
+    (codex-in-a-container, podman, k8s) implement ContainerManagerBase
+    against ContainerHandleBase without inheriting docker-py shape.
+    """
+
+    def test_container_handle_base_has_no_container_field(self):
+        import dataclasses
+
+        from agent_foundry.agents.lifecycle import ContainerHandleBase
+
+        field_names = {f.name for f in dataclasses.fields(ContainerHandleBase)}
+        assert "_container" not in field_names, (
+            "ContainerHandleBase must not expose docker-SDK shape; "
+            "_container belongs on ContainerHandle only."
+        )
+
+    def test_container_handle_subclass_keeps_container_field(self):
+        import dataclasses
+
+        field_names = {f.name for f in dataclasses.fields(ContainerHandle)}
+        assert "_container" in field_names
+
+
+class TestExecResult:
+    def test_exec_result_carries_exit_code_and_output(self):
+        result = ExecResult(exit_code=0, output=b"hello")
+        assert result.exit_code == 0
+        assert result.output == b"hello"
+
+    def test_exec_result_is_pydantic_model(self):
+        # Pydantic validation: exit_code must coerce; bytes must be bytes.
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ExecResult(exit_code="not-an-int", output=b"")  # type: ignore[arg-type]
+
+
+class TestExecRun:
+    def test_exec_run_returns_exec_result(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (0, b"hello\n")
+        result = manager.exec_run(handle, ["echo", "hello"])
+        assert isinstance(result, ExecResult)
+        assert result.exit_code == 0
+        assert result.output == b"hello\n"
+
+    def test_exec_run_passes_list_command_to_docker_sdk(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (0, b"")
+        manager.exec_run(handle, ["claude", "-p", "hi"])
+        call_args = handle._container.exec_run.call_args
+        assert call_args.args[0] == ["claude", "-p", "hi"]
+
+    def test_exec_run_runs_as_claude_user_by_default(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (0, b"")
+        manager.exec_run(handle, ["whoami"])
+        kw = handle._container.exec_run.call_args.kwargs
+        assert kw["user"] == "claude"
+
+    def test_exec_run_uses_demux_false_so_output_is_combined_bytes(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (1, b"err+out combined")
+        manager.exec_run(handle, ["fail"])
+        kw = handle._container.exec_run.call_args.kwargs
+        assert kw["demux"] is False
+
+    def test_exec_run_propagates_nonzero_exit(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (42, b"boom")
+        result = manager.exec_run(handle, ["fail"])
+        assert result.exit_code == 42
+        assert result.output == b"boom"
+
+
+class TestReadLogs:
+    def test_read_logs_returns_bytes_for_full_log(self, manager):
+        handle = manager.create_container()
+        handle._container.logs.return_value = b"line1\nline2\n"
+        out = manager.read_logs(handle)
+        assert out == b"line1\nline2\n"
+
+    def test_read_logs_passes_tail_kwarg_through(self, manager):
+        handle = manager.create_container()
+        handle._container.logs.return_value = b"tail"
+        manager.read_logs(handle, tail=80)
+        kw = handle._container.logs.call_args.kwargs
+        assert kw["tail"] == 80
+
+    def test_read_logs_default_includes_stdout_and_stderr_no_timestamps(self, manager):
+        handle = manager.create_container()
+        handle._container.logs.return_value = b""
+        manager.read_logs(handle)
+        kw = handle._container.logs.call_args.kwargs
+        assert kw["stdout"] is True
+        assert kw["stderr"] is True
+        assert kw["timestamps"] is False
+
+    def test_read_logs_respects_explicit_flags(self, manager):
+        handle = manager.create_container()
+        handle._container.logs.return_value = b""
+        manager.read_logs(handle, stdout=False, stderr=True, timestamps=True)
+        kw = handle._container.logs.call_args.kwargs
+        assert kw["stdout"] is False
+        assert kw["stderr"] is True
+        assert kw["timestamps"] is True
+
+
+class TestHealthStatus:
+    def test_health_status_returns_healthy_when_state_health_status_is_healthy(self, manager):
+        handle = manager.create_container()
+        handle._container.attrs = {"State": {"Health": {"Status": "healthy"}}}
+        report = manager.health_status(handle)
+        assert isinstance(report, HealthReport)
+        assert report.status is HealthStatus.HEALTHY
+
+    def test_health_status_returns_unhealthy(self, manager):
+        handle = manager.create_container()
+        handle._container.attrs = {"State": {"Health": {"Status": "unhealthy"}}}
+        report = manager.health_status(handle)
+        assert report.status is HealthStatus.UNHEALTHY
+
+    def test_health_status_returns_starting(self, manager):
+        handle = manager.create_container()
+        handle._container.attrs = {"State": {"Health": {"Status": "starting"}}}
+        report = manager.health_status(handle)
+        assert report.status is HealthStatus.STARTING
+
+    def test_health_status_returns_none_when_no_healthcheck_configured(self, manager):
+        handle = manager.create_container()
+        # No "Health" subdict — image declares no HEALTHCHECK.
+        handle._container.attrs = {"State": {"Status": "running"}}
+        report = manager.health_status(handle)
+        assert report.status is HealthStatus.NONE
+
+    def test_health_status_calls_reload_to_refresh_state(self, manager):
+        handle = manager.create_container()
+        handle._container.attrs = {"State": {"Health": {"Status": "healthy"}}}
+        manager.health_status(handle)
+        handle._container.reload.assert_called_once()
+
+    def test_health_report_carries_raw_state_for_diagnostics(self, manager):
+        handle = manager.create_container()
+        handle._container.attrs = {
+            "State": {
+                "Health": {
+                    "Status": "unhealthy",
+                    "FailingStreak": 3,
+                    "Log": [{"Output": "boom"}],
+                }
+            }
+        }
+        report = manager.health_status(handle)
+        # Raw block round-trips for downstream log formatting.
+        assert report.raw["FailingStreak"] == 3
+        assert report.raw["Log"][0]["Output"] == "boom"
 
 
 class TestValidateImage:

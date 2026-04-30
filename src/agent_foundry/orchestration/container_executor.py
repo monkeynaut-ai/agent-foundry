@@ -18,10 +18,11 @@ Provides:
   * max 20 responder iterations per invocation
 
 The per-turn mechanics — shelling out to ``claude`` inside the live
-container via ``handle._container.exec_run`` and parsing stream-json —
-live in the module-level helper :func:`_run_claude_turn`. Tests inject
-a scripted fake by passing ``run_turn=<fake>`` as a keyword argument
-to :func:`run_agent_in_container`; no global test seam is required.
+container via :meth:`ContainerManagerBase.exec_run` and parsing
+stream-json — live in the module-level helper :func:`_run_claude_turn`.
+Tests inject a scripted fake by passing ``run_turn=<fake>`` as a
+keyword argument to :func:`run_agent_in_container`; no global test
+seam is required.
 """
 
 from __future__ import annotations
@@ -108,7 +109,7 @@ async def _run_claude_turn(
 
     This is the production helper that :func:`run_agent_in_container`
     calls by default. It shells out via
-    ``handle._container.exec_run(['claude', '-p', prompt, ...])``,
+    ``live.manager.exec_run(live.handle, ['claude', '-p', prompt, …])``,
     runs the blocking call in a worker thread, and parses the
     stream-json output for:
 
@@ -139,9 +140,11 @@ async def _run_claude_turn(
         ]
         if resume_session_id:
             cmd.extend(["--resume", resume_session_id])
-        exit_code, output = live.handle._container.exec_run(cmd, demux=False, user="claude")
+        result = live.manager.exec_run(live.handle, cmd)
+        exit_code = result.exit_code
+        output = result.output
         if exit_code != 0:
-            logs = live.handle._container.logs(tail=80).decode(errors="replace")
+            logs = live.manager.read_logs(live.handle, tail=80).decode(errors="replace")
             raise RuntimeError(
                 f"claude exec failed (exit={exit_code}):\n"
                 f"stdout/stderr: {output.decode(errors='replace')}\n\n"
@@ -184,7 +187,7 @@ async def _run_claude_turn(
                     else:
                         envelope = {"outcome": {"kind": "success", "payload": parsed}}
         if envelope is None:
-            logs = live.handle._container.logs(tail=40).decode(errors="replace")
+            logs = live.manager.read_logs(live.handle, tail=40).decode(errors="replace")
             raise RuntimeError(
                 "no StructuredOutput tool use captured\n"
                 f"--- claude stdout ({len(output)} bytes) ---\n"
@@ -229,11 +232,11 @@ def _snapshot_container_artifacts(
     from agent_foundry.orchestration.artifacts import agent_log_path
 
     # --- container.log ---
-    # ``handle._container`` is the docker-SDK Container object (typed
-    # Any — docker-py has no stubs). Fakes leave it ``None``, in which
-    # case the ``.logs`` call raises and the except-warn below fires.
+    # Routes through manager.read_logs so the docker-SDK shape stays
+    # encapsulated inside ContainerManager. Fake managers return
+    # b"" by default for handles they don't have logs scripted for.
     try:
-        raw = live.handle._container.logs(stdout=True, stderr=True, timestamps=False)
+        raw = live.manager.read_logs(live.handle, stdout=True, stderr=True, timestamps=False)
         if isinstance(raw, bytes):
             log_path = agent_log_path(run_dir, agent_name)
             log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -388,8 +391,7 @@ async def run_agent_in_container(
 
     # Invocation number: per-container counter stamped on the live
     # container for lifecycle tagging.
-    invocation = live._invocation_count + 1
-    live._invocation_count = invocation
+    invocation = live.next_invocation()
 
     lifecycle.append(
         LifecycleEvent.AGENT_INVOCATION_STARTED,

@@ -24,7 +24,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from agent_foundry.agents.lifecycle import ContainerHandleBase, ContainerManagerBase
+from agent_foundry.agents.lifecycle import (
+    ContainerHandleBase,
+    ContainerManagerBase,
+    ExecResult,
+    HealthReport,
+    HealthStatus,
+)
 from agent_foundry.orchestration.container_executor import TurnResult
 from agent_foundry.responders.models import (
     ResponderContext,
@@ -61,12 +67,21 @@ class FakeContainerManager(ContainerManagerBase):
         self.handles: list[FakeContainerHandle] = []
         self._next_id = 0
         self.destroy_side_effects: dict[str, Callable[[], None]] = {}
-        self.exec_script: dict[str, tuple[int, bytes]] = {}
+        # Keyed by tuple(cmd) so list-of-args input becomes hashable.
+        self.exec_script: dict[tuple[str, ...], ExecResult] = {}
         self.destroyed_ids: list[str] = []
         # Host-side file-path verification: always-present so tests
         # that never trigger a read can still assert ``read_file_log == []``.
         self.read_file_script: dict[str, list[str | None]] = {}
         self.read_file_log: list[tuple[str, bool, int]] = []
+        # Container logs: per-handle scripted bytes (default empty).
+        self.logs_script: dict[str, bytes] = {}
+        self.logs_log: list[tuple[str, dict[str, Any]]] = []
+        # Health: per-handle scripted HealthReport. Default is HEALTHY
+        # so tests that don't care about health checks still pass
+        # registry's wait-for-healthy gate immediately.
+        self.health_script: dict[str, HealthReport] = {}
+        self.health_log: list[str] = []
 
     def create_container(
         self,
@@ -100,9 +115,37 @@ class FakeContainerManager(ContainerManagerBase):
     def stop(self, handle: FakeContainerHandle, timeout: int = 10) -> None:
         handle.status = "stopped"
 
-    def exec_run(self, handle: FakeContainerHandle, cmd: str) -> tuple[int, bytes]:
-        handle.exec_log.append(cmd)
-        return self.exec_script.get(cmd, (0, b""))
+    def exec_run(self, handle: FakeContainerHandle, cmd: list[str]) -> ExecResult:
+        handle.exec_log.append(" ".join(cmd))
+        return self.exec_script.get(tuple(cmd), ExecResult(exit_code=0, output=b""))
+
+    def read_logs(
+        self,
+        handle: FakeContainerHandle,
+        *,
+        tail: int | None = None,
+        stdout: bool = True,
+        stderr: bool = True,
+        timestamps: bool = False,
+    ) -> bytes:
+        self.logs_log.append(
+            (
+                handle.container_id,
+                {
+                    "tail": tail,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "timestamps": timestamps,
+                },
+            )
+        )
+        return self.logs_script.get(handle.container_id, b"")
+
+    def health_status(self, handle: FakeContainerHandle) -> HealthReport:
+        self.health_log.append(handle.container_id)
+        return self.health_script.get(
+            handle.container_id, HealthReport(status=HealthStatus.HEALTHY)
+        )
 
     # --- Host-side file-path verification hooks ------------------------------
     #
