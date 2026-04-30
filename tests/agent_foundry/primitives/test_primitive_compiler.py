@@ -678,6 +678,52 @@ class TestCompileLoop:
         result = run_primitive_plan(plan, LoopInput(items=["x"], processed=[]))
         assert result.processed == ["X"]
 
+    def test_loop_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+        """Pin scope-then-validate at the Loop's `over` boundary: when an
+        upstream step's output adds fields not in loop_in, those fields
+        must be projected away before validation, even if loop_in
+        forbids extras."""
+        from pydantic import ConfigDict
+
+        class StrictLoopIn(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            items: list[str]
+            processed: list[str] = []
+            current_item: str = ""
+
+        class SeqIn(BaseModel):
+            items: list[str]
+
+        # Step1Out is a superset of StrictLoopIn's fields plus an extra
+        # leak field. The Sequence validator pins that loop_in's fields
+        # are reachable from accumulated state; the leak field is what
+        # the runtime scope_in must drop before validation.
+        class Step1Out(BaseModel):
+            items: list[str]
+            processed: list[str] = []
+            current_item: str = ""
+            extra_from_step1: str  # loop_in must NOT see this
+
+        body = FunctionAction[StrictLoopIn, StrictLoopIn](
+            function=lambda s: StrictLoopIn(
+                items=s.items,
+                processed=[*s.processed, s.current_item.upper()],
+                current_item=s.current_item,
+            ),
+        )
+        loop = Loop[StrictLoopIn, StrictLoopIn](
+            over=lambda s: s.items,
+            item_key="current_item",
+            body=body,
+        )
+        step1 = FunctionAction[SeqIn, Step1Out](
+            function=lambda s: Step1Out(items=s.items, extra_from_step1="leak"),
+        )
+        seq = Sequence[SeqIn, StrictLoopIn](steps=[step1, loop])
+        plan = PrimitivePlan(root=seq)
+        result = run_primitive_plan(plan, SeqIn(items=["a", "b"]))
+        assert result.processed == ["A", "B"]
+
 
 # ======================================================================
 # Retry Compilation

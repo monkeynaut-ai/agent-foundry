@@ -403,7 +403,7 @@ def _compile_loop(
     node_id = f"{prefix}_loop"
 
     def loop_node(state: dict[str, Any]) -> dict[str, Any]:
-        model = loop_in.model_validate(state)
+        model = _validate_scoped_input(state, loop_in, node_id)
         items = over_fn(model)
         # Accumulated state — starts with full parent state, grows across iterations
         current_state = dict(state)
@@ -421,7 +421,7 @@ def _compile_loop(
         return _scope_out(current_state, loop_out)
 
     async def loop_node_async(state: dict[str, Any]) -> dict[str, Any]:
-        model = loop_in.model_validate(state)
+        model = _validate_scoped_input(state, loop_in, node_id)
         items = over_fn(model)
         current_state = dict(state)
 
