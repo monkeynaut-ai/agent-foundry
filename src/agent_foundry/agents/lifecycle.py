@@ -138,6 +138,23 @@ class ContainerManagerBase(ABC):
         the underlying transport.
         """
 
+    @abstractmethod
+    def read_logs(
+        self,
+        handle: ContainerHandleBase,
+        *,
+        tail: int | None = None,
+        stdout: bool = True,
+        stderr: bool = True,
+        timestamps: bool = False,
+    ) -> bytes:
+        """Return container logs as bytes.
+
+        ``tail`` limits the number of trailing lines (``None`` returns
+        the full log). ``stdout`` / ``stderr`` toggle which streams are
+        included. ``timestamps`` prepends per-line timestamps when True.
+        """
+
 
 class ContainerManager(ContainerManagerBase):
     """Manages Docker container lifecycle with safety baseline enforcement."""
@@ -295,6 +312,29 @@ class ContainerManager(ContainerManagerBase):
         """
         exit_code, output = handle._container.exec_run(cmd, demux=False, user=_AGENT_USER)
         return ExecResult(exit_code=exit_code, output=output)
+
+    def read_logs(
+        self,
+        handle: ContainerHandle,
+        *,
+        tail: int | None = None,
+        stdout: bool = True,
+        stderr: bool = True,
+        timestamps: bool = False,
+    ) -> bytes:
+        """Return container logs as bytes.
+
+        ``tail=None`` is mapped to docker's sentinel string ``"all"``
+        (the SDK's documented way of asking for the whole log).
+        """
+        tail_arg: int | str = tail if tail is not None else "all"
+        result = handle._container.logs(
+            stdout=stdout,
+            stderr=stderr,
+            timestamps=timestamps,
+            tail=tail_arg,
+        )
+        return result if isinstance(result, bytes) else b""
 
     def cleanup_all(self) -> None:
         """Emergency cleanup of all tracked containers."""

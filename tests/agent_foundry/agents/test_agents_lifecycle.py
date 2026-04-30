@@ -200,6 +200,39 @@ class TestExecRun:
         assert result.output == b"boom"
 
 
+class TestReadLogs:
+    def test_read_logs_returns_bytes_for_full_log(self, manager):
+        handle = manager.create_container()
+        handle._container.logs.return_value = b"line1\nline2\n"
+        out = manager.read_logs(handle)
+        assert out == b"line1\nline2\n"
+
+    def test_read_logs_passes_tail_kwarg_through(self, manager):
+        handle = manager.create_container()
+        handle._container.logs.return_value = b"tail"
+        manager.read_logs(handle, tail=80)
+        kw = handle._container.logs.call_args.kwargs
+        assert kw["tail"] == 80
+
+    def test_read_logs_default_includes_stdout_and_stderr_no_timestamps(self, manager):
+        handle = manager.create_container()
+        handle._container.logs.return_value = b""
+        manager.read_logs(handle)
+        kw = handle._container.logs.call_args.kwargs
+        assert kw["stdout"] is True
+        assert kw["stderr"] is True
+        assert kw["timestamps"] is False
+
+    def test_read_logs_respects_explicit_flags(self, manager):
+        handle = manager.create_container()
+        handle._container.logs.return_value = b""
+        manager.read_logs(handle, stdout=False, stderr=True, timestamps=True)
+        kw = handle._container.logs.call_args.kwargs
+        assert kw["stdout"] is False
+        assert kw["stderr"] is True
+        assert kw["timestamps"] is True
+
+
 class TestValidateImage:
     def test_given_claude_available_when_validate_called_then_no_error(self, manager):
         handle = manager.create_container()

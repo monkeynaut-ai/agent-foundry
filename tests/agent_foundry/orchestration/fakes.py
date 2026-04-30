@@ -72,6 +72,9 @@ class FakeContainerManager(ContainerManagerBase):
         # that never trigger a read can still assert ``read_file_log == []``.
         self.read_file_script: dict[str, list[str | None]] = {}
         self.read_file_log: list[tuple[str, bool, int]] = []
+        # Container logs: per-handle scripted bytes (default empty).
+        self.logs_script: dict[str, bytes] = {}
+        self.logs_log: list[tuple[str, dict[str, Any]]] = []
 
     def create_container(
         self,
@@ -108,6 +111,28 @@ class FakeContainerManager(ContainerManagerBase):
     def exec_run(self, handle: FakeContainerHandle, cmd: list[str]) -> ExecResult:
         handle.exec_log.append(" ".join(cmd))
         return self.exec_script.get(tuple(cmd), ExecResult(exit_code=0, output=b""))
+
+    def read_logs(
+        self,
+        handle: FakeContainerHandle,
+        *,
+        tail: int | None = None,
+        stdout: bool = True,
+        stderr: bool = True,
+        timestamps: bool = False,
+    ) -> bytes:
+        self.logs_log.append(
+            (
+                handle.container_id,
+                {
+                    "tail": tail,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "timestamps": timestamps,
+                },
+            )
+        )
+        return self.logs_script.get(handle.container_id, b"")
 
     # --- Host-side file-path verification hooks ------------------------------
     #
