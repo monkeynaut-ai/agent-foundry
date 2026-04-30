@@ -146,33 +146,6 @@ class TestCompilerRegistry:
 
 
 # ======================================================================
-# Boundary Validation
-# ======================================================================
-
-
-class TestValidateBoundary:
-    def test_valid_state(self):
-        from agent_foundry.compiler.primitive_compiler import _validate_boundary
-
-        result = _validate_boundary({"query": "hello"}, InputState, "test_node")
-        assert result == {"query": "hello"}
-
-    def test_extra_keys_preserved(self):
-        """Extra keys pass through — LangGraph state may contain keys from other primitives."""
-        from agent_foundry.compiler.primitive_compiler import _validate_boundary
-
-        state = {"query": "hello", "other": "stuff"}
-        result = _validate_boundary(state, InputState, "test_node")
-        assert result["query"] == "hello"
-
-    def test_missing_required_field_raises(self):
-        from agent_foundry.compiler.primitive_compiler import _validate_boundary
-
-        with pytest.raises(PrimitiveCompilationError):
-            _validate_boundary({}, InputState, "test_node")
-
-
-# ======================================================================
 # State Scoping
 # ======================================================================
 
@@ -210,6 +183,58 @@ class TestScopeOut:
             _scope_out({}, OutputState)  # missing required fields
 
 
+class TestValidateScopedInput:
+    """`_validate_scoped_input` is the project-then-validate helper used
+    inside per-primitive compile functions to obtain a typed input model
+    from accumulated state. Equivalent to `_scope_in` + a single
+    `model_validate` call, returning the model instance instead of the
+    filtered dict — callers want the model, not the dict."""
+
+    def test_given_state_with_extras_when_scoped_then_returns_validated_model(self):
+        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+
+        state = {"query": "hello", "extra": "ignored"}
+        model = _validate_scoped_input(state, InputState, "test_node")
+        assert isinstance(model, InputState)
+        assert model.query == "hello"
+
+    def test_given_state_missing_required_field_when_scoped_then_raises(self):
+        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+
+        with pytest.raises(PrimitiveCompilationError) as excinfo:
+            _validate_scoped_input({}, InputState, "test_node")
+        # The node_id appears in the error so a developer can locate the
+        # offending step in a multi-primitive plan.
+        assert "test_node" in str(excinfo.value)
+
+    def test_given_state_missing_optional_field_when_scoped_then_default_applied(self):
+        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+
+        class WithOptional(BaseModel):
+            required: str
+            optional: int = 42
+
+        model = _validate_scoped_input({"required": "hi"}, WithOptional, "test_node")
+        assert model.required == "hi"
+        assert model.optional == 42
+
+    def test_given_input_type_without_extra_ignore_when_scoped_then_extras_dropped(self):
+        """Pin the scope-then-validate ordering: even if the input model
+        defaults to forbidding extras (via ConfigDict), projection drops
+        them before validation so the call still succeeds."""
+        from pydantic import ConfigDict
+
+        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+
+        class StrictInput(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            query: str
+
+        state = {"query": "hello", "extra": "ignored"}
+        model = _validate_scoped_input(state, StrictInput, "test_node")
+        assert model.query == "hello"
+
+
 # ======================================================================
 # FunctionAction Compilation
 # ======================================================================
@@ -228,6 +253,37 @@ class TestCompileFunctionAction:
         graph = _compile_primitive(plan)
         with pytest.raises(PrimitiveCompilationError):
             graph.invoke({})  # missing required 'query'
+
+    def test_input_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+        """Pin scope-then-validate at the FunctionAction boundary inside
+        a Sequence: even when a step's input model forbids extras, the
+        compiler projects accumulated state down to declared fields
+        before validation, so an upstream step's output fields (which
+        downstream input models don't declare) don't blow up.
+
+        Setup: step 1 produces `extra_from_step1`. Step 2's StrictInput
+        forbids extras and only declares `query`. Without scope-then-
+        validate at step 2's boundary, validation fails."""
+        from pydantic import ConfigDict
+
+        class Step1Out(BaseModel):
+            query: str
+            extra_from_step1: str  # downstream's StrictInput must NOT see this
+
+        class StrictInput(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            query: str
+
+        step1 = FunctionAction[InputState, Step1Out](
+            function=lambda s: Step1Out(query=s.query, extra_from_step1="leak"),
+        )
+        step2 = FunctionAction[StrictInput, TransformOutput](
+            function=lambda s: TransformOutput(result=s.query.upper()),
+        )
+        seq = Sequence[InputState, TransformOutput](steps=[step1, step2])
+        plan = PrimitivePlan(root=seq)
+        result = run_primitive_plan(plan, InputState(query="hello"))
+        assert result.result == "HELLO"
 
     def test_run_primitive_plan_typed(self):
         """run_primitive_plan accepts and returns Pydantic models."""
@@ -513,6 +569,45 @@ class TestCompileConditional:
         result = run_primitive_plan(plan, BranchState(value="original", flag=True))
         assert result.value == "detoured"
 
+    def test_cond_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+        """Pin scope-then-validate at the Conditional's `condition`
+        boundary: when an upstream step's output adds fields not in
+        cond_in, those fields must be projected away before the
+        condition function sees them, even if cond_in forbids extras.
+
+        The branches' invocations are unchanged — they receive full
+        accumulated state and project at their own boundaries."""
+        from pydantic import ConfigDict
+
+        class StrictBranchState(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            value: str
+            flag: bool
+
+        class SeqIn(BaseModel):
+            value: str
+            flag: bool
+
+        class Step1Out(BaseModel):
+            value: str
+            flag: bool
+            extra_from_step1: str  # cond_in must NOT see this
+
+        step1 = FunctionAction[SeqIn, Step1Out](
+            function=lambda s: Step1Out(value=s.value, flag=s.flag, extra_from_step1="leak"),
+        )
+        then_branch = FunctionAction[StrictBranchState, StrictBranchState](
+            function=lambda s: StrictBranchState(value="then", flag=s.flag),
+        )
+        cond = Conditional[StrictBranchState, StrictBranchState](
+            condition=lambda s: s.flag,
+            then_branch=then_branch,
+        )
+        seq = Sequence[SeqIn, StrictBranchState](steps=[step1, cond])
+        plan = PrimitivePlan(root=seq)
+        result = run_primitive_plan(plan, SeqIn(value="start", flag=True))
+        assert result.value == "then"
+
 
 # ======================================================================
 # Loop Compilation
@@ -595,6 +690,52 @@ class TestCompileLoop:
         result = run_primitive_plan(plan, LoopInput(items=["x"], processed=[]))
         assert result.processed == ["X"]
 
+    def test_loop_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+        """Pin scope-then-validate at the Loop's `over` boundary: when an
+        upstream step's output adds fields not in loop_in, those fields
+        must be projected away before validation, even if loop_in
+        forbids extras."""
+        from pydantic import ConfigDict
+
+        class StrictLoopIn(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            items: list[str]
+            processed: list[str] = []
+            current_item: str = ""
+
+        class SeqIn(BaseModel):
+            items: list[str]
+
+        # Step1Out is a superset of StrictLoopIn's fields plus an extra
+        # leak field. The Sequence validator pins that loop_in's fields
+        # are reachable from accumulated state; the leak field is what
+        # the runtime scope_in must drop before validation.
+        class Step1Out(BaseModel):
+            items: list[str]
+            processed: list[str] = []
+            current_item: str = ""
+            extra_from_step1: str  # loop_in must NOT see this
+
+        body = FunctionAction[StrictLoopIn, StrictLoopIn](
+            function=lambda s: StrictLoopIn(
+                items=s.items,
+                processed=[*s.processed, s.current_item.upper()],
+                current_item=s.current_item,
+            ),
+        )
+        loop = Loop[StrictLoopIn, StrictLoopIn](
+            over=lambda s: s.items,
+            item_key="current_item",
+            body=body,
+        )
+        step1 = FunctionAction[SeqIn, Step1Out](
+            function=lambda s: Step1Out(items=s.items, extra_from_step1="leak"),
+        )
+        seq = Sequence[SeqIn, StrictLoopIn](steps=[step1, loop])
+        plan = PrimitivePlan(root=seq)
+        result = run_primitive_plan(plan, SeqIn(items=["a", "b"]))
+        assert result.processed == ["A", "B"]
+
 
 # ======================================================================
 # Retry Compilation
@@ -667,6 +808,42 @@ class TestCompileRetry:
         result = run_primitive_plan(plan, RetryState(attempts=0, done=False))
         assert result.attempts == 1
         assert result.done is False
+
+    def test_retry_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+        """Pin scope-then-validate at the Retry's `until` boundary: when
+        an upstream step's output adds fields not in retry_in, those
+        fields must be projected away before validation, even if
+        retry_in forbids extras."""
+        from pydantic import ConfigDict
+
+        class StrictRetryState(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            attempts: int = 0
+            done: bool = False
+
+        class SeqIn(BaseModel):
+            attempts: int = 0
+            done: bool = False
+
+        class Step1Out(BaseModel):
+            attempts: int = 0
+            done: bool = False
+            extra_from_step1: str  # retry_in must NOT see this
+
+        step1 = FunctionAction[SeqIn, Step1Out](
+            function=lambda s: Step1Out(attempts=s.attempts, done=s.done, extra_from_step1="leak"),
+        )
+        body = FunctionAction[StrictRetryState, StrictRetryState](
+            function=lambda s: StrictRetryState(attempts=s.attempts + 1, done=True),
+        )
+        retry = Retry[StrictRetryState, StrictRetryState](
+            max_attempts=3, until=lambda s: s.done, body=body
+        )
+        seq = Sequence[SeqIn, StrictRetryState](steps=[step1, retry])
+        plan = PrimitivePlan(root=seq)
+        result = run_primitive_plan(plan, SeqIn(attempts=0, done=False))
+        assert result.attempts == 1
+        assert result.done is True
 
 
 # ======================================================================

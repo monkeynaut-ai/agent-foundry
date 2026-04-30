@@ -62,20 +62,6 @@ def _derive_state_type(input_type: type[BaseModel], output_type: type[BaseModel]
     return TypedDict("PrimitiveState", fields, total=False)  # type: ignore[call-overload]
 
 
-def _validate_boundary(
-    state: dict[str, Any], model_type: type[BaseModel], node_id: str
-) -> dict[str, Any]:
-    """Validate state at a primitive boundary via Pydantic model construction."""
-    try:
-        model_type.model_validate(state)
-    except ValidationError as e:
-        raise PrimitiveCompilationError(
-            f"Boundary validation failed at {node_id}: {e}",
-            primitive_type=node_id,
-        ) from e
-    return state
-
-
 def _scope_in(parent_state: dict[str, Any], child_input_type: type[BaseModel]) -> dict[str, Any]:
     """Scope parent state down to child's input fields. Validates required fields."""
     fields = set(child_input_type.model_fields.keys())
@@ -96,6 +82,30 @@ def _scope_out(child_result: dict[str, Any], child_output_type: type[BaseModel])
     except ValidationError as e:
         raise PrimitiveCompilationError(f"Scope-out failed: {e}", primitive_type="scope_out") from e
     return scoped
+
+
+def _validate_scoped_input(
+    state: dict[str, Any], input_type: type[BaseModel], node_id: str
+) -> BaseModel:
+    """Project state to ``input_type``'s declared fields, then validate.
+
+    Returns the validated model instance. The projection step makes the
+    compiler's behavior independent of the input model's ``extra``
+    config — extras are dropped before validation regardless.
+    Required-field errors include ``node_id`` so a developer reading
+    the failure can locate the offending step in a multi-primitive plan.
+
+    This is the inbound counterpart to ``_scope_out``.
+    """
+    fields = set(input_type.model_fields.keys())
+    scoped = {k: v for k, v in state.items() if k in fields}
+    try:
+        return input_type.model_validate(scoped)
+    except ValidationError as e:
+        raise PrimitiveCompilationError(
+            f"Boundary validation failed at {node_id}: {e}",
+            primitive_type=node_id,
+        ) from e
 
 
 def _compile_node(
@@ -186,8 +196,7 @@ def _compile_function_action(
             if arity == 0:
                 result = fn()
             else:
-                _validate_boundary(state, input_type, node_id)
-                model_input = input_type.model_validate(state)
+                model_input = _validate_scoped_input(state, input_type, node_id)
                 result = fn(model_input)
         except Exception as exc:
             if ctx_opt is not None:
@@ -310,7 +319,11 @@ def _compile_conditional(
     condition_fn = cond.condition
 
     def router_fn(state: dict[str, Any]) -> str:
-        model = cond_in.model_validate(state)
+        # LangGraph's sub-graph TypedDict filtering already drops extras
+        # before this routing call, but project explicitly for symmetry
+        # with the other compile functions and as defense against future
+        # framework changes.
+        model = _validate_scoped_input(state, cond_in, router_id)
         if condition_fn(model):
             return then_entry
         if cond.else_branch is not None:
@@ -378,7 +391,7 @@ def _compile_loop(
     node_id = f"{prefix}_loop"
 
     def loop_node(state: dict[str, Any]) -> dict[str, Any]:
-        model = loop_in.model_validate(state)
+        model = _validate_scoped_input(state, loop_in, node_id)
         items = over_fn(model)
         # Accumulated state — starts with full parent state, grows across iterations
         current_state = dict(state)
@@ -396,7 +409,7 @@ def _compile_loop(
         return _scope_out(current_state, loop_out)
 
     async def loop_node_async(state: dict[str, Any]) -> dict[str, Any]:
-        model = loop_in.model_validate(state)
+        model = _validate_scoped_input(state, loop_in, node_id)
         items = over_fn(model)
         current_state = dict(state)
 
@@ -453,7 +466,7 @@ def _compile_retry(
             result = compiled_body.invoke(dict(current_state))
             current_state.update(_scope_out(result, body_out))
             # Check until condition
-            model = retry_in.model_validate(current_state)
+            model = _validate_scoped_input(current_state, retry_in, node_id)
             if until_fn(model):
                 break
         return _scope_out(current_state, retry_out)
@@ -463,7 +476,7 @@ def _compile_retry(
         for _ in range(max_attempts):
             result = await compiled_body.ainvoke(dict(current_state))
             current_state.update(_scope_out(result, body_out))
-            model = retry_in.model_validate(current_state)
+            model = _validate_scoped_input(current_state, retry_in, node_id)
             if until_fn(model):
                 break
         return _scope_out(current_state, retry_out)
@@ -527,8 +540,7 @@ def _compile_agent_action(
         return result
 
     def _prepare(state: dict[str, Any]) -> tuple[Any, str, str, Any, BaseModel]:
-        _validate_boundary(state, input_type, node_id)
-        model_input = input_type.model_validate(state)
+        model_input = _validate_scoped_input(state, input_type, node_id)
         prompt = prompt_builder(model_input)
         instructions = instructions_provider(model_input)
 
