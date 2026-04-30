@@ -12,6 +12,7 @@ from agent_foundry.agents.lifecycle import (
     ContainerConfig,
     ContainerHandle,
     ContainerManager,
+    ExecResult,
 )
 
 
@@ -145,6 +146,58 @@ class TestStartStopDestroy:
         handle._container.start.side_effect = RuntimeError("OOM")
         with pytest.raises(ContainerLifecycleError, match="OOM"):
             manager.start(handle)
+
+
+class TestExecResult:
+    def test_exec_result_carries_exit_code_and_output(self):
+        result = ExecResult(exit_code=0, output=b"hello")
+        assert result.exit_code == 0
+        assert result.output == b"hello"
+
+    def test_exec_result_is_pydantic_model(self):
+        # Pydantic validation: exit_code must coerce; bytes must be bytes.
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ExecResult(exit_code="not-an-int", output=b"")  # type: ignore[arg-type]
+
+
+class TestExecRun:
+    def test_exec_run_returns_exec_result(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (0, b"hello\n")
+        result = manager.exec_run(handle, ["echo", "hello"])
+        assert isinstance(result, ExecResult)
+        assert result.exit_code == 0
+        assert result.output == b"hello\n"
+
+    def test_exec_run_passes_list_command_to_docker_sdk(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (0, b"")
+        manager.exec_run(handle, ["claude", "-p", "hi"])
+        call_args = handle._container.exec_run.call_args
+        assert call_args.args[0] == ["claude", "-p", "hi"]
+
+    def test_exec_run_runs_as_claude_user_by_default(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (0, b"")
+        manager.exec_run(handle, ["whoami"])
+        kw = handle._container.exec_run.call_args.kwargs
+        assert kw["user"] == "claude"
+
+    def test_exec_run_uses_demux_false_so_output_is_combined_bytes(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (1, b"err+out combined")
+        manager.exec_run(handle, ["fail"])
+        kw = handle._container.exec_run.call_args.kwargs
+        assert kw["demux"] is False
+
+    def test_exec_run_propagates_nonzero_exit(self, manager):
+        handle = manager.create_container()
+        handle._container.exec_run.return_value = (42, b"boom")
+        result = manager.exec_run(handle, ["fail"])
+        assert result.exit_code == 42
+        assert result.output == b"boom"
 
 
 class TestValidateImage:

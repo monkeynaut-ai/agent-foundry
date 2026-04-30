@@ -28,6 +28,11 @@ DEFAULT_ENV_ALLOWLIST = {
     "CLAUDE_CODE_OAUTH_TOKEN",
 }
 
+# In-container user that runs the agent. Hardcoded today; TD3 (typed
+# ImageLayout) will lift this onto a per-image config when codex /
+# alternate base images land.
+_AGENT_USER = "claude"
+
 
 class ContainerConfig(BaseModel):
     """Generic container resource constraints.
@@ -38,6 +43,19 @@ class ContainerConfig(BaseModel):
     mem_limit_mb: int = 1024
     cpu_quota: int = 100_000
     pids_limit: int = 256
+
+
+class ExecResult(BaseModel):
+    """Typed result of running one command inside a container via
+    :meth:`ContainerManagerBase.exec_run`.
+
+    ``output`` is the combined stdout + stderr blob (the manager always
+    requests demuxed=False so callers don't have to care about the
+    docker SDK's two-tuple shape).
+    """
+
+    exit_code: int
+    output: bytes
 
 
 @dataclass
@@ -109,6 +127,16 @@ class ContainerManagerBase(ABC):
     def write_file_to_container(
         self, handle: ContainerHandleBase, container_path: str, content: str
     ) -> None: ...
+
+    @abstractmethod
+    def exec_run(self, handle: ContainerHandleBase, cmd: list[str]) -> ExecResult:
+        """Run ``cmd`` inside the container as the agent user; return
+        a typed :class:`ExecResult`.
+
+        ``cmd`` is a list of args (no shell). The combined stdout +
+        stderr blob comes back as ``ExecResult.output`` regardless of
+        the underlying transport.
+        """
 
 
 class ContainerManager(ContainerManagerBase):
@@ -255,6 +283,18 @@ class ContainerManager(ContainerManagerBase):
             tar.addfile(info, io.BytesIO(data))
         buf.seek(0)
         handle._container.put_archive(dir_path, buf)
+
+    def exec_run(self, handle: ContainerHandle, cmd: list[str]) -> ExecResult:
+        """Run ``cmd`` inside the container as the agent user.
+
+        Always passes ``demux=False`` so the docker SDK returns a
+        single combined stdout+stderr blob; always passes
+        ``user=_AGENT_USER`` so the agent process runs as the
+        non-root user the base image set up. Both choices are
+        platform contracts: callers cannot override them.
+        """
+        exit_code, output = handle._container.exec_run(cmd, demux=False, user=_AGENT_USER)
+        return ExecResult(exit_code=exit_code, output=output)
 
     def cleanup_all(self) -> None:
         """Emergency cleanup of all tracked containers."""

@@ -24,7 +24,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from agent_foundry.agents.lifecycle import ContainerHandleBase, ContainerManagerBase
+from agent_foundry.agents.lifecycle import (
+    ContainerHandleBase,
+    ContainerManagerBase,
+    ExecResult,
+)
 from agent_foundry.orchestration.container_executor import TurnResult
 from agent_foundry.responders.models import (
     ResponderContext,
@@ -61,7 +65,8 @@ class FakeContainerManager(ContainerManagerBase):
         self.handles: list[FakeContainerHandle] = []
         self._next_id = 0
         self.destroy_side_effects: dict[str, Callable[[], None]] = {}
-        self.exec_script: dict[str, tuple[int, bytes]] = {}
+        # Keyed by tuple(cmd) so list-of-args input becomes hashable.
+        self.exec_script: dict[tuple[str, ...], ExecResult] = {}
         self.destroyed_ids: list[str] = []
         # Host-side file-path verification: always-present so tests
         # that never trigger a read can still assert ``read_file_log == []``.
@@ -100,9 +105,9 @@ class FakeContainerManager(ContainerManagerBase):
     def stop(self, handle: FakeContainerHandle, timeout: int = 10) -> None:
         handle.status = "stopped"
 
-    def exec_run(self, handle: FakeContainerHandle, cmd: str) -> tuple[int, bytes]:
-        handle.exec_log.append(cmd)
-        return self.exec_script.get(cmd, (0, b""))
+    def exec_run(self, handle: FakeContainerHandle, cmd: list[str]) -> ExecResult:
+        handle.exec_log.append(" ".join(cmd))
+        return self.exec_script.get(tuple(cmd), ExecResult(exit_code=0, output=b""))
 
     # --- Host-side file-path verification hooks ------------------------------
     #
