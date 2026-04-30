@@ -210,6 +210,58 @@ class TestScopeOut:
             _scope_out({}, OutputState)  # missing required fields
 
 
+class TestValidateScopedInput:
+    """`_validate_scoped_input` is the project-then-validate helper used
+    inside per-primitive compile functions to obtain a typed input model
+    from accumulated state. Equivalent to `_scope_in` + a single
+    `model_validate` call, returning the model instance instead of the
+    filtered dict — callers want the model, not the dict."""
+
+    def test_given_state_with_extras_when_scoped_then_returns_validated_model(self):
+        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+
+        state = {"query": "hello", "extra": "ignored"}
+        model = _validate_scoped_input(state, InputState, "test_node")
+        assert isinstance(model, InputState)
+        assert model.query == "hello"
+
+    def test_given_state_missing_required_field_when_scoped_then_raises(self):
+        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+
+        with pytest.raises(PrimitiveCompilationError) as excinfo:
+            _validate_scoped_input({}, InputState, "test_node")
+        # The node_id appears in the error so a developer can locate the
+        # offending step in a multi-primitive plan.
+        assert "test_node" in str(excinfo.value)
+
+    def test_given_state_missing_optional_field_when_scoped_then_default_applied(self):
+        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+
+        class WithOptional(BaseModel):
+            required: str
+            optional: int = 42
+
+        model = _validate_scoped_input({"required": "hi"}, WithOptional, "test_node")
+        assert model.required == "hi"
+        assert model.optional == 42
+
+    def test_given_input_type_without_extra_ignore_when_scoped_then_extras_dropped(self):
+        """Pin the scope-then-validate ordering: even if the input model
+        defaults to forbidding extras (via ConfigDict), projection drops
+        them before validation so the call still succeeds."""
+        from pydantic import ConfigDict
+
+        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+
+        class StrictInput(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            query: str
+
+        state = {"query": "hello", "extra": "ignored"}
+        model = _validate_scoped_input(state, StrictInput, "test_node")
+        assert model.query == "hello"
+
+
 # ======================================================================
 # FunctionAction Compilation
 # ======================================================================

@@ -98,6 +98,32 @@ def _scope_out(child_result: dict[str, Any], child_output_type: type[BaseModel])
     return scoped
 
 
+def _validate_scoped_input(
+    state: dict[str, Any], input_type: type[BaseModel], node_id: str
+) -> BaseModel:
+    """Project state to ``input_type``'s declared fields, then validate.
+
+    Returns the validated model instance. The projection step makes the
+    compiler's behavior independent of the input model's ``extra``
+    config — extras are dropped before validation regardless.
+    Required-field errors include ``node_id`` so a developer reading
+    the failure can locate the offending step in a multi-primitive plan.
+
+    This is the inbound counterpart to ``_scope_out`` and supersedes
+    the older ``_validate_boundary`` + ``model_validate(state)`` two-step
+    used by the per-primitive compilers.
+    """
+    fields = set(input_type.model_fields.keys())
+    scoped = {k: v for k, v in state.items() if k in fields}
+    try:
+        return input_type.model_validate(scoped)
+    except ValidationError as e:
+        raise PrimitiveCompilationError(
+            f"Boundary validation failed at {node_id}: {e}",
+            primitive_type=node_id,
+        ) from e
+
+
 def _compile_node(
     graph: StateGraph, prim: Primitive, prefix: str, gate_ids: list[str]
 ) -> tuple[str, str]:
