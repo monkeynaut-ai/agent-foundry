@@ -552,8 +552,7 @@ def _compile_agent_action(
         return result
 
     def _prepare(state: dict[str, Any]) -> tuple[Any, str, str, Any, BaseModel]:
-        _validate_boundary(state, input_type, node_id)
-        model_input = input_type.model_validate(state)
+        model_input = _validate_scoped_input(state, input_type, node_id)
         prompt = prompt_builder(model_input)
         instructions = instructions_provider(model_input)
 

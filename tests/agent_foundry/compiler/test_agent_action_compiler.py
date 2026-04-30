@@ -347,6 +347,46 @@ class TestAgentActionCompiler_Composition:
         assert result["answer"] == "42"
         assert result["annotated"] == "[42]"
 
+    def test_input_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+        """Pin scope-then-validate at the AgentAction boundary inside a
+        Sequence: when an upstream step's output adds fields not in the
+        downstream agent's input, those fields must be projected away
+        before validation, even if the agent's input forbids extras."""
+        from pydantic import ConfigDict
+
+        from agent_foundry.primitives.models import FunctionAction, Sequence
+
+        class StrictAgentInput(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            query: str
+
+        class Step1Out(BaseModel):
+            query: str
+            extra_from_step1: str  # downstream's StrictAgentInput must NOT see this
+
+        class AgentStepOutput(BaseModel):
+            answer: str
+
+        def _executor(*, primitive, prompt, instructions, run_ctx):
+            return AgentStepOutput(answer="42")
+
+        step1 = FunctionAction[SeqInput, Step1Out](
+            function=lambda s: Step1Out(query=s.query, extra_from_step1="leak"),
+        )
+        agent_step = AgentAction[StrictAgentInput, AgentStepOutput](
+            name="strict-agent",
+            prompt_builder=lambda s: f"Q: {s.query}",
+            instructions_provider=_stub_instructions,
+            executor=_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+        )
+        seq = Sequence[SeqInput, AgentStepOutput](steps=[step1, agent_step])
+        plan = PrimitivePlan(root=seq)
+        graph = _compile_primitive(plan)
+
+        result = graph.invoke({"query": "hello"})
+        assert result["answer"] == "42"
+
 
 # ======================================================================
 # run_ctx threading through _compile_agent_action
