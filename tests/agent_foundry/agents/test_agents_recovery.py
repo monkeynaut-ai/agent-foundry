@@ -77,13 +77,15 @@ class TestCaptureWorkspaceStateHost:
 
 class TestCaptureWorkspaceStateContainer:
     def test_given_container_when_captured_then_git_state_from_container(self, tmp_path):
+        from agent_foundry.agents.lifecycle import ExecResult
+
         container_mgr = MagicMock()
+        container_mgr.exec_run.side_effect = [
+            ExecResult(exit_code=0, output=b"abc123\n"),  # rev-parse HEAD
+            ExecResult(exit_code=0, output=b"diff content"),  # git diff
+        ]
         container_handle = MagicMock()
         container_handle.workspace_path = "/workspace"
-        container_handle._container.exec_run.side_effect = [
-            (0, b"abc123\n"),  # rev-parse HEAD
-            (0, b"diff content"),  # git diff
-        ]
         container_mgr.copy_from_container.return_value = False  # no transcript
 
         output = tmp_path / "output"
@@ -94,15 +96,22 @@ class TestCaptureWorkspaceStateContainer:
         )
         assert snap.commit_sha == "abc123"
         assert snap.working_tree_diff == "diff content"
+        # Manager calls go through the typed surface (no docker SDK leak).
+        first_cmd = container_mgr.exec_run.call_args_list[0].args[1]
+        assert first_cmd == ["git", "-C", "/workspace", "rev-parse", "HEAD"]
+        second_cmd = container_mgr.exec_run.call_args_list[1].args[1]
+        assert second_cmd == ["git", "-C", "/workspace", "diff"]
 
     def test_given_container_with_failed_git_when_captured_then_unknown_sha(self, tmp_path):
+        from agent_foundry.agents.lifecycle import ExecResult
+
         container_mgr = MagicMock()
+        container_mgr.exec_run.side_effect = [
+            ExecResult(exit_code=1, output=b""),  # rev-parse fails
+            ExecResult(exit_code=1, output=b""),  # diff fails
+        ]
         container_handle = MagicMock()
         container_handle.workspace_path = "/workspace"
-        container_handle._container.exec_run.side_effect = [
-            (1, b""),  # rev-parse fails
-            (1, b""),  # diff fails
-        ]
         container_mgr.copy_from_container.return_value = False
 
         output = tmp_path / "output"
