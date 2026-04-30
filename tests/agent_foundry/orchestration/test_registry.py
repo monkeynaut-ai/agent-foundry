@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
+from agent_foundry.agents.lifecycle import HealthReport, HealthStatus
 from agent_foundry.orchestration.lifecycle_writer import (
     JsonlLifecycleWriter,
     LifecycleWriter,
@@ -22,7 +23,7 @@ from agent_foundry.orchestration.lifecycle_writer import (
 from agent_foundry.orchestration.registry import AgentContainerRegistry
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
-from .fakes import FakeDockerClient
+from .fakes import FakeContainerManager, FakeDockerClient
 
 
 class InputModel(BaseModel):
@@ -264,3 +265,88 @@ async def test_get_or_create_emits_event_only_on_first_creation(
     ]
     # Only one start event, even with two get_or_create calls.
     assert len(started) == 1
+
+
+# --- Health waiting (uses manager.health_status, not docker SDK directly) -----
+
+
+@pytest.mark.asyncio
+async def test_wait_for_health_polls_manager_health_status_when_enabled(
+    writer: LifecycleWriter,
+) -> None:
+    """The health-wait gate must go through manager.health_status —
+    no direct docker-SDK access from the registry."""
+    fake_mgr = FakeContainerManager()
+    registry = AgentContainerRegistry(
+        workspace_volume="vol",
+        base_image_tag="img",
+        manager=fake_mgr,
+        wait_for_health=True,
+    )
+    primitive = _make_primitive()
+    await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    # FakeContainerManager records each health_status call by container_id.
+    assert len(fake_mgr.health_log) >= 1
+
+
+@pytest.mark.asyncio
+async def test_wait_for_health_returns_when_status_healthy(
+    writer: LifecycleWriter,
+) -> None:
+    fake_mgr = FakeContainerManager()
+    registry = AgentContainerRegistry(
+        workspace_volume="vol",
+        base_image_tag="img",
+        manager=fake_mgr,
+        wait_for_health=True,
+    )
+    primitive = _make_primitive()
+    # FakeContainerManager defaults to HEALTHY → loop exits on first poll.
+    live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    assert live is not None
+    assert len(fake_mgr.health_log) == 1
+
+
+@pytest.mark.asyncio
+async def test_wait_for_health_raises_on_unhealthy_report(
+    writer: LifecycleWriter,
+) -> None:
+    fake_mgr = FakeContainerManager()
+    registry = AgentContainerRegistry(
+        workspace_volume="vol",
+        base_image_tag="img",
+        manager=fake_mgr,
+        wait_for_health=True,
+    )
+    primitive = _make_primitive()
+    # Pre-script the next handle to come back UNHEALTHY. The handle's
+    # container_id follows the FakeContainerManager's _next_id counter,
+    # so we know it'll be "fake-1".
+    fake_mgr.health_script["fake-1"] = HealthReport(
+        status=HealthStatus.UNHEALTHY,
+        raw={"FailingStreak": 3, "Log": [{"Output": "boom"}]},
+    )
+    with pytest.raises(RuntimeError, match="unhealthy"):
+        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+
+
+@pytest.mark.asyncio
+async def test_wait_for_health_treats_health_none_as_ready(
+    writer: LifecycleWriter,
+) -> None:
+    """Image declares no HEALTHCHECK → registry returns immediately.
+
+    This preserves the pre-migration behavior where a container with no
+    HEALTHCHECK and a running status was considered ready.
+    """
+    fake_mgr = FakeContainerManager()
+    registry = AgentContainerRegistry(
+        workspace_volume="vol",
+        base_image_tag="img",
+        manager=fake_mgr,
+        wait_for_health=True,
+    )
+    primitive = _make_primitive()
+    fake_mgr.health_script["fake-1"] = HealthReport(status=HealthStatus.NONE)
+    live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    assert live is not None
