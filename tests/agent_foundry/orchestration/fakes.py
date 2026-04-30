@@ -28,6 +28,8 @@ from agent_foundry.agents.lifecycle import (
     ContainerHandleBase,
     ContainerManagerBase,
     ExecResult,
+    HealthReport,
+    HealthStatus,
 )
 from agent_foundry.orchestration.container_executor import TurnResult
 from agent_foundry.responders.models import (
@@ -75,6 +77,11 @@ class FakeContainerManager(ContainerManagerBase):
         # Container logs: per-handle scripted bytes (default empty).
         self.logs_script: dict[str, bytes] = {}
         self.logs_log: list[tuple[str, dict[str, Any]]] = []
+        # Health: per-handle scripted HealthReport. Default is HEALTHY
+        # so tests that don't care about health checks still pass
+        # registry's wait-for-healthy gate immediately.
+        self.health_script: dict[str, HealthReport] = {}
+        self.health_log: list[str] = []
 
     def create_container(
         self,
@@ -133,6 +140,12 @@ class FakeContainerManager(ContainerManagerBase):
             )
         )
         return self.logs_script.get(handle.container_id, b"")
+
+    def health_status(self, handle: FakeContainerHandle) -> HealthReport:
+        self.health_log.append(handle.container_id)
+        return self.health_script.get(
+            handle.container_id, HealthReport(status=HealthStatus.HEALTHY)
+        )
 
     # --- Host-side file-path verification hooks ------------------------------
     #

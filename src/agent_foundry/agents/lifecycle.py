@@ -11,10 +11,11 @@ import tarfile
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent_foundry.agents.errors import ContainerCreationError, ContainerLifecycleError
 
@@ -56,6 +57,36 @@ class ExecResult(BaseModel):
 
     exit_code: int
     output: bytes
+
+
+class HealthStatus(StrEnum):
+    """Container health states surfaced by
+    :meth:`ContainerManagerBase.health_status`.
+
+    Values mirror Docker's reported HEALTHCHECK states with one
+    addition: ``NONE`` covers the case where the image declares no
+    HEALTHCHECK and the container is otherwise running. Callers that
+    want to wait for the container to reach a steady state should treat
+    ``NONE`` as "ready" (no other state is going to arrive).
+    """
+
+    HEALTHY = "healthy"
+    UNHEALTHY = "unhealthy"
+    STARTING = "starting"
+    NONE = "none"
+
+
+class HealthReport(BaseModel):
+    """Snapshot of container health.
+
+    ``status`` drives orchestration decisions; ``raw`` exposes the
+    underlying ``State.Health`` block (FailingStreak, Log entries, …)
+    so a registry that wants to surface a diagnostic message on
+    timeout has the full payload to format.
+    """
+
+    status: HealthStatus
+    raw: dict[str, Any] = Field(default_factory=dict)
 
 
 @dataclass
@@ -153,6 +184,15 @@ class ContainerManagerBase(ABC):
         ``tail`` limits the number of trailing lines (``None`` returns
         the full log). ``stdout`` / ``stderr`` toggle which streams are
         included. ``timestamps`` prepends per-line timestamps when True.
+        """
+
+    @abstractmethod
+    def health_status(self, handle: ContainerHandleBase) -> HealthReport:
+        """Return a snapshot of container health.
+
+        Implementations are expected to refresh underlying state
+        (``reload`` for the docker SDK) before answering so callers
+        polling for a transition see fresh values.
         """
 
 
@@ -335,6 +375,29 @@ class ContainerManager(ContainerManagerBase):
             tail=tail_arg,
         )
         return result if isinstance(result, bytes) else b""
+
+    def health_status(self, handle: ContainerHandle) -> HealthReport:
+        """Reload the container's state and return a typed health snapshot.
+
+        Maps ``State.Health.Status`` to :class:`HealthStatus`; absence of
+        a Health subdict (image declares no HEALTHCHECK) maps to
+        :attr:`HealthStatus.NONE`. Unknown status strings also map to
+        ``NONE`` rather than raising — the caller decides whether to
+        treat unknown as fatal.
+        """
+        handle._container.reload()
+        attrs = handle._container.attrs or {}
+        health = attrs.get("State", {}).get("Health", {}) or {}
+        status_str = health.get("Status")
+        if status_str == "healthy":
+            status = HealthStatus.HEALTHY
+        elif status_str == "unhealthy":
+            status = HealthStatus.UNHEALTHY
+        elif status_str == "starting":
+            status = HealthStatus.STARTING
+        else:
+            status = HealthStatus.NONE
+        return HealthReport(status=status, raw=dict(health))
 
     def cleanup_all(self) -> None:
         """Emergency cleanup of all tracked containers."""

@@ -13,6 +13,8 @@ from agent_foundry.agents.lifecycle import (
     ContainerHandle,
     ContainerManager,
     ExecResult,
+    HealthReport,
+    HealthStatus,
 )
 
 
@@ -231,6 +233,56 @@ class TestReadLogs:
         assert kw["stdout"] is False
         assert kw["stderr"] is True
         assert kw["timestamps"] is True
+
+
+class TestHealthStatus:
+    def test_health_status_returns_healthy_when_state_health_status_is_healthy(self, manager):
+        handle = manager.create_container()
+        handle._container.attrs = {"State": {"Health": {"Status": "healthy"}}}
+        report = manager.health_status(handle)
+        assert isinstance(report, HealthReport)
+        assert report.status is HealthStatus.HEALTHY
+
+    def test_health_status_returns_unhealthy(self, manager):
+        handle = manager.create_container()
+        handle._container.attrs = {"State": {"Health": {"Status": "unhealthy"}}}
+        report = manager.health_status(handle)
+        assert report.status is HealthStatus.UNHEALTHY
+
+    def test_health_status_returns_starting(self, manager):
+        handle = manager.create_container()
+        handle._container.attrs = {"State": {"Health": {"Status": "starting"}}}
+        report = manager.health_status(handle)
+        assert report.status is HealthStatus.STARTING
+
+    def test_health_status_returns_none_when_no_healthcheck_configured(self, manager):
+        handle = manager.create_container()
+        # No "Health" subdict — image declares no HEALTHCHECK.
+        handle._container.attrs = {"State": {"Status": "running"}}
+        report = manager.health_status(handle)
+        assert report.status is HealthStatus.NONE
+
+    def test_health_status_calls_reload_to_refresh_state(self, manager):
+        handle = manager.create_container()
+        handle._container.attrs = {"State": {"Health": {"Status": "healthy"}}}
+        manager.health_status(handle)
+        handle._container.reload.assert_called_once()
+
+    def test_health_report_carries_raw_state_for_diagnostics(self, manager):
+        handle = manager.create_container()
+        handle._container.attrs = {
+            "State": {
+                "Health": {
+                    "Status": "unhealthy",
+                    "FailingStreak": 3,
+                    "Log": [{"Output": "boom"}],
+                }
+            }
+        }
+        report = manager.health_status(handle)
+        # Raw block round-trips for downstream log formatting.
+        assert report.raw["FailingStreak"] == 3
+        assert report.raw["Log"][0]["Output"] == "boom"
 
 
 class TestValidateImage:
