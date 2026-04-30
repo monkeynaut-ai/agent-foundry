@@ -330,6 +330,33 @@ async def test_wait_for_health_raises_on_unhealthy_report(
         await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
 
 
+# --- LiveContainer invocation counter ----------------------------------------
+
+
+def test_live_container_next_invocation_returns_monotonic_counter() -> None:
+    from agent_foundry.orchestration.registry import LiveContainer
+
+    fake_mgr = FakeContainerManager()
+    handle = fake_mgr.create_container()
+    live = LiveContainer(handle=handle, manager=fake_mgr)
+    assert live.next_invocation() == 1
+    assert live.next_invocation() == 2
+    assert live.next_invocation() == 3
+
+
+def test_live_container_next_invocation_independent_across_instances() -> None:
+    from agent_foundry.orchestration.registry import LiveContainer
+
+    fake_mgr = FakeContainerManager()
+    h_a = fake_mgr.create_container()
+    h_b = fake_mgr.create_container()
+    live_a = LiveContainer(handle=h_a, manager=fake_mgr)
+    live_b = LiveContainer(handle=h_b, manager=fake_mgr)
+    assert live_a.next_invocation() == 1
+    assert live_a.next_invocation() == 2
+    assert live_b.next_invocation() == 1
+
+
 @pytest.mark.asyncio
 async def test_wait_for_health_treats_health_none_as_ready(
     writer: LifecycleWriter,

@@ -58,10 +58,19 @@ class LiveContainer:
     primitive_id: int | None = None
     agent_name: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    # Per-container invocation counter. Incremented by the executor on
-    # each ``run_agent_in_container`` call against this live container
-    # so lifecycle events can tag which invocation they belong to.
+    # Per-container invocation counter. Mutate via ``next_invocation()``
+    # so the field stays encapsulated; reading is fine.
     _invocation_count: int = 0
+
+    def next_invocation(self) -> int:
+        """Increment and return this container's invocation counter.
+
+        Each call to :func:`run_agent_in_container` against the live
+        container reserves the next invocation number; lifecycle events
+        tag the resulting work with that integer.
+        """
+        self._invocation_count += 1
+        return self._invocation_count
 
 
 class AgentContainerRegistry:

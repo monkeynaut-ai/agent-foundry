@@ -391,8 +391,7 @@ async def run_agent_in_container(
 
     # Invocation number: per-container counter stamped on the live
     # container for lifecycle tagging.
-    invocation = live._invocation_count + 1
-    live._invocation_count = invocation
+    invocation = live.next_invocation()
 
     lifecycle.append(
         LifecycleEvent.AGENT_INVOCATION_STARTED,
