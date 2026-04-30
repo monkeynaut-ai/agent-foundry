@@ -335,7 +335,11 @@ def _compile_conditional(
     condition_fn = cond.condition
 
     def router_fn(state: dict[str, Any]) -> str:
-        model = cond_in.model_validate(state)
+        # LangGraph's sub-graph TypedDict filtering already drops extras
+        # before this routing call, but project explicitly for symmetry
+        # with the other compile functions and as defense against future
+        # framework changes.
+        model = _validate_scoped_input(state, cond_in, router_id)
         if condition_fn(model):
             return then_entry
         if cond.else_branch is not None:

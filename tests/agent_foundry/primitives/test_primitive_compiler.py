@@ -596,6 +596,45 @@ class TestCompileConditional:
         result = run_primitive_plan(plan, BranchState(value="original", flag=True))
         assert result.value == "detoured"
 
+    def test_cond_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+        """Pin scope-then-validate at the Conditional's `condition`
+        boundary: when an upstream step's output adds fields not in
+        cond_in, those fields must be projected away before the
+        condition function sees them, even if cond_in forbids extras.
+
+        The branches' invocations are unchanged — they receive full
+        accumulated state and project at their own boundaries."""
+        from pydantic import ConfigDict
+
+        class StrictBranchState(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            value: str
+            flag: bool
+
+        class SeqIn(BaseModel):
+            value: str
+            flag: bool
+
+        class Step1Out(BaseModel):
+            value: str
+            flag: bool
+            extra_from_step1: str  # cond_in must NOT see this
+
+        step1 = FunctionAction[SeqIn, Step1Out](
+            function=lambda s: Step1Out(value=s.value, flag=s.flag, extra_from_step1="leak"),
+        )
+        then_branch = FunctionAction[StrictBranchState, StrictBranchState](
+            function=lambda s: StrictBranchState(value="then", flag=s.flag),
+        )
+        cond = Conditional[StrictBranchState, StrictBranchState](
+            condition=lambda s: s.flag,
+            then_branch=then_branch,
+        )
+        seq = Sequence[SeqIn, StrictBranchState](steps=[step1, cond])
+        plan = PrimitivePlan(root=seq)
+        result = run_primitive_plan(plan, SeqIn(value="start", flag=True))
+        assert result.value == "then"
+
 
 # ======================================================================
 # Loop Compilation
