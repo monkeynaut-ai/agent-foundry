@@ -212,8 +212,7 @@ def _compile_function_action(
             if arity == 0:
                 result = fn()
             else:
-                _validate_boundary(state, input_type, node_id)
-                model_input = input_type.model_validate(state)
+                model_input = _validate_scoped_input(state, input_type, node_id)
                 result = fn(model_input)
         except Exception as exc:
             if ctx_opt is not None:

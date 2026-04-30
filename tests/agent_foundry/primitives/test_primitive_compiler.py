@@ -281,6 +281,37 @@ class TestCompileFunctionAction:
         with pytest.raises(PrimitiveCompilationError):
             graph.invoke({})  # missing required 'query'
 
+    def test_input_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+        """Pin scope-then-validate at the FunctionAction boundary inside
+        a Sequence: even when a step's input model forbids extras, the
+        compiler projects accumulated state down to declared fields
+        before validation, so an upstream step's output fields (which
+        downstream input models don't declare) don't blow up.
+
+        Setup: step 1 produces `extra_from_step1`. Step 2's StrictInput
+        forbids extras and only declares `query`. Without scope-then-
+        validate at step 2's boundary, validation fails."""
+        from pydantic import ConfigDict
+
+        class Step1Out(BaseModel):
+            query: str
+            extra_from_step1: str  # downstream's StrictInput must NOT see this
+
+        class StrictInput(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            query: str
+
+        step1 = FunctionAction[InputState, Step1Out](
+            function=lambda s: Step1Out(query=s.query, extra_from_step1="leak"),
+        )
+        step2 = FunctionAction[StrictInput, TransformOutput](
+            function=lambda s: TransformOutput(result=s.query.upper()),
+        )
+        seq = Sequence[InputState, TransformOutput](steps=[step1, step2])
+        plan = PrimitivePlan(root=seq)
+        result = run_primitive_plan(plan, InputState(query="hello"))
+        assert result.result == "HELLO"
+
     def test_run_primitive_plan_typed(self):
         """run_primitive_plan accepts and returns Pydantic models."""
         action = FunctionAction[InputState, TransformOutput](
