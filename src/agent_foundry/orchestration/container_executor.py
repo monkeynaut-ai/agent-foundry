@@ -232,11 +232,11 @@ def _snapshot_container_artifacts(
     from agent_foundry.orchestration.artifacts import agent_log_path
 
     # --- container.log ---
-    # ``handle._container`` is the docker-SDK Container object (typed
-    # Any — docker-py has no stubs). Fakes leave it ``None``, in which
-    # case the ``.logs`` call raises and the except-warn below fires.
+    # Routes through manager.read_logs so the docker-SDK shape stays
+    # encapsulated inside ContainerManager. Fake managers return
+    # b"" by default for handles they don't have logs scripted for.
     try:
-        raw = live.handle._container.logs(stdout=True, stderr=True, timestamps=False)
+        raw = live.manager.read_logs(live.handle, stdout=True, stderr=True, timestamps=False)
         if isinstance(raw, bytes):
             log_path = agent_log_path(run_dir, agent_name)
             log_path.parent.mkdir(parents=True, exist_ok=True)
