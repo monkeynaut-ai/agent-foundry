@@ -211,7 +211,7 @@ src/agent_foundry/
     extras.py            # optional-dependency import guard
 ```
 
-`docs/design/mlflow-tracing-integration.md` (this doc).
+`docs/archive/mlflow-tracing-integration-design.md` (this doc).
 
 Tests under `tests/agent_foundry/telemetry/` and `tests/agent_foundry/mlflow_adapter/`.
 

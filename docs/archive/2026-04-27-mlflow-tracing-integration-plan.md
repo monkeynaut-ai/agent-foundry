@@ -1,6 +1,6 @@
 # MLflow Tracing Integration Implementation Plan
 
-> **Design:** docs/design/mlflow-tracing-integration-design.md
+> **Design:** docs/archive/mlflow-tracing-integration-design.md
 > **For agents:** Use team-dev (parallel) or sdd (sequential) to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add MLflow tracing and run capture to Agent Foundry by emitting OpenTelemetry spans from the compiler at `AgentAction` boundaries and binding MLflow Runs to the existing `RunContext` lifecycle through an optional adapter under the `[mlflow]` extra.

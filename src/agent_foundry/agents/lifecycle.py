@@ -170,9 +170,14 @@ class ContainerManagerBase(ABC):
     ) -> None: ...
 
     @abstractmethod
-    def exec_run(self, handle: ContainerHandleBase, cmd: list[str]) -> ExecResult:
-        """Run ``cmd`` inside the container as the agent user; return
-        a typed :class:`ExecResult`.
+    def exec_run(
+        self,
+        handle: ContainerHandleBase,
+        cmd: list[str],
+        *,
+        user: str = _AGENT_USER,
+    ) -> ExecResult:
+        """Run ``cmd`` inside the container as ``user``; return a typed :class:`ExecResult`.
 
         ``cmd`` is a list of args (no shell). The combined stdout +
         stderr blob comes back as ``ExecResult.output`` regardless of
@@ -351,16 +356,22 @@ class ContainerManager(ContainerManagerBase):
         buf.seek(0)
         handle._container.put_archive(dir_path, buf)
 
-    def exec_run(self, handle: ContainerHandle, cmd: list[str]) -> ExecResult:
-        """Run ``cmd`` inside the container as the agent user.
+    def exec_run(
+        self,
+        handle: ContainerHandle,
+        cmd: list[str],
+        *,
+        user: str = _AGENT_USER,
+    ) -> ExecResult:
+        """Run ``cmd`` inside the container as ``user``.
 
-        Always passes ``demux=False`` so the docker SDK returns a
-        single combined stdout+stderr blob; always passes
-        ``user=_AGENT_USER`` so the agent process runs as the
-        non-root user the base image set up. Both choices are
-        platform contracts: callers cannot override them.
+        Always passes ``demux=False`` so the docker SDK returns a single
+        combined stdout+stderr blob. Supplementary GIDs are configured at
+        container creation time via the ``SUPPLEMENTARY_GIDS`` env var read
+        by the entrypoint — not at exec time (the Docker exec API does not
+        support ``GroupAdd``).
         """
-        exit_code, output = handle._container.exec_run(cmd, demux=False, user=_AGENT_USER)
+        exit_code, output = handle._container.exec_run(cmd, demux=False, user=user)
         return ExecResult(exit_code=exit_code, output=output)
 
     def read_logs(

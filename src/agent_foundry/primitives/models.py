@@ -177,19 +177,13 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     timeout_seconds: int = Field(default=3600, ge=1)
     skip_permissions: bool = False
 
-    # Filesystem access — governs /workspace only; paths outside /workspace
-    # are unaffected (they are baked into the image and not mounted).
-    # Safe-by-default: both default to empty, meaning the agent sees nothing
-    # under /workspace and can write nothing under /workspace. Product must
-    # explicitly opt in by listing directories.
-    #
-    # writable implies visible. If the agent needs /workspace itself visible
-    # (e.g. to run `pwd` or navigate), the product must list "/workspace"
-    # in visible_dirs. Misconfiguration produces a runtime failure from the
-    # agent (e.g. "permission denied writing to /workspace/src") — not a
-    # silent grant of access.
-    visible_dirs: list[str] = Field(default_factory=list)
-    writable_dirs: list[str] = Field(default_factory=list)
+    # Filesystem access — GID-based group permissions.
+    # Lists the supplementary GIDs the agent process should hold when
+    # Claude Code is invoked via docker exec --group-add. An empty list
+    # means no supplementary groups (read-only against group-owned dirs).
+    # workspace_bootstrap is responsible for chown/chmod of workspace
+    # directories to their respective GIDs before agents run.
+    gids: list[int] = Field(default_factory=list)
 
     # Container reuse — required, no default. Product must explicitly choose
     # how containers are reused across invocations.

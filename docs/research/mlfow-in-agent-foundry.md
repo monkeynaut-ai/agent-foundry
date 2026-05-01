@@ -5,6 +5,40 @@ This document analyzes MLflow (https://mlflow.org/) capabilities in the context 
 (2) reducing the time needed to build high-quality agentic systems is a strategic advantage
 (3) the cost of AI (API requests, subscriptions, AI tools) will increase dramatically and agent-foundry will help mitigate this risk
 
+## Implementation Status (as of 2026-04-30)
+
+### Implemented
+
+**Use case 1 — MLflow Tracing as AF's telemetry substrate** is the only use case that has been implemented. Design doc: `docs/archive/mlflow-tracing-integration-design.md`. Implementation plan: `docs/archive/2026-04-27-mlflow-tracing-integration-plan.md`.
+
+What's in place:
+- `src/agent_foundry/telemetry/` — OTel-only AF core module: `TelemetryConfig`, `RunDefinition`, `RedactionPolicy`, `RunStats`, `ArtifactSpec`, canonical attribute constants, `emit_span` context manager, `build_tracer_provider`.
+- `src/agent_foundry/mlflow_adapter/` — optional `[mlflow]` extra: emit-time attribute translation (`MLFLOW_TRANSLATIONS`), `enable()` entry point, MLflow Run lifecycle hooks (`attach_run_hooks`).
+- `AgentRunContext` renamed to `RunContext`; `on_run_starting` / `on_run_ended` typed lifecycle hooks added to `RunContext` with `RunStartingEvent` / `RunEndedEvent` payloads.
+- `RUN_FAILED` terminal lifecycle event; `summary.py` updated to render "failed" status.
+- Span emission wired into the compiler at `AgentAction` boundaries (both async and sync paths).
+- `examples/mlflow_demo/` end-to-end demo with `docker-compose.yaml`.
+- Full test coverage in `tests/agent_foundry/telemetry/` and `tests/agent_foundry/mlflow_adapter/`.
+
+What remains within use case 1:
+- `src/agent_foundry/observability/` directory not fully removed (Python files deleted; directory shell with `__pycache__` still on disk).
+- Span coverage for non-`AgentAction` primitives (`Sequence`, `Loop`, `Retry`, `Conditional`, `FunctionAction`, `GateAction`).
+- `RunStats.span_count`, `error_count`, `total_input_tokens`, `total_output_tokens` are hard-coded zeros — per-span accumulation not yet implemented.
+- Tail-based sampling.
+- Active validation against non-MLflow OTel backends (Langfuse, Jaeger, etc.).
+
+### Not yet started
+
+**Use case 2 — Prompt Registry as backing store for primitive callable fields.** No implementation. Would wire `prompt_builder` / `instructions_provider` fields to MLflow's Prompt Registry by alias (`@production`, `@canary`). Prompt-version linkage on spans.
+
+**Use case 3 — AI Gateway as the routed LLM executor.** No implementation. Would add a Gateway-backed executor option to AF's `executor` field, providing centralized rate limiting, cost caps, and provider failover.
+
+**Use case 4 — Evaluation Datasets + LLM judges for AF regression testing.** No implementation. Depends on use case 1 (tracing) being in place. Would compile any AF primitive into a `predict_fn` for `mlflow.evaluate`, with built-in scorers for schema fidelity, instruction adherence, and latency/cost budgets.
+
+**Use case 5 — Trace → Dataset flywheel.** No implementation. The compounding loop (prod traffic → sampled traces → curated dataset → regression suite → faster confident deploys → more traffic) has no tooling yet. Depends on use cases 1 and 4.
+
+**Use case 6 — Stream-output translator.** No implementation. An adapter family converting per-framework event streams (claude-code JSONL, CrewAI, etc.) to canonical AF spans. Lower priority; only worth building once AF owns a stable span model from use case 1.
+
 ## Analysis
 
 MLflow has quietly pivoted into a GenAI platform. Its 2026 surface area sits in two buckets:

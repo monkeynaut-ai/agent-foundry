@@ -82,6 +82,9 @@ class FakeContainerManager(ContainerManagerBase):
         # registry's wait-for-healthy gate immediately.
         self.health_script: dict[str, HealthReport] = {}
         self.health_log: list[str] = []
+        # Rich exec call log: each entry records cmd, user, and group_add
+        # so tests can assert on GID threading.
+        self.exec_calls: list[dict] = []
 
     def create_container(
         self,
@@ -115,8 +118,15 @@ class FakeContainerManager(ContainerManagerBase):
     def stop(self, handle: FakeContainerHandle, timeout: int = 10) -> None:
         handle.status = "stopped"
 
-    def exec_run(self, handle: FakeContainerHandle, cmd: list[str]) -> ExecResult:
+    def exec_run(
+        self,
+        handle: FakeContainerHandle,
+        cmd: list[str],
+        *,
+        user: str = "claude",
+    ) -> ExecResult:
         handle.exec_log.append(" ".join(cmd))
+        self.exec_calls.append({"cmd": cmd, "user": user})
         return self.exec_script.get(tuple(cmd), ExecResult(exit_code=0, output=b""))
 
     def read_logs(

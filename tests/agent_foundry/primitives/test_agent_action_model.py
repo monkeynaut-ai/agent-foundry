@@ -243,14 +243,6 @@ class TestAgentActionConfigFields:
         action = _new_structured_action()
         assert action.skip_permissions is False
 
-    def test_visible_dirs_default_to_empty(self):
-        # Safe-by-default: nothing under /workspace is visible unless declared.
-        assert _new_structured_action().visible_dirs == []
-
-    def test_writable_dirs_default_to_empty(self):
-        # Safe-by-default: nothing under /workspace is writable unless declared.
-        assert _new_structured_action().writable_dirs == []
-
     def test_reuse_policy_is_required(self):
         with pytest.raises(ValidationError, match="reuse_policy"):
             AgentAction[StubInput, StubOutput](
@@ -269,3 +261,48 @@ class TestAgentActionConfigFields:
                 reuse_policy=policy,
             )
             assert action.reuse_policy == policy
+
+
+# ======================================================================
+# AgentAction — gids field
+# ======================================================================
+
+
+class TestAgentActionGids:
+    """AgentAction.gids declares which GIDs the agent process should hold."""
+
+    def test_given_no_gids_when_created_then_defaults_to_empty_list(self):
+        assert _new_structured_action().gids == []
+
+    def test_given_gids_list_when_created_then_stored(self):
+        action = AgentAction[StubInput, StubOutput](
+            name="writer",
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            gids=[1001, 1002],
+        )
+        assert action.gids == [1001, 1002]
+
+    def test_given_empty_gids_when_created_then_valid_read_only_agent(self):
+        action = AgentAction[StubInput, StubOutput](
+            name="reader",
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            gids=[],
+        )
+        assert action.gids == []
+
+    def test_given_single_gid_when_created_then_accepted(self):
+        action = AgentAction[StubInput, StubOutput](
+            name="documents-writer",
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            gids=[1001],
+        )
+        assert action.gids == [1001]
