@@ -377,3 +377,128 @@ async def test_wait_for_health_treats_health_none_as_ready(
     fake_mgr.health_script["fake-1"] = HealthReport(status=HealthStatus.NONE)
     live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
     assert live is not None
+
+
+# ======================================================================
+# LiveContainer — gids field
+# ======================================================================
+
+
+from agent_foundry.orchestration.registry import LiveContainer  # noqa: E402
+
+from .fakes import FakeContainerHandle  # noqa: E402
+
+
+class TestLiveContainerGids:
+    def test_live_container_gids_defaults_to_empty(self):
+        handle = FakeContainerHandle(container_id="c1", workspace_path="/workspace", env={})
+        fake_mgr = FakeContainerManager()
+        live = LiveContainer(handle=handle, manager=fake_mgr)
+        assert live.gids == []
+
+    def test_live_container_gids_accepts_list(self):
+        handle = FakeContainerHandle(container_id="c1", workspace_path="/workspace", env={})
+        fake_mgr = FakeContainerManager()
+        live = LiveContainer(handle=handle, manager=fake_mgr, gids=[1001, 1002])
+        assert live.gids == [1001, 1002]
+
+
+class TestGetOrCreateGidPropagation:
+    @pytest.mark.asyncio
+    async def test_given_primitive_with_gids_then_live_container_gids_match(
+        self, writer: LifecycleWriter
+    ) -> None:
+        fake_mgr = FakeContainerManager()
+        registry = AgentContainerRegistry(
+            workspace_volume="vol",
+            base_image_tag="img",
+            manager=fake_mgr,
+        )
+        primitive = AgentAction[InputModel, OutputModel](
+            name="writer",
+            prompt_builder=lambda s: f"do: {s.task}",
+            instructions_provider=lambda _s: "Be precise.",
+            executor=lambda **kwargs: OutputModel(answer="x"),
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            gids=[1001],
+        )
+        live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="writer")
+        assert live.gids == [1001]
+
+    @pytest.mark.asyncio
+    async def test_given_primitive_with_no_gids_then_live_container_gids_empty(
+        self, writer: LifecycleWriter
+    ) -> None:
+        fake_mgr = FakeContainerManager()
+        registry = AgentContainerRegistry(
+            workspace_volume="vol",
+            base_image_tag="img",
+            manager=fake_mgr,
+        )
+        primitive = _make_primitive()
+        live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="reader")
+        assert live.gids == []
+
+
+class TestGetOrCreateSupplementaryGidsEnv:
+    """Registry injects SUPPLEMENTARY_GIDS env var when primitive.gids is set.
+
+    The Docker exec API does not support GroupAdd. Group membership must be
+    configured at container startup via the entrypoint reading SUPPLEMENTARY_GIDS.
+    """
+
+    @pytest.mark.asyncio
+    async def test_given_primitive_with_gids_then_container_gets_supplementary_gids_env(
+        self, writer: LifecycleWriter
+    ) -> None:
+        fake_mgr = FakeContainerManager()
+        registry = AgentContainerRegistry(
+            workspace_volume="vol",
+            base_image_tag="img",
+            manager=fake_mgr,
+        )
+        primitive = AgentAction[InputModel, OutputModel](
+            name="writer",
+            prompt_builder=lambda s: f"do: {s.task}",
+            instructions_provider=lambda _s: "Be precise.",
+            executor=lambda **kwargs: OutputModel(answer="x"),
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            gids=[1001],
+        )
+        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="writer")
+        assert fake_mgr.handles[0].env.get("SUPPLEMENTARY_GIDS") == "1001"
+
+    @pytest.mark.asyncio
+    async def test_given_primitive_with_multiple_gids_then_env_is_comma_separated(
+        self, writer: LifecycleWriter
+    ) -> None:
+        fake_mgr = FakeContainerManager()
+        registry = AgentContainerRegistry(
+            workspace_volume="vol",
+            base_image_tag="img",
+            manager=fake_mgr,
+        )
+        primitive = AgentAction[InputModel, OutputModel](
+            name="writer",
+            prompt_builder=lambda s: f"do: {s.task}",
+            instructions_provider=lambda _s: "Be precise.",
+            executor=lambda **kwargs: OutputModel(answer="x"),
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            gids=[1001, 1002],
+        )
+        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="writer")
+        assert fake_mgr.handles[0].env.get("SUPPLEMENTARY_GIDS") == "1001,1002"
+
+    @pytest.mark.asyncio
+    async def test_given_primitive_with_no_gids_then_no_supplementary_gids_env(
+        self, writer: LifecycleWriter
+    ) -> None:
+        fake_mgr = FakeContainerManager()
+        registry = AgentContainerRegistry(
+            workspace_volume="vol",
+            base_image_tag="img",
+            manager=fake_mgr,
+        )
+        primitive = _make_primitive()
+        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="reader")
+        assert "SUPPLEMENTARY_GIDS" not in fake_mgr.handles[0].env

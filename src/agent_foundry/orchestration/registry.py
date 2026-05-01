@@ -57,6 +57,9 @@ class LiveContainer:
     session_id: str | None = None
     primitive_id: int | None = None
     agent_name: str | None = None
+    # Supplementary GIDs passed to docker exec --group-add when Claude Code
+    # is invoked. Populated from AgentAction.gids by get_or_create.
+    gids: list[int] = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     # Per-container invocation counter. Mutate via ``next_invocation()``
     # so the field stays encapsulated; reading is fine.
@@ -169,6 +172,7 @@ class AgentContainerRegistry:
                 manager=manager,
                 primitive_id=pid,
                 agent_name=agent_name,
+                gids=list(primitive.gids),
             )
             self._containers[pid] = live
             lifecycle_writer.append(
@@ -249,14 +253,25 @@ class AgentContainerRegistry:
         Claude Code OAuth token and the instructions-path env var the
         entrypoint consumes. Tests that construct the registry without an
         ``oauth_token`` (the fake-driver path) get an empty env.
+
+        ``SUPPLEMENTARY_GIDS`` is always injected when ``primitive.gids``
+        is non-empty. The entrypoint reads this env var to add the ``claude``
+        user to those groups before calling ``gosu claude`` — the only way
+        to configure supplementary groups on a process, since the Docker exec
+        API does not expose ``GroupAdd``.
         """
-        if self._oauth_token is None:
-            return {}
-        return build_container_env(
-            primitive,
-            oauth_token=self._oauth_token,
-            role_instructions_path=ROLE_INSTRUCTIONS_PATH,
-        )
+        env: dict[str, str] = {}
+        if self._oauth_token is not None:
+            env.update(
+                build_container_env(
+                    primitive,
+                    oauth_token=self._oauth_token,
+                    role_instructions_path=ROLE_INSTRUCTIONS_PATH,
+                )
+            )
+        if primitive.gids:
+            env["SUPPLEMENTARY_GIDS"] = ",".join(str(g) for g in primitive.gids)
+        return env
 
     async def _wait_until_healthy(
         self, manager: ContainerManagerBase, handle: ContainerHandleBase

@@ -40,6 +40,20 @@ if [ -n "$REPO_URL" ] && [ ! -d /workspace/.git ]; then
   gosu claude git clone --branch "${REPO_REF:-main}" "$REPO_URL" /workspace
 fi
 
+# ── Supplementary GIDs ──
+# When SUPPLEMENTARY_GIDS is set (comma-separated numeric GIDs), add the
+# claude user to those groups before gosu drops privileges. This is the
+# only correct hook: the Docker exec API does not support GroupAdd, so
+# group membership must be configured at container startup.
+if [ -n "$SUPPLEMENTARY_GIDS" ]; then
+  for gid in $(echo "$SUPPLEMENTARY_GIDS" | tr ',' ' '); do
+    # Create the group if it doesn't exist in /etc/group.
+    getent group "$gid" >/dev/null 2>&1 || groupadd -g "$gid" "group_${gid}"
+    # Add claude to the group. usermod exits 0 even if already a member.
+    usermod -aG "$gid" claude
+  done
+fi
+
 # ── Filesystem lockdown ──
 . /home/claude/lockdown.sh
 
