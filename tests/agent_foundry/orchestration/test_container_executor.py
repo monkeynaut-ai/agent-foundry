@@ -563,7 +563,9 @@ async def test_run_claude_turn_uses_manager_exec_run_for_success() -> None:
     # Script the upcoming exec call. _run_claude_turn assembles the cmd
     # internally; we script by tuple of args.
     cmd = (
+        "gosu",
         "claude",
+        "/home/claude/.local/bin/claude",
         "-p",
         "go",
         "--output-format",
@@ -584,7 +586,9 @@ async def test_run_claude_turn_raises_on_nonzero_exit_with_log_tail() -> None:
     fake_mgr = FakeContainerManager()
     live, _ = _make_live_with_fake_mgr(fake_mgr)
     cmd = (
+        "gosu",
         "claude",
+        "/home/claude/.local/bin/claude",
         "-p",
         "go",
         "--output-format",
@@ -610,7 +614,9 @@ async def test_run_claude_turn_raises_when_no_envelope_extractable() -> None:
     fake_mgr = FakeContainerManager()
     live, _ = _make_live_with_fake_mgr(fake_mgr)
     cmd = (
+        "gosu",
         "claude",
+        "/home/claude/.local/bin/claude",
         "-p",
         "go",
         "--output-format",
@@ -634,7 +640,9 @@ async def test_run_claude_turn_falls_back_to_json_text_block() -> None:
     fake_mgr = FakeContainerManager()
     live, _ = _make_live_with_fake_mgr(fake_mgr)
     cmd = (
+        "gosu",
         "claude",
+        "/home/claude/.local/bin/claude",
         "-p",
         "go",
         "--output-format",

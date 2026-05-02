@@ -129,8 +129,15 @@ async def _run_claude_turn(
     """
 
     def _do_exec() -> TurnResult:
+        # Run via gosu so initgroups(3) is called, which picks up supplementary
+        # GIDs from /etc/group. docker exec with --user=<name> does not reliably
+        # call initgroups, so processes exec'd as "claude" don't see GIDs added
+        # by usermod in the entrypoint. gosu explicitly calls initgroups before
+        # dropping privileges, making supplementary groups visible to the kernel.
         cmd = [
+            "gosu",
             "claude",
+            "/home/claude/.local/bin/claude",
             "-p",
             prompt,
             "--output-format",
@@ -143,7 +150,7 @@ async def _run_claude_turn(
             cmd.append("--dangerously-skip-permissions")
         if resume_session_id:
             cmd.extend(["--resume", resume_session_id])
-        result = live.manager.exec_run(live.handle, cmd)
+        result = live.manager.exec_run(live.handle, cmd, user="root")
         exit_code = result.exit_code
         output = result.output
         if exit_code != 0:
