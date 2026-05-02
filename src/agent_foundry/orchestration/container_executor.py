@@ -102,6 +102,7 @@ async def _run_claude_turn(
     prompt: str,
     resume_session_id: str | None,
     schema: dict[str, Any],
+    skip_permissions: bool = False,
 ) -> TurnResult:
     """Invoke ``claude`` once inside the live container and return a
     :class:`TurnResult` carrying the parsed envelope dict, captured
@@ -138,6 +139,8 @@ async def _run_claude_turn(
             "--json-schema",
             json.dumps(schema),
         ]
+        if skip_permissions:
+            cmd.append("--dangerously-skip-permissions")
         if resume_session_id:
             cmd.extend(["--resume", resume_session_id])
         result = live.manager.exec_run(live.handle, cmd)
@@ -445,6 +448,7 @@ async def run_agent_in_container(
                 prompt=current_prompt,
                 resume_session_id=current_resume,
                 schema=schema,
+                skip_permissions=primitive.skip_permissions,
             )
 
             # Tee the raw stream regardless of outcome so every RunTurn

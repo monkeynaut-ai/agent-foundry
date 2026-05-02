@@ -92,6 +92,7 @@ def _make_primitive(
     *,
     reuse_policy: ContainerReusePolicy = ContainerReusePolicy.REUSE_NEW_SESSION,
     output_type: type[BaseModel] = OutputModel,
+    skip_permissions: bool = False,
 ) -> AgentAction:
     return AgentAction[InputModel, output_type](  # type: ignore[valid-type]
         name="test-agent",
@@ -99,6 +100,7 @@ def _make_primitive(
         instructions_provider=lambda _s: "Be precise.",
         executor=run_agent_in_container,
         reuse_policy=reuse_policy,
+        skip_permissions=skip_permissions,
     )
 
 
@@ -652,3 +654,60 @@ async def test_run_claude_turn_falls_back_to_json_text_block() -> None:
     result = await _run_claude_turn(live, prompt="go", resume_session_id=None, schema={})
     assert result.envelope["outcome"]["kind"] == "success"
     assert result.envelope["outcome"]["payload"]["answer"] == "fb"
+
+
+# --- skip_permissions → --dangerously-skip-permissions ----------------------
+
+
+class TestRunClaudeTurnSkipPermissions:
+    """_run_claude_turn adds --dangerously-skip-permissions iff skip_permissions=True."""
+
+    @pytest.mark.asyncio
+    async def test_given_skip_permissions_false_then_dangerous_flag_absent(self) -> None:
+        fake_mgr = FakeContainerManager()
+        live, _ = _make_live_with_fake_mgr(fake_mgr)
+
+        with pytest.raises(RuntimeError):
+            await _run_claude_turn(
+                live, prompt="go", resume_session_id=None, schema={}, skip_permissions=False
+            )
+
+        cmd = fake_mgr.exec_calls[0]["cmd"]
+        assert "--dangerously-skip-permissions" not in cmd
+
+    @pytest.mark.asyncio
+    async def test_given_skip_permissions_true_then_dangerous_flag_present(self) -> None:
+        fake_mgr = FakeContainerManager()
+        live, _ = _make_live_with_fake_mgr(fake_mgr)
+
+        with pytest.raises(RuntimeError):
+            await _run_claude_turn(
+                live, prompt="go", resume_session_id=None, schema={}, skip_permissions=True
+            )
+
+        cmd = fake_mgr.exec_calls[0]["cmd"]
+        assert "--dangerously-skip-permissions" in cmd
+
+
+class TestRunAgentInContainerSkipPermissionsThreading:
+    """run_agent_in_container threads primitive.skip_permissions to run_turn."""
+
+    @pytest.mark.asyncio
+    async def test_given_primitive_skip_true_then_run_turn_receives_true(self, tmp_path) -> None:
+        driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive(skip_permissions=True)
+
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+
+        assert driver.calls[0]["skip_permissions"] is True
+
+    @pytest.mark.asyncio
+    async def test_given_primitive_skip_false_then_run_turn_receives_false(self, tmp_path) -> None:
+        driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive(skip_permissions=False)
+
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+
+        assert driver.calls[0]["skip_permissions"] is False

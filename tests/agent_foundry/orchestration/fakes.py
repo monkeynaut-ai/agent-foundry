@@ -366,8 +366,11 @@ class FakeRunTurn:
         prompt: str,
         resume_session_id: str | None,
         schema: dict[str, Any],
+        skip_permissions: bool = False,
     ) -> TurnResult:
-        self.calls.append({"prompt": prompt, "resume": resume_session_id})
+        self.calls.append(
+            {"prompt": prompt, "resume": resume_session_id, "skip_permissions": skip_permissions}
+        )
         assert self._turn_script, (
             f"FakeRunTurn called beyond scripted turn count (call #{len(self.calls)})"
         )
