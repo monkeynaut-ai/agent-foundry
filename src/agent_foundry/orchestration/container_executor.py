@@ -102,6 +102,7 @@ async def _run_claude_turn(
     prompt: str,
     resume_session_id: str | None,
     schema: dict[str, Any],
+    skip_permissions: bool = False,
 ) -> TurnResult:
     """Invoke ``claude`` once inside the live container and return a
     :class:`TurnResult` carrying the parsed envelope dict, captured
@@ -128,8 +129,15 @@ async def _run_claude_turn(
     """
 
     def _do_exec() -> TurnResult:
+        # Run via gosu so initgroups(3) is called, which picks up supplementary
+        # GIDs from /etc/group. docker exec with --user=<name> does not reliably
+        # call initgroups, so processes exec'd as "claude" don't see GIDs added
+        # by usermod in the entrypoint. gosu explicitly calls initgroups before
+        # dropping privileges, making supplementary groups visible to the kernel.
         cmd = [
+            "gosu",
             "claude",
+            "/home/claude/.local/bin/claude",
             "-p",
             prompt,
             "--output-format",
@@ -138,9 +146,11 @@ async def _run_claude_turn(
             "--json-schema",
             json.dumps(schema),
         ]
+        if skip_permissions:
+            cmd.append("--dangerously-skip-permissions")
         if resume_session_id:
             cmd.extend(["--resume", resume_session_id])
-        result = live.manager.exec_run(live.handle, cmd)
+        result = live.manager.exec_run(live.handle, cmd, user="root")
         exit_code = result.exit_code
         output = result.output
         if exit_code != 0:
@@ -445,6 +455,7 @@ async def run_agent_in_container(
                 prompt=current_prompt,
                 resume_session_id=current_resume,
                 schema=schema,
+                skip_permissions=primitive.skip_permissions,
             )
 
             # Tee the raw stream regardless of outcome so every RunTurn

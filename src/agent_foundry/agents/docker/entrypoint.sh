@@ -49,8 +49,9 @@ if [ -n "$SUPPLEMENTARY_GIDS" ]; then
   for gid in $(echo "$SUPPLEMENTARY_GIDS" | tr ',' ' '); do
     # Create the group if it doesn't exist in /etc/group.
     getent group "$gid" >/dev/null 2>&1 || groupadd -g "$gid" "group_${gid}"
-    # Add claude to the group. usermod exits 0 even if already a member.
-    usermod -aG "$gid" claude
+    # Resolve the group name (usermod -aG requires a name, not a GID).
+    gname=$(getent group "$gid" | cut -d: -f1)
+    usermod -aG "$gname" claude
   done
 fi
 
