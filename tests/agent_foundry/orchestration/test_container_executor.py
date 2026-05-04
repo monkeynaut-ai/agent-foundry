@@ -378,7 +378,7 @@ async def test_file_snapshotting_on_success(monkeypatch, tmp_path) -> None:
     assert isinstance(result, OutputWithFile)
 
     agent_name = primitive.name
-    snapshot = ctx.artifacts_dir / agent_name / "turns" / "0" / "collected_files" / "out.txt"
+    snapshot = ctx.artifacts_dir / agent_name / "turns" / "1" / "collected_files" / "out.txt"
     assert snapshot.exists(), f"expected snapshot at {snapshot}"
     assert snapshot.read_text() == "hello"
 

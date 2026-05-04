@@ -64,6 +64,9 @@ class LiveContainer:
     # Per-container invocation counter. Mutate via ``next_invocation()``
     # so the field stays encapsulated; reading is fine.
     _invocation_count: int = 0
+    # Cumulative turn counter across all invocations of this container.
+    # Monotonically increasing so artifact turn dirs are unique per run.
+    _turn_count: int = 0
 
     def next_invocation(self) -> int:
         """Increment and return this container's invocation counter.
@@ -74,6 +77,16 @@ class LiveContainer:
         """
         self._invocation_count += 1
         return self._invocation_count
+
+    def next_turn(self) -> int:
+        """Increment and return this container's cumulative turn counter.
+
+        Called at the start of every turn (including responder and
+        verification retries within an invocation) so artifact turn
+        directories are globally unique across all invocations.
+        """
+        self._turn_count += 1
+        return self._turn_count
 
 
 class AgentContainerRegistry:

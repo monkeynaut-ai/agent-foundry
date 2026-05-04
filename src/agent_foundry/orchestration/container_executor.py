@@ -412,7 +412,7 @@ async def run_agent_in_container(
     current_prompt = prompt
     current_resume: str | None = _initial_resume_session_id(primitive, live)
     current_session_id: str | None = live.session_id
-    turn_number = 0
+    turn_number = live.next_turn()
     responder_iterations = 0
     verification_attempts = 0
 
@@ -549,7 +549,7 @@ async def run_agent_in_container(
                     verification_attempts += 1
                     current_prompt = _build_correction_prompt(violations)
                     current_resume = current_session_id
-                    turn_number += 1
+                    turn_number = live.next_turn()
                     continue
 
                 # Persist the success payload as output.json.
@@ -648,7 +648,7 @@ async def run_agent_in_container(
 
                 current_prompt = response.answer
                 current_resume = current_session_id
-                turn_number += 1
+                turn_number = live.next_turn()
                 responder_iterations += 1
                 continue
 
