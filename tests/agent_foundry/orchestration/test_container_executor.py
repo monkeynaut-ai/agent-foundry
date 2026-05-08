@@ -93,6 +93,7 @@ def _make_primitive(
     reuse_policy: ContainerReusePolicy = ContainerReusePolicy.REUSE_NEW_SESSION,
     output_type: type[BaseModel] = OutputModel,
     skip_permissions: bool = False,
+    model: str = "claude-sonnet-4-6",
 ) -> AgentAction:
     return AgentAction[InputModel, output_type](  # type: ignore[valid-type]
         name="test-agent",
@@ -101,6 +102,7 @@ def _make_primitive(
         executor=run_agent_in_container,
         reuse_policy=reuse_policy,
         skip_permissions=skip_permissions,
+        model=model,
     )
 
 
@@ -441,6 +443,7 @@ async def test_lifecycle_event_sequence_on_success(monkeypatch, tmp_path) -> Non
 def _make_smoke_primitive() -> AgentAction[InputModel, OutputModel]:
     return AgentAction[InputModel, OutputModel](
         name="test-agent",
+        model="claude-sonnet-4-6",
         prompt_builder=lambda s: f"do: {s.task}",
         instructions_provider=lambda _s: "Be precise.",
         executor=run_agent_in_container,
@@ -573,10 +576,14 @@ async def test_run_claude_turn_uses_manager_exec_run_for_success() -> None:
         "--verbose",
         "--json-schema",
         "{}",
+        "--model",
+        "claude-sonnet-4-6",
     )
     fake_mgr.exec_script[cmd] = _ExecResult(exit_code=0, output=_stream_lines(init_evt, asst_evt))
 
-    result = await _run_claude_turn(live, prompt="go", resume_session_id=None, schema={})
+    result = await _run_claude_turn(
+        live, prompt="go", resume_session_id=None, schema={}, model="claude-sonnet-4-6"
+    )
     assert result.envelope == payload
     assert result.session_id == "sess-z"
 
@@ -596,12 +603,16 @@ async def test_run_claude_turn_raises_on_nonzero_exit_with_log_tail() -> None:
         "--verbose",
         "--json-schema",
         "{}",
+        "--model",
+        "claude-sonnet-4-6",
     )
     fake_mgr.exec_script[cmd] = _ExecResult(exit_code=2, output=b"boom-stderr")
     fake_mgr.logs_script[live.handle.container_id] = b"recent log line\n"
 
     with pytest.raises(RuntimeError, match="claude exec failed"):
-        await _run_claude_turn(live, prompt="go", resume_session_id=None, schema={})
+        await _run_claude_turn(
+            live, prompt="go", resume_session_id=None, schema={}, model="claude-sonnet-4-6"
+        )
     # The diagnostic must have gone through manager.read_logs (not the
     # docker-SDK escape hatch).
     assert any(
@@ -624,13 +635,17 @@ async def test_run_claude_turn_raises_when_no_envelope_extractable() -> None:
         "--verbose",
         "--json-schema",
         "{}",
+        "--model",
+        "claude-sonnet-4-6",
     )
     # No assistant tool_use, no fallback text: just init.
     init_evt = {"type": "system", "subtype": "init", "session_id": "sess-x"}
     fake_mgr.exec_script[cmd] = _ExecResult(exit_code=0, output=_stream_lines(init_evt))
 
     with pytest.raises(RuntimeError, match="no StructuredOutput"):
-        await _run_claude_turn(live, prompt="go", resume_session_id=None, schema={})
+        await _run_claude_turn(
+            live, prompt="go", resume_session_id=None, schema={}, model="claude-sonnet-4-6"
+        )
 
 
 @pytest.mark.asyncio
@@ -650,6 +665,8 @@ async def test_run_claude_turn_falls_back_to_json_text_block() -> None:
         "--verbose",
         "--json-schema",
         "{}",
+        "--model",
+        "claude-sonnet-4-6",
     )
     init_evt = {"type": "system", "subtype": "init", "session_id": "sess-fb"}
     text = '```json\n{"outcome": {"kind": "success", "payload": {"answer": "fb"}}}\n```'
@@ -659,7 +676,9 @@ async def test_run_claude_turn_falls_back_to_json_text_block() -> None:
     }
     fake_mgr.exec_script[cmd] = _ExecResult(exit_code=0, output=_stream_lines(init_evt, asst_evt))
 
-    result = await _run_claude_turn(live, prompt="go", resume_session_id=None, schema={})
+    result = await _run_claude_turn(
+        live, prompt="go", resume_session_id=None, schema={}, model="claude-sonnet-4-6"
+    )
     assert result.envelope["outcome"]["kind"] == "success"
     assert result.envelope["outcome"]["payload"]["answer"] == "fb"
 
@@ -677,7 +696,12 @@ class TestRunClaudeTurnSkipPermissions:
 
         with pytest.raises(RuntimeError):
             await _run_claude_turn(
-                live, prompt="go", resume_session_id=None, schema={}, skip_permissions=False
+                live,
+                prompt="go",
+                resume_session_id=None,
+                schema={},
+                skip_permissions=False,
+                model="claude-sonnet-4-6",
             )
 
         cmd = fake_mgr.exec_calls[0]["cmd"]
@@ -690,7 +714,12 @@ class TestRunClaudeTurnSkipPermissions:
 
         with pytest.raises(RuntimeError):
             await _run_claude_turn(
-                live, prompt="go", resume_session_id=None, schema={}, skip_permissions=True
+                live,
+                prompt="go",
+                resume_session_id=None,
+                schema={},
+                skip_permissions=True,
+                model="claude-sonnet-4-6",
             )
 
         cmd = fake_mgr.exec_calls[0]["cmd"]
@@ -719,3 +748,53 @@ class TestRunAgentInContainerSkipPermissionsThreading:
         await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
 
         assert driver.calls[0]["skip_permissions"] is False
+
+
+# --- model → --model -------------------------------------------------------
+
+
+class TestRunClaudeTurnModel:
+    """_run_claude_turn passes --model <value> to the claude CLI."""
+
+    @pytest.mark.asyncio
+    async def test_given_model_then_flag_present_in_cmd(self) -> None:
+        fake_mgr = FakeContainerManager()
+        live, _ = _make_live_with_fake_mgr(fake_mgr)
+
+        with pytest.raises(RuntimeError):
+            await _run_claude_turn(
+                live, prompt="go", resume_session_id=None, schema={}, model="claude-sonnet-4-6"
+            )
+
+        cmd = fake_mgr.exec_calls[0]["cmd"]
+        assert "--model" in cmd
+        idx = cmd.index("--model")
+        assert cmd[idx + 1] == "claude-sonnet-4-6"
+
+    @pytest.mark.asyncio
+    async def test_given_different_model_then_value_forwarded(self) -> None:
+        fake_mgr = FakeContainerManager()
+        live, _ = _make_live_with_fake_mgr(fake_mgr)
+
+        with pytest.raises(RuntimeError):
+            await _run_claude_turn(
+                live, prompt="go", resume_session_id=None, schema={}, model="claude-opus-4-7"
+            )
+
+        cmd = fake_mgr.exec_calls[0]["cmd"]
+        idx = cmd.index("--model")
+        assert cmd[idx + 1] == "claude-opus-4-7"
+
+
+class TestRunAgentInContainerModelThreading:
+    """run_agent_in_container threads primitive.model to run_turn."""
+
+    @pytest.mark.asyncio
+    async def test_given_primitive_model_then_run_turn_receives_it(self, tmp_path) -> None:
+        driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive(model="claude-opus-4-7")
+
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+
+        assert driver.calls[0]["model"] == "claude-opus-4-7"

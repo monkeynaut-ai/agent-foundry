@@ -189,6 +189,10 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     # how containers are reused across invocations.
     reuse_policy: ContainerReusePolicy
 
+    # Model — required, no default. Product must declare which Claude model
+    # this agent runs on. Use ClaudeModel constants or a raw model ID string.
+    model: str = Field(min_length=1)
+
 
 def get_type_args(prim: Primitive) -> tuple[type[BaseModel], type[BaseModel]]:
     """Extract (input_type, output_type) from a parameterized primitive.

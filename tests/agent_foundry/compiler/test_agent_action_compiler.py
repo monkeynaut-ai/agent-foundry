@@ -96,6 +96,7 @@ class TestAgentActionCompiler:
 
         action = AgentAction[AgentInput, AgentOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -125,6 +126,7 @@ class TestAgentActionCompiler:
 
         action = AgentAction[AgentInput, AgentOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_recording_instructions_provider,
             executor=_executor,
@@ -161,6 +163,7 @@ class TestAgentActionCompiler:
 
         action = AgentAction[AgentInput, AgentOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_jinja_instructions_provider,
             executor=_executor,
@@ -179,6 +182,7 @@ class TestAgentActionCompiler:
 
         action = AgentAction[AgentInput, AgentOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -196,6 +200,7 @@ class TestAgentActionCompiler:
 
         action = AgentAction[AgentInput, AgentOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -217,6 +222,7 @@ class TestAgentActionCompiler:
 
         action = AgentAction[AgentInput, AgentOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             # Deliberately wrong return type to exercise the compiler's
@@ -246,6 +252,7 @@ class TestAgentActionCompiler:
 
         action = AgentAction[AgentInput, AgentOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -278,6 +285,7 @@ class TestAgentActionCompiler_ExceptionPropagation:
 
         action = AgentAction[AgentInput, AgentOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -325,6 +333,7 @@ class TestAgentActionCompiler_Composition:
 
         agent_step = AgentAction[AgentStepInput, AgentStepOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=lambda s: f"Q: {s.query}",
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -375,6 +384,7 @@ class TestAgentActionCompiler_Composition:
         )
         agent_step = AgentAction[StrictAgentInput, AgentStepOutput](
             name="strict-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=lambda s: f"Q: {s.query}",
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -419,6 +429,7 @@ class TestAgentActionCompiler_RunCtxThreading:
 
         action = AgentAction[AgentInput, AgentOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,
@@ -471,6 +482,7 @@ class TestAgentActionCompiler_RunCtxThreading:
 
         action = AgentAction[AgentInput, AgentOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_record_prompt_builder,
             instructions_provider=_stub_instructions,
             executor=_executor,

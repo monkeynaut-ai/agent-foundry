@@ -102,6 +102,7 @@ async def _run_claude_turn(
     prompt: str,
     resume_session_id: str | None,
     schema: dict[str, Any],
+    model: str,
     skip_permissions: bool = False,
 ) -> TurnResult:
     """Invoke ``claude`` once inside the live container and return a
@@ -145,6 +146,8 @@ async def _run_claude_turn(
             "--verbose",
             "--json-schema",
             json.dumps(schema),
+            "--model",
+            model,
         ]
         if skip_permissions:
             cmd.append("--dangerously-skip-permissions")
@@ -455,6 +458,7 @@ async def run_agent_in_container(
                 prompt=current_prompt,
                 resume_session_id=current_resume,
                 schema=schema,
+                model=primitive.model,
                 skip_permissions=primitive.skip_permissions,
             )
 

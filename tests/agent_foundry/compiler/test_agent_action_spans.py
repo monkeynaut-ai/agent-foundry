@@ -43,6 +43,7 @@ def exporter_and_provider() -> Iterator[tuple[InMemorySpanExporter, TracerProvid
 def _build_action(executor) -> AgentAction[_In, _Out]:
     return AgentAction[_In, _Out](
         name="reviewer",
+        model="claude-sonnet-4-6",
         prompt_builder=lambda inp: f"prompt:{inp.ticket_id}",
         instructions_provider=lambda _: "instructions",
         executor=executor,

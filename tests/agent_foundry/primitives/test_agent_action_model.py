@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel, ValidationError
 
+from agent_foundry.primitives import ClaudeModel
 from agent_foundry.primitives.models import (
     AgentAction,
     ContainerReusePolicy,
@@ -67,6 +68,7 @@ class TestAgentActionRequiredFields:
     def test_given_all_required_fields_when_created_then_succeeds(self):
         action = AgentAction[StubInput, StubOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor_for_required,
@@ -79,6 +81,7 @@ class TestAgentActionRequiredFields:
         with pytest.raises(ValidationError, match="must be parameterized"):
             AgentAction(
                 name="test-agent",
+                model="claude-sonnet-4-6",
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
                 executor=_stub_executor_for_required,
@@ -88,6 +91,8 @@ class TestAgentActionRequiredFields:
     def test_missing_prompt_builder_raises(self):
         with pytest.raises(ValidationError):
             AgentAction[StubInput, StubOutput](
+                name="test-agent",
+                model="claude-sonnet-4-6",
                 instructions_provider=_stub_instructions_provider,
                 executor=_stub_executor_for_required,
                 reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
@@ -96,6 +101,8 @@ class TestAgentActionRequiredFields:
     def test_missing_instructions_provider_raises(self):
         with pytest.raises(ValidationError):
             AgentAction[StubInput, StubOutput](
+                name="test-agent",
+                model="claude-sonnet-4-6",
                 prompt_builder=_stub_prompt_builder,
                 executor=_stub_executor_for_required,
                 reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
@@ -104,6 +111,7 @@ class TestAgentActionRequiredFields:
     def test_get_type_args_returns_parameterized_types(self):
         action = AgentAction[StubInput, StubOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor_for_required,
@@ -116,6 +124,7 @@ class TestAgentActionRequiredFields:
     def test_prompt_builder_is_callable(self):
         action = AgentAction[StubInput, StubOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor_for_required,
@@ -127,6 +136,7 @@ class TestAgentActionRequiredFields:
     def test_instructions_provider_is_callable(self):
         action = AgentAction[StubInput, StubOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor_for_required,
@@ -156,6 +166,7 @@ class TestAgentActionNoResponseChannel:
     def test_no_response_channel_instance_attr(self):
         action = AgentAction[StubInput, StubOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor_for_required,
@@ -179,6 +190,8 @@ class TestAgentActionExecutor:
     def test_missing_executor_raises(self):
         with pytest.raises(ValidationError):
             AgentAction[StubInput, StubOutput](
+                name="test-agent",
+                model="claude-sonnet-4-6",
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
                 reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
@@ -187,6 +200,7 @@ class TestAgentActionExecutor:
     def test_executor_accepted(self):
         action = AgentAction[StubInput, StubOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor,
@@ -197,6 +211,7 @@ class TestAgentActionExecutor:
     def test_executor_is_callable(self):
         action = AgentAction[StubInput, StubOutput](
             name="test-agent",
+            model="claude-sonnet-4-6",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor,
@@ -214,6 +229,7 @@ class TestAgentActionExecutor:
 def _new_structured_action() -> AgentAction:
     return AgentAction[StubInput, StubOutput](
         name="test-agent",
+        model="claude-sonnet-4-6",
         prompt_builder=_stub_prompt_builder,
         instructions_provider=_stub_instructions_provider,
         executor=_stub_executor,
@@ -232,6 +248,7 @@ class TestAgentActionConfigFields:
         with pytest.raises(ValidationError):
             AgentAction[StubInput, StubOutput](
                 name="test-agent",
+                model="claude-sonnet-4-6",
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
                 executor=_stub_executor,
@@ -246,6 +263,8 @@ class TestAgentActionConfigFields:
     def test_reuse_policy_is_required(self):
         with pytest.raises(ValidationError, match="reuse_policy"):
             AgentAction[StubInput, StubOutput](
+                name="test-agent",
+                model="claude-sonnet-4-6",
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
                 executor=_stub_executor,
@@ -255,6 +274,7 @@ class TestAgentActionConfigFields:
         for policy in ContainerReusePolicy:
             action = AgentAction[StubInput, StubOutput](
                 name="test-agent",
+                model="claude-sonnet-4-6",
                 prompt_builder=_stub_prompt_builder,
                 instructions_provider=_stub_instructions_provider,
                 executor=_stub_executor,
@@ -277,6 +297,7 @@ class TestAgentActionGids:
     def test_given_gids_list_when_created_then_stored(self):
         action = AgentAction[StubInput, StubOutput](
             name="writer",
+            model="claude-sonnet-4-6",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor,
@@ -288,6 +309,7 @@ class TestAgentActionGids:
     def test_given_empty_gids_when_created_then_valid_read_only_agent(self):
         action = AgentAction[StubInput, StubOutput](
             name="reader",
+            model="claude-sonnet-4-6",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor,
@@ -299,6 +321,7 @@ class TestAgentActionGids:
     def test_given_single_gid_when_created_then_accepted(self):
         action = AgentAction[StubInput, StubOutput](
             name="documents-writer",
+            model="claude-sonnet-4-6",
             prompt_builder=_stub_prompt_builder,
             instructions_provider=_stub_instructions_provider,
             executor=_stub_executor,
@@ -306,3 +329,56 @@ class TestAgentActionGids:
             gids=[1001],
         )
         assert action.gids == [1001]
+
+
+# ======================================================================
+# AgentAction — model field
+# ======================================================================
+
+
+class TestAgentActionModelField:
+    """model is required; product must declare which Claude model to run."""
+
+    def test_model_is_required(self):
+        with pytest.raises(ValidationError):
+            AgentAction[StubInput, StubOutput](
+                name="test-agent",
+                prompt_builder=_stub_prompt_builder,
+                instructions_provider=_stub_instructions_provider,
+                executor=_stub_executor,
+                reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+                # model omitted
+            )
+
+    def test_model_accepts_raw_string(self):
+        action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
+            model="claude-sonnet-4-6",
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+        )
+        assert action.model == "claude-sonnet-4-6"
+
+    def test_model_accepts_claude_model_enum(self):
+        action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
+            model=ClaudeModel.SONNET_4_6,
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+        )
+        assert action.model == "claude-sonnet-4-6"
+
+    def test_model_empty_string_raises(self):
+        with pytest.raises(ValidationError):
+            AgentAction[StubInput, StubOutput](
+                name="test-agent",
+                model="",
+                prompt_builder=_stub_prompt_builder,
+                instructions_provider=_stub_instructions_provider,
+                executor=_stub_executor,
+                reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            )
