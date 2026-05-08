@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_ENV_ALLOWLIST = {
     "LANG",
     "TERM",
-    "ANTHROPIC_API_KEY",
     "CLAUDE_CODE_OAUTH_TOKEN",
 }
 

@@ -1,5 +1,6 @@
 """Composable, typed plan primitives for Agent Foundry."""
 
+from agent_foundry.primitives.claude_code import ClaudeModel, list_claude_models
 from agent_foundry.primitives.errors import (
     InvalidPromptKeyError,
     PrimitiveCompilationError,
@@ -23,6 +24,7 @@ from agent_foundry.primitives.validators import register_validator, validate_pri
 
 __all__ = [
     "AgentAction",
+    "ClaudeModel",
     "Conditional",
     "ContainerReusePolicy",
     "FunctionAction",
@@ -37,6 +39,7 @@ __all__ = [
     "Sequence",
     "TypeMismatchError",
     "UnregisteredPrimitiveError",
+    "list_claude_models",
     "register_validator",
     "validate_primitive",
 ]

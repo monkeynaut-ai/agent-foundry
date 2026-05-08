@@ -44,7 +44,12 @@ class TestContainerConfig:
 class TestDefaultEnvAllowlist:
     def test_given_default_allowlist_then_contains_only_generic_vars(self):
         assert "LANG" in DEFAULT_ENV_ALLOWLIST
-        assert "ANTHROPIC_API_KEY" in DEFAULT_ENV_ALLOWLIST
+        assert "CLAUDE_CODE_OAUTH_TOKEN" in DEFAULT_ENV_ALLOWLIST
+        # ANTHROPIC_API_KEY is intentionally excluded: containers authenticate
+        # via CLAUDE_CODE_OAUTH_TOKEN, and the host may hold ANTHROPIC_API_KEY
+        # for other purposes (e.g. list_claude_models). Forwarding both would
+        # trigger the entrypoint's mutual-exclusion check.
+        assert "ANTHROPIC_API_KEY" not in DEFAULT_ENV_ALLOWLIST
         # Archipelago-specific vars should NOT be in the generic allowlist
         assert "ARCHIPELAGO_WS_URL" not in DEFAULT_ENV_ALLOWLIST
         assert "GITHUB_TOKEN" not in DEFAULT_ENV_ALLOWLIST
