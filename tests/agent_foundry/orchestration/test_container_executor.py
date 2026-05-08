@@ -94,6 +94,7 @@ def _make_primitive(
     output_type: type[BaseModel] = OutputModel,
     skip_permissions: bool = False,
     model: str = "claude-sonnet-4-6",
+    effort: str | None = None,
 ) -> AgentAction:
     return AgentAction[InputModel, output_type](  # type: ignore[valid-type]
         name="test-agent",
@@ -103,6 +104,7 @@ def _make_primitive(
         reuse_policy=reuse_policy,
         skip_permissions=skip_permissions,
         model=model,
+        effort=effort,
     )
 
 
@@ -798,3 +800,91 @@ class TestRunAgentInContainerModelThreading:
         await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
 
         assert driver.calls[0]["model"] == "claude-opus-4-7"
+
+
+# --- effort → --effort -------------------------------------------------------
+
+
+class TestRunClaudeTurnEffort:
+    """_run_claude_turn passes --effort <value> only when effort is set."""
+
+    @pytest.mark.asyncio
+    async def test_given_effort_then_flag_present_in_cmd(self) -> None:
+        fake_mgr = FakeContainerManager()
+        live, _ = _make_live_with_fake_mgr(fake_mgr)
+
+        with pytest.raises(RuntimeError):
+            await _run_claude_turn(
+                live,
+                prompt="go",
+                resume_session_id=None,
+                schema={},
+                model="claude-sonnet-4-6",
+                effort="high",
+            )
+
+        cmd = fake_mgr.exec_calls[0]["cmd"]
+        assert "--effort" in cmd
+        idx = cmd.index("--effort")
+        assert cmd[idx + 1] == "high"
+
+    @pytest.mark.asyncio
+    async def test_given_effort_none_then_flag_absent_from_cmd(self) -> None:
+        fake_mgr = FakeContainerManager()
+        live, _ = _make_live_with_fake_mgr(fake_mgr)
+
+        with pytest.raises(RuntimeError):
+            await _run_claude_turn(
+                live,
+                prompt="go",
+                resume_session_id=None,
+                schema={},
+                model="claude-sonnet-4-6",
+                effort=None,
+            )
+
+        cmd = fake_mgr.exec_calls[0]["cmd"]
+        assert "--effort" not in cmd
+
+    @pytest.mark.asyncio
+    async def test_given_different_effort_value_then_value_forwarded(self) -> None:
+        fake_mgr = FakeContainerManager()
+        live, _ = _make_live_with_fake_mgr(fake_mgr)
+
+        with pytest.raises(RuntimeError):
+            await _run_claude_turn(
+                live,
+                prompt="go",
+                resume_session_id=None,
+                schema={},
+                model="claude-sonnet-4-6",
+                effort="max",
+            )
+
+        cmd = fake_mgr.exec_calls[0]["cmd"]
+        idx = cmd.index("--effort")
+        assert cmd[idx + 1] == "max"
+
+
+class TestRunAgentInContainerEffortThreading:
+    """run_agent_in_container threads primitive.effort to run_turn."""
+
+    @pytest.mark.asyncio
+    async def test_given_primitive_effort_then_run_turn_receives_it(self, tmp_path) -> None:
+        driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive(effort="high")
+
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+
+        assert driver.calls[0]["effort"] == "high"
+
+    @pytest.mark.asyncio
+    async def test_given_no_effort_declared_then_run_turn_receives_none(self, tmp_path) -> None:
+        driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()  # effort not declared → defaults to None
+
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+
+        assert driver.calls[0]["effort"] is None

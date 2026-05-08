@@ -103,6 +103,7 @@ async def _run_claude_turn(
     resume_session_id: str | None,
     schema: dict[str, Any],
     model: str,
+    effort: str | None = None,
     skip_permissions: bool = False,
 ) -> TurnResult:
     """Invoke ``claude`` once inside the live container and return a
@@ -149,6 +150,8 @@ async def _run_claude_turn(
             "--model",
             model,
         ]
+        if effort is not None:
+            cmd += ["--effort", effort]
         if skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         if resume_session_id:
@@ -459,6 +462,7 @@ async def run_agent_in_container(
                 resume_session_id=current_resume,
                 schema=schema,
                 model=primitive.model,
+                effort=primitive.effort,
                 skip_permissions=primitive.skip_permissions,
             )
 

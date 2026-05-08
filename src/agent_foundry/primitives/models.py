@@ -193,6 +193,11 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     # this agent runs on. Use ClaudeModel constants or a raw model ID string.
     model: str = Field(min_length=1)
 
+    # Effort — optional. When set, passed as ``--effort`` to the claude CLI.
+    # When None, the flag is omitted and the CLI uses its own default.
+    # Use ClaudeEffort constants or a raw effort string.
+    effort: str | None = None
+
 
 def get_type_args(prim: Primitive) -> tuple[type[BaseModel], type[BaseModel]]:
     """Extract (input_type, output_type) from a parameterized primitive.

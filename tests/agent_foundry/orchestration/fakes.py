@@ -367,6 +367,7 @@ class FakeRunTurn:
         resume_session_id: str | None,
         schema: dict[str, Any],
         model: str = "",
+        effort: str | None = None,
         skip_permissions: bool = False,
     ) -> TurnResult:
         self.calls.append(
@@ -374,6 +375,7 @@ class FakeRunTurn:
                 "prompt": prompt,
                 "resume": resume_session_id,
                 "model": model,
+                "effort": effort,
                 "skip_permissions": skip_permissions,
             }
         )

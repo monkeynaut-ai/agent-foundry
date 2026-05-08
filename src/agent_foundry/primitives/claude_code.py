@@ -23,6 +23,21 @@ class ClaudeModel(StrEnum):
     SONNET_4 = "claude-sonnet-4-20250514"
 
 
+class ClaudeEffort(StrEnum):
+    """Effort levels for the ``claude --effort`` flag.
+
+    Values are passed directly to the ``claude --effort`` flag.
+    Higher effort levels allocate more reasoning tokens before output.
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+    MAX = "max"
+    AUTO = "auto"
+
+
 def list_claude_models() -> list[str]:
     """Return all Claude model IDs currently available via the Anthropic API.
 
