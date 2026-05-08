@@ -15,9 +15,16 @@
 
 FROM python:3.13
 
-# Install system dependencies (including gosu for root-to-user drop)
+# Install system dependencies (including gosu for root-to-user drop, gh for PR creation)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git curl jq bash-completion gosu \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+         | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+         > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends git curl jq bash-completion gosu gh \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user (uid 1000) for agent execution via gosu
