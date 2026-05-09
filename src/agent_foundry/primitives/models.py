@@ -195,8 +195,9 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
 
     # Effort — optional. When set, passed as ``--effort`` to the claude CLI.
     # When None, the flag is omitted and the CLI uses its own default.
-    # Use ClaudeEffort constants or a raw effort string.
-    effort: str | None = None
+    # Use ClaudeEffort constants or a raw effort string. Empty string is
+    # rejected — use None to omit the flag.
+    effort: str | None = Field(default=None, min_length=1)
 
 
 def get_type_args(prim: Primitive) -> tuple[type[BaseModel], type[BaseModel]]:

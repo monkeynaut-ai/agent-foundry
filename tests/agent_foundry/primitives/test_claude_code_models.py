@@ -55,9 +55,40 @@ class TestListClaudeModels:
         assert result == ids
 
 
+class TestClaudeEffort:
+    def test_members_are_strings(self):
+        from agent_foundry.primitives import ClaudeEffort
+
+        for level in ClaudeEffort:
+            assert isinstance(level, str)
+
+    def test_known_members_present(self):
+        from agent_foundry.primitives import ClaudeEffort
+
+        assert ClaudeEffort.LOW == "low"
+        assert ClaudeEffort.MEDIUM == "medium"
+        assert ClaudeEffort.HIGH == "high"
+        assert ClaudeEffort.XHIGH == "xhigh"
+        assert ClaudeEffort.MAX == "max"
+        assert ClaudeEffort.AUTO == "auto"
+
+    def test_member_set_is_locked(self):
+        from agent_foundry.primitives import ClaudeEffort
+
+        assert set(ClaudeEffort) == {
+            ClaudeEffort.LOW,
+            ClaudeEffort.MEDIUM,
+            ClaudeEffort.HIGH,
+            ClaudeEffort.XHIGH,
+            ClaudeEffort.MAX,
+            ClaudeEffort.AUTO,
+        }
+
+
 class TestPublicAPI:
     def test_importable_from_primitives(self):
-        from agent_foundry.primitives import ClaudeModel, list_claude_models
+        from agent_foundry.primitives import ClaudeEffort, ClaudeModel, list_claude_models
 
+        assert ClaudeEffort
         assert ClaudeModel
         assert list_claude_models

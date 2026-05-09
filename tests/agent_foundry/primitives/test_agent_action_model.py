@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from agent_foundry.primitives import ClaudeModel
+from agent_foundry.primitives import ClaudeEffort, ClaudeModel
 from agent_foundry.primitives.models import (
     AgentAction,
     ContainerReusePolicy,
@@ -381,4 +381,65 @@ class TestAgentActionModelField:
                 instructions_provider=_stub_instructions_provider,
                 executor=_stub_executor,
                 reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            )
+
+
+# ======================================================================
+# AgentAction — effort field
+# ======================================================================
+
+
+class TestAgentActionEffortField:
+    """effort is optional; when set it is forwarded to ``claude --effort``."""
+
+    def test_effort_defaults_to_none(self):
+        action = _new_structured_action()
+        assert action.effort is None
+
+    def test_effort_accepts_raw_string(self):
+        action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
+            model="claude-sonnet-4-6",
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            effort="high",
+        )
+        assert action.effort == "high"
+
+    def test_effort_accepts_claude_effort_enum(self):
+        action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
+            model="claude-sonnet-4-6",
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            effort=ClaudeEffort.HIGH,
+        )
+        assert action.effort == "high"
+
+    def test_effort_accepts_explicit_none(self):
+        action = AgentAction[StubInput, StubOutput](
+            name="test-agent",
+            model="claude-sonnet-4-6",
+            prompt_builder=_stub_prompt_builder,
+            instructions_provider=_stub_instructions_provider,
+            executor=_stub_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            effort=None,
+        )
+        assert action.effort is None
+
+    def test_effort_empty_string_raises(self):
+        with pytest.raises(ValidationError):
+            AgentAction[StubInput, StubOutput](
+                name="test-agent",
+                model="claude-sonnet-4-6",
+                prompt_builder=_stub_prompt_builder,
+                instructions_provider=_stub_instructions_provider,
+                executor=_stub_executor,
+                reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+                effort="",
             )
