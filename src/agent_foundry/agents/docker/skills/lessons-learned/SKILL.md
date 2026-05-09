@@ -4,7 +4,7 @@ description: Log lessons from the completed task
 allowed-tools: Read, Write, Edit, Bash
 ---
 
-Review this session and append useful lessons to `/workspace/documents/lessons-learned.md`. A lesson is useful if
+Review this session and append useful lessons to the lessons-learned file at the path specified in `CLAUDE.md`. A lesson is useful if
 
 - it is clear when to use the lesson
 - it is clear how to use the lesson
@@ -26,7 +26,7 @@ Only log observations that would genuinely improve future sessions. Ask: would a
 
 ## Log format
 
-Append to `/workspace/documents/lessons-learned.md`. Create the file if it does not exist. Each entry must include a description of the lesson, when to use the lesson, how to apply the lesson, and the benefit of applying the lesson. Use the following format for each lesson:
+Append to the lessons-learned file at the path specified in `CLAUDE.md`. Create the file if it does not exist. Each entry must include a description of the lesson, when to use the lesson, how to apply the lesson, and the benefit of applying the lesson. Use the following format for each lesson:
 
 ```markdown
 ## YYYY-MM-DD — <lesson title>

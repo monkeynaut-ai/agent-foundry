@@ -28,4 +28,4 @@ Fall back to Grep/Read only when LSP has no server for the file type.
 
 ## lessons-learned skill
 
-When your task completes, invoke the `lessons-learned` skill to log specific, actionable, non-obvious observations to `/workspace/.claude/lessons-learned.md`.
+When your task completes, invoke the `lessons-learned` skill to log specific, actionable, non-obvious observations to `/workspace/documents/lessons-learned.md`.
