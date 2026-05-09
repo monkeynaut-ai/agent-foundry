@@ -366,10 +366,18 @@ class FakeRunTurn:
         prompt: str,
         resume_session_id: str | None,
         schema: dict[str, Any],
+        model: str = "",
+        effort: str | None = None,
         skip_permissions: bool = False,
     ) -> TurnResult:
         self.calls.append(
-            {"prompt": prompt, "resume": resume_session_id, "skip_permissions": skip_permissions}
+            {
+                "prompt": prompt,
+                "resume": resume_session_id,
+                "model": model,
+                "effort": effort,
+                "skip_permissions": skip_permissions,
+            }
         )
         assert self._turn_script, (
             f"FakeRunTurn called beyond scripted turn count (call #{len(self.calls)})"

@@ -59,6 +59,7 @@ it?
 - primitives to simplify defining topology
 - composability
 - strict typing
+- standardize tool calling - correctly interpret tool calls, and argument structure, from any model
 
 <!-- Format: **Belief.** Rationale. -->
 

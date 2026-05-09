@@ -37,6 +37,7 @@ class OutputModel(BaseModel):
 def _make_primitive() -> AgentAction[InputModel, OutputModel]:
     return AgentAction[InputModel, OutputModel](
         name="test-agent",
+        model="claude-sonnet-4-6",
         prompt_builder=lambda s: f"do: {s.task}",
         instructions_provider=lambda _s: "Be precise.",
         executor=lambda **kwargs: OutputModel(answer="x"),
@@ -416,6 +417,7 @@ class TestGetOrCreateGidPropagation:
         )
         primitive = AgentAction[InputModel, OutputModel](
             name="writer",
+            model="claude-sonnet-4-6",
             prompt_builder=lambda s: f"do: {s.task}",
             instructions_provider=lambda _s: "Be precise.",
             executor=lambda **kwargs: OutputModel(answer="x"),
@@ -459,6 +461,7 @@ class TestGetOrCreateSupplementaryGidsEnv:
         )
         primitive = AgentAction[InputModel, OutputModel](
             name="writer",
+            model="claude-sonnet-4-6",
             prompt_builder=lambda s: f"do: {s.task}",
             instructions_provider=lambda _s: "Be precise.",
             executor=lambda **kwargs: OutputModel(answer="x"),
@@ -480,6 +483,7 @@ class TestGetOrCreateSupplementaryGidsEnv:
         )
         primitive = AgentAction[InputModel, OutputModel](
             name="writer",
+            model="claude-sonnet-4-6",
             prompt_builder=lambda s: f"do: {s.task}",
             instructions_provider=lambda _s: "Be precise.",
             executor=lambda **kwargs: OutputModel(answer="x"),

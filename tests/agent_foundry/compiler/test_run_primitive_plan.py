@@ -126,6 +126,7 @@ def patch_registry_manager(monkeypatch, fake_manager: FakeContainerManager):
 def _agent_primitive() -> AgentAction:
     return AgentAction[PlanInput, AgentOut](
         name="planner",
+        model="claude-sonnet-4-6",
         prompt_builder=lambda s: f"do: {s.task}",
         instructions_provider=lambda _s: "instructions",
         executor=run_agent_in_container,

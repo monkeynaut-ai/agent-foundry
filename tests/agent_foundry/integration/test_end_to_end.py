@@ -160,6 +160,7 @@ async def test_end_to_end_real_claude_code(tmp_path: Path) -> None:
 
     agent = AgentAction[StateA, StateB](
         name="researcher",
+        model="claude-sonnet-4-6",
         prompt_builder=_prompt,
         instructions_provider=_instructions,
         executor=run_agent_in_container,

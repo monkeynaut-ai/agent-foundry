@@ -4,7 +4,7 @@ build-backend = "pdm.backend"
 
 [project]
 name = "agent-foundry"
-version = "0.8.2"
+version = "0.8.5"
 description = "Default template for PDM package"
 authors = [
     {name = "Mark Norman", email = "mark@marknorman.com"},
@@ -23,6 +23,7 @@ dependencies = [
     "opentelemetry-api>=1.41.1",
     "opentelemetry-sdk>=1.41.1",
     "opentelemetry-exporter-otlp-proto-http>=1.41.1",
+    "anthropic>=0.100.0",
 ]
 requires-python = "==3.14.*"
 readme = "README.md"

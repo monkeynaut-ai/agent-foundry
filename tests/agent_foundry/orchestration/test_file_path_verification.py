@@ -156,6 +156,7 @@ class _VerifyOutput(BaseModel):
 def _make_verify_primitive() -> AgentAction[_VerifyInput, _VerifyOutput]:
     return AgentAction[_VerifyInput, _VerifyOutput](
         name="reviewer",
+        model="claude-sonnet-4-6",
         prompt_builder=lambda s: f"do: {s.task}",
         instructions_provider=lambda _s: "Be precise.",
         executor=run_agent_in_container,
@@ -195,6 +196,8 @@ def _install_adapter(monkeypatch: pytest.MonkeyPatch, adapter: FakeClaudeCodeAda
         resume_session_id: str | None,
         schema: dict,
         skip_permissions: bool = False,
+        model: str = "",
+        effort: str | None = None,
     ) -> TurnResult:
         envelope = await adapter.run_turn(
             prompt=prompt,
