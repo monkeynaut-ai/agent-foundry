@@ -83,4 +83,6 @@ def test_base_image_ships_lessons_learned_skill() -> None:
         "/home/claude/.claude/skills/lessons-learned/SKILL.md",
     )
     assert "name: lessons-learned" in content
-    assert "lessons-learned.md" in content
+    # The SKILL no longer hardcodes a filename; it defers to CLAUDE.md
+    # for the lessons-learned file path. Assert that contract instead.
+    assert "CLAUDE.md" in content

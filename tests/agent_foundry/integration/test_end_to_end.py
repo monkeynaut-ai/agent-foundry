@@ -245,12 +245,14 @@ async def test_end_to_end_real_claude_code(tmp_path: Path) -> None:
     # --- Per-turn artifacts ----------------------------------------------
 
     agent_name = agent.name  # product-declared diagnostic label
-    turn0 = run_dir / agent_name / "turns" / "0"
-    assert turn0.is_dir(), f"expected turn dir {turn0}"
-    assert (turn0 / "prompt.txt").is_file()
-    assert (turn0 / "envelope.json").is_file()
-    assert (turn0 / "output.json").is_file()
-    collected = turn0 / "collected_files"
+    # Turn directories are 1-indexed: registry.next_turn() increments
+    # before returning, so the first turn is 1, not 0.
+    turn1 = run_dir / agent_name / "turns" / "1"
+    assert turn1.is_dir(), f"expected turn dir {turn1}"
+    assert (turn1 / "prompt.txt").is_file()
+    assert (turn1 / "envelope.json").is_file()
+    assert (turn1 / "output.json").is_file()
+    collected = turn1 / "collected_files"
     assert collected.is_dir()
     # The snapshotted file has the container basename. ``extract_paths``
     # took the declared ``note_path`` field and the executor's
