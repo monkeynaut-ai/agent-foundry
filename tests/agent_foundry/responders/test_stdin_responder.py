@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import threading
 from collections.abc import Iterator
 
 import pytest
@@ -127,20 +128,19 @@ class TestStdinResponderConcurrency:
         # and then reads the second line.
         answers = ["first-answer", "second-answer"]
         answer_iter = iter(answers)
-        # Use an event to let us observe that the second coroutine
-        # waited (via queue depth marker) before the first released.
-        release = asyncio.Event()
+        # threading.Event for release: fake_input runs in a worker thread
+        # so release.wait() must be a real blocking call, not a coroutine.
+        # started_first is an asyncio.Event (task2 awaits it), set from the
+        # thread via call_soon_threadsafe so the event loop hears it safely.
+        release = threading.Event()
         started_first = asyncio.Event()
+        loop = asyncio.get_running_loop()
 
         def fake_input(prompt: str = "") -> str:
             value = next(answer_iter)
             if value == "first-answer":
-                started_first.set()
-                # Block the first call until the second has queued.
-                # This is synchronous, so we rely on the test driver
-                # setting ``release`` before invoking this via executor.
-                # The call is run in a thread by StdinResponder.
-                release.wait()
+                loop.call_soon_threadsafe(started_first.set)
+                release.wait()  # blocks the thread until release.set()
             return value
 
         monkeypatch.setattr("builtins.input", fake_input)
