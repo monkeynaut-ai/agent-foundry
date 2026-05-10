@@ -82,7 +82,7 @@ COPY --chown=claude:claude pyproject.toml pdm.lock /tmp/foundry-prewarm/
 # (configured in [tool.pdm.scripts]) which would fail at build time —
 # there's no git repo here. The hook is for local-dev use only.
 RUN cd /tmp/foundry-prewarm \
-    && pdm install --no-self --no-editable --skip post_install \
+    && pdm install --no-self --no-editable --skip post_install -G :all \
     && rm -rf /tmp/foundry-prewarm
 
 # Eager Claude plugin install: fetch the pyright-lsp plugin into the
