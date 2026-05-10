@@ -63,12 +63,6 @@ class TestRoleInstructions:
         content = _read_entrypoint()
         assert ">> /home/claude/.claude/CLAUDE.md" in content
 
-    def test_given_entrypoint_when_read_then_role_instructions_before_lsp_plugins(self):
-        content = _read_entrypoint()
-        role_pos = content.index("Role-specific instructions")
-        lsp_pos = content.index("LSP plugins")
-        assert role_pos < lsp_pos
-
 
 class TestGosuUserDrop:
     def test_given_entrypoint_when_read_then_interactive_fallback_uses_gosu(self):
@@ -78,7 +72,3 @@ class TestGosuUserDrop:
     def test_given_entrypoint_when_read_then_git_clone_uses_gosu(self):
         content = _read_entrypoint()
         assert "gosu claude git clone" in content
-
-    def test_given_entrypoint_when_read_then_lsp_plugins_use_gosu(self):
-        content = _read_entrypoint()
-        assert "gosu claude claude plugin" in content

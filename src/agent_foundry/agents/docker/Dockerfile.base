@@ -1,7 +1,12 @@
 # Base Claude Code Worker Image
 #
 # Provides: Claude Code CLI, non-root user, gosu, entrypoint, generic
-# agent brief (CLAUDE.md), lessons-learned skill, Pyright LSP.
+# agent brief (CLAUDE.md), lessons-learned skill.
+#
+# This image is language-agnostic: it has no Python, Node, or other
+# language toolchains baked in. Per-language dev images (e.g.
+# Dockerfile.foundry-dev) layer on top and add their own toolchains
+# and LSP plugins via /etc/claude-code/managed-settings.json.
 #
 # Products layer on top to append role-specific CLAUDE-*.md files at
 # runtime via write_file_to_container.
@@ -13,18 +18,19 @@
 # Build:
 #   docker build -t agent-worker:latest -f src/agent_foundry/agents/docker/Dockerfile.base .
 
-FROM python:3.13
+FROM debian:stable-slim
 
-# Install system dependencies (including gosu for root-to-user drop, gh for PR creation)
+# Install system dependencies (including gosu for root-to-user drop, gh for PR creation).
+# debian:stable-slim does not ship curl or ca-certificates, so install them up front.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
          | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
          > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends git curl jq bash-completion gosu gh \
+    && apt-get install -y --no-install-recommends git jq bash-completion gosu gh \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user (uid 1000) for agent execution via gosu
@@ -42,12 +48,6 @@ ENV PATH="/home/claude/.local/bin:${PATH}"
 
 # Verify installation
 RUN claude --version
-
-# Install Pyright language server for LSP code intelligence.
-# The first invocation downloads a bundled Node.js — do it at build time
-# so the container starts with Pyright ready immediately.
-RUN pip install --no-cache-dir pyright \
-    && pyright --version
 
 # Switch back to root for entrypoint setup
 USER root

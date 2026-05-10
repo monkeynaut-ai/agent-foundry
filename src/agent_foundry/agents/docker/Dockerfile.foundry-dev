@@ -1,0 +1,122 @@
+# Agent-Foundry Dev Image
+#
+# Layers on top of agent-worker:latest (language-agnostic base) to add
+# the toolchain that agents need when working *on the agent-foundry
+# repo itself*:
+#   - Python 3.14 (matches pyproject.toml's requires-python)
+#   - pdm (build backend + script runner used by [tool.pdm.scripts])
+#   - pyright (Python type-checker + LSP server, installed via pip)
+#   - pre-warmed pdm wheel cache for the project's locked dependencies,
+#     so the first `pdm install` inside /workspace is fast (no network)
+#   - pyright-lsp Claude plugin enabled via managed settings + pre-fetched
+#     at build so the first agent invocation has LSP ready immediately
+#
+# Build:
+#   docker build -t agent-worker-foundry-dev:latest \
+#     -f src/agent_foundry/agents/docker/Dockerfile.foundry-dev .
+#
+# Use from Archipelago: set the run's base_image_tag to
+# `agent-worker-foundry-dev:latest` when the target codebase is
+# agent-foundry.
+
+FROM agent-worker:latest
+
+# --- root layer: install uv + system libs needed by Pyright's Node runtime
+
+USER root
+
+# Pyright ships a bundled Node binary (via nodeenv) that links against
+# libatomic.so.1 — debian:stable-slim does not include it by default.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libatomic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv is a single static binary that can install Python interpreters and
+# Python tools without needing a pre-existing Python on the system. We
+# place it under /usr/local/bin so both root and claude can invoke it.
+RUN curl -LsSf https://astral.sh/uv/install.sh \
+        | env UV_INSTALL_DIR=/usr/local/bin sh \
+    && uv --version
+
+# Managed settings: language-specific Claude config that does not
+# overwrite the base image's user-level settings. Loaded by Claude Code
+# alongside ~/.claude/settings.json and merged automatically.
+RUN mkdir -p /etc/claude-code
+COPY src/agent_foundry/agents/docker/settings.foundry-dev.managed.json \
+    /etc/claude-code/managed-settings.json
+RUN chmod 644 /etc/claude-code/managed-settings.json
+
+# Pre-create per-user dirs with claude ownership so later tool config
+# writes (e.g. pdm's ~/.config/pdm) don't trip on root-owned parents.
+RUN mkdir -p /home/claude/.config /home/claude/.cache \
+    && chown -R claude:claude /home/claude/.config /home/claude/.cache
+
+# --- claude layer: install Python 3.14, pdm, pyright; pre-warm wheels -----
+
+USER claude
+WORKDIR /home/claude
+ENV PATH="/home/claude/.local/bin:${PATH}"
+
+# Install Python 3.14 via uv (uses python-build-standalone — relocatable,
+# no apt / deadsnakes). Pin it as the default python for this user so
+# `python` and `pip` resolve to 3.14.
+RUN uv python install 3.14 \
+    && uv python pin 3.14
+
+# Install pdm and pyright as user-level Python tools. uv tool install
+# uses pip semantics under the hood (per the "use pip" decision) but
+# isolates each tool in its own venv to avoid dependency conflicts.
+# Resulting binaries land in /home/claude/.local/bin (already on PATH).
+RUN uv tool install pdm \
+    && uv tool install pyright \
+    && pdm --version \
+    && pyright --version
+
+# Pre-warm pdm's wheel cache against the project's lockfile. We copy
+# only the metadata (not the source) so a source-only change doesn't
+# bust this layer. The throwaway venv at /tmp/foundry-prewarm/.venv is
+# deleted; what we keep is the populated pdm cache under ~/.cache/pdm,
+# which the runtime `pdm install` in /workspace will reuse.
+COPY --chown=claude:claude pyproject.toml pdm.lock /tmp/foundry-prewarm/
+# --skip post_install bypasses the project's `pre-commit install` hook
+# (configured in [tool.pdm.scripts]) which would fail at build time —
+# there's no git repo here. The hook is for local-dev use only.
+RUN cd /tmp/foundry-prewarm \
+    && pdm install --no-self --no-editable --skip post_install \
+    && rm -rf /tmp/foundry-prewarm
+
+# Eager Claude plugin install: fetch the pyright-lsp plugin into the
+# image so the first agent invocation has LSP ready without a one-time
+# fetch on first launch. If this step fails (e.g. claude requires auth
+# at install time, which is not present at build time), the managed
+# settings file above ensures Claude still lazy-installs the plugin on
+# first run when auth is available — so we tolerate failure here.
+RUN claude plugin marketplace add anthropics/claude-plugins-official \
+    && claude plugin install pyright-lsp@claude-plugins-official --scope user \
+    || echo "WARN: build-time plugin install failed; will lazy-install on first run"
+
+# --- smoke test: every tool the dev image is expected to expose -----------
+
+# Build fails loudly if any of these are missing or broken.
+RUN set -e \
+    && git --version \
+    && bash --version | head -1 \
+    && gh --version | head -1 \
+    && claude --version \
+    && uv --version \
+    && pdm --version \
+    && pyright --version \
+    && uv python find 3.14 \
+    && uv run --python 3.14 -- python -c 'import sys; assert sys.version_info[:2] == (3, 14), sys.version; print(sys.version)' \
+    && jq --version \
+    && curl --version | head -1
+
+WORKDIR /workspace
+
+# Switch back to root so the inherited ENTRYPOINT runs as root (it
+# performs `chown /workspace`, sets up filesystem lockdown, and drops to
+# the claude user via gosu). Without this, the container starts as
+# claude and the entrypoint's chown fails with EPERM.
+USER root
+
+# Inherit ENTRYPOINT and HEALTHCHECK from agent-worker:latest.

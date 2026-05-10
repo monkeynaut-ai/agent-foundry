@@ -74,12 +74,6 @@ else
   exit 1
 fi
 
-# ── LSP plugins ──
-# Install language server plugins baked into the base image.
-# Additional LSP servers will be added here as they're needed.
-gosu claude claude plugin marketplace add anthropics/claude-plugins-official
-gosu claude claude plugin install pyright-lsp@claude-plugins-official --scope user
-
 # ── Host-driven mode ──
 # When AGENT_HOST_DRIVEN=1 the container finishes setup and idles,
 # waiting for `docker exec` calls from the host to invoke `claude`
