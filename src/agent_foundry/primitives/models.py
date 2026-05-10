@@ -7,6 +7,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from agent_foundry.agents.lifecycle import ContainerConfig
+
 
 class ContainerReusePolicy(StrEnum):
     """Policy for whether and how an AgentAction reuses containers across invocations.
@@ -176,6 +178,7 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     # Container configuration (platform defaults, product may override)
     timeout_seconds: int = Field(default=3600, ge=1)
     skip_permissions: bool = False
+    container_config: ContainerConfig | None = None
 
     # Filesystem access — GID-based group permissions.
     # Lists the supplementary GIDs the agent process should hold when

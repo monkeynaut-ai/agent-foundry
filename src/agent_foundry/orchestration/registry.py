@@ -164,7 +164,7 @@ class AgentContainerRegistry:
                 manager.create_container,
                 self._base_image_tag,
                 self._workspace_volume,
-                None,
+                primitive.container_config,
                 self._extra_env_for(primitive),
             )
             # If configured to inject role instructions, write them before
