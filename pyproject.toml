@@ -53,7 +53,7 @@ distribution = true
 package-dir = "src"
 
 [tool.pdm.scripts]
-post_install.cmd = "pre-commit install"
+post_install.cmd = "pre-commit install --hook-type pre-commit --hook-type pre-push"
 demo.cmd = "python -m agent_foundry.demo.cli"
 demo.env = {PYTHONPATH = "src"}
 docker-base.cmd = "docker build -t agent-worker:latest -f src/agent_foundry/agents/docker/Dockerfile.base ."
