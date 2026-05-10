@@ -27,9 +27,19 @@ _INSPECT_SCRIPT_TEMPLATE = """\
 # ``--entrypoint bash`` bypasses the base image's entrypoint (which
 # requires auth and runs the full setup sequence). We just want a
 # shell on the volume, not a running agent.
+#
+# ``--user claude`` plus ``--group-add`` for the workspace GIDs (typical
+# archipelago convention: 1001 documents, 1002 codebase, 1003 tests)
+# reproduces the perms the agents themselves run with. Without this you
+# land as root and any test or tool you invoke creates root-owned files
+# in the volume, which blocks subsequent agent-user processes.
 set -euo pipefail
 docker run --rm -it \\
   --entrypoint bash \\
+  --user claude \\
+  --group-add 1001 \\
+  --group-add 1002 \\
+  --group-add 1003 \\
   -v "{workspace_volume}:/workspace" \\
   --workdir /workspace \\
   "{base_image_tag}"
