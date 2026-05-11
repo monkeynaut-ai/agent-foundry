@@ -42,7 +42,7 @@ class ContainerConfig(BaseModel):
 
     mem_limit_mb: int = 1024
     cpu_quota: int = 100_000
-    pids_limit: int = 256
+    pids_limit: int = 2048
 
 
 class ExecResult(BaseModel):

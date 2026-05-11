@@ -38,7 +38,7 @@ class TestContainerConfig:
         cfg = ContainerConfig()
         assert cfg.mem_limit_mb == 1024
         assert cfg.cpu_quota == 100_000
-        assert cfg.pids_limit == 256
+        assert cfg.pids_limit == 2048
 
 
 class TestDefaultEnvAllowlist:
