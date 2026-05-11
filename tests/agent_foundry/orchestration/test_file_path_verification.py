@@ -198,6 +198,7 @@ def _install_adapter(monkeypatch: pytest.MonkeyPatch, adapter: FakeClaudeCodeAda
         skip_permissions: bool = False,
         model: str = "",
         effort: str | None = None,
+        cwd: str | None = None,
     ) -> TurnResult:
         envelope = await adapter.run_turn(
             prompt=prompt,

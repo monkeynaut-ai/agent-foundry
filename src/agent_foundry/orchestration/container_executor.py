@@ -105,6 +105,7 @@ async def _run_claude_turn(
     model: str,
     effort: str | None = None,
     skip_permissions: bool = False,
+    cwd: str | None = None,
 ) -> TurnResult:
     """Invoke ``claude`` once inside the live container and return a
     :class:`TurnResult` carrying the parsed envelope dict, captured
@@ -156,7 +157,7 @@ async def _run_claude_turn(
             cmd.append("--dangerously-skip-permissions")
         if resume_session_id:
             cmd.extend(["--resume", resume_session_id])
-        result = live.manager.exec_run(live.handle, cmd, user="root")
+        result = live.manager.exec_run(live.handle, cmd, user="root", workdir=cwd)
         exit_code = result.exit_code
         output = result.output
         if exit_code != 0:
@@ -464,6 +465,7 @@ async def run_agent_in_container(
                 model=primitive.model,
                 effort=primitive.effort,
                 skip_permissions=primitive.skip_permissions,
+                cwd=primitive.cwd,
             )
 
             # Tee the raw stream regardless of outcome so every RunTurn

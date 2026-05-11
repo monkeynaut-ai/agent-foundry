@@ -175,12 +175,16 @@ class ContainerManagerBase(ABC):
         cmd: list[str],
         *,
         user: str = _AGENT_USER,
+        workdir: str | None = None,
     ) -> ExecResult:
         """Run ``cmd`` inside the container as ``user``; return a typed :class:`ExecResult`.
 
         ``cmd`` is a list of args (no shell). The combined stdout +
         stderr blob comes back as ``ExecResult.output`` regardless of
         the underlying transport.
+
+        ``workdir`` sets the working directory for the executed command.
+        When ``None``, the container image's WORKDIR is used.
         """
 
     @abstractmethod
@@ -361,6 +365,7 @@ class ContainerManager(ContainerManagerBase):
         cmd: list[str],
         *,
         user: str = _AGENT_USER,
+        workdir: str | None = None,
     ) -> ExecResult:
         """Run ``cmd`` inside the container as ``user``.
 
@@ -369,8 +374,11 @@ class ContainerManager(ContainerManagerBase):
         container creation time via the ``SUPPLEMENTARY_GIDS`` env var read
         by the entrypoint — not at exec time (the Docker exec API does not
         support ``GroupAdd``).
+
+        ``workdir`` sets the working directory; ``None`` defers to the
+        container image's WORKDIR.
         """
-        exit_code, output = handle._container.exec_run(cmd, demux=False, user=user)
+        exit_code, output = handle._container.exec_run(cmd, demux=False, user=user, workdir=workdir)
         return ExecResult(exit_code=exit_code, output=output)
 
     def read_logs(

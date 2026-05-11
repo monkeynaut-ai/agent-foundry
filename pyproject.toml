@@ -4,7 +4,7 @@ build-backend = "pdm.backend"
 
 [project]
 name = "agent-foundry"
-version = "0.8.7"
+version = "0.8.8"
 description = "Default template for PDM package"
 authors = [
     {name = "Mark Norman", email = "mark@marknorman.com"},
@@ -58,9 +58,9 @@ demo.cmd = "python -m agent_foundry.demo.cli"
 demo.env = {PYTHONPATH = "src"}
 docker-base.cmd = "docker build -t agent-worker:latest -f src/agent_foundry/agents/docker/Dockerfile.base ."
 docker-foundry-dev.cmd = "docker build -t agent-worker-foundry-dev:latest -f src/agent_foundry/agents/docker/Dockerfile.foundry-dev ."
-test-unit.cmd = "pytest tests/ -m 'not integration and not benchmark'"
+test-unit.cmd = "pytest {args:tests/} -m 'not integration and not benchmark'"
 test-unit.env = {PYTHONPATH = "src"}
-test-integration.cmd = "pytest tests/ -m 'integration'"
+test-integration.cmd = "pytest {args:tests/} -m 'integration'"
 test-integration.env = {PYTHONPATH = "src"}
 test-all.cmd = "pytest tests/ -m 'not benchmark'"
 test-all.env = {PYTHONPATH = "src"}

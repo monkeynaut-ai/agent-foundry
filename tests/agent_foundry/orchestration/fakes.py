@@ -124,9 +124,10 @@ class FakeContainerManager(ContainerManagerBase):
         cmd: list[str],
         *,
         user: str = "claude",
+        workdir: str | None = None,
     ) -> ExecResult:
         handle.exec_log.append(" ".join(cmd))
-        self.exec_calls.append({"cmd": cmd, "user": user})
+        self.exec_calls.append({"cmd": cmd, "user": user, "workdir": workdir})
         return self.exec_script.get(tuple(cmd), ExecResult(exit_code=0, output=b""))
 
     def read_logs(
@@ -369,6 +370,7 @@ class FakeRunTurn:
         model: str = "",
         effort: str | None = None,
         skip_permissions: bool = False,
+        cwd: str | None = None,
     ) -> TurnResult:
         self.calls.append(
             {
@@ -377,6 +379,7 @@ class FakeRunTurn:
                 "model": model,
                 "effort": effort,
                 "skip_permissions": skip_permissions,
+                "cwd": cwd,
             }
         )
         assert self._turn_script, (

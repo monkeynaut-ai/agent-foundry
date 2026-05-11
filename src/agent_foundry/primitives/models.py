@@ -202,6 +202,14 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     # rejected — use None to omit the flag.
     effort: str | None = Field(default=None, min_length=1)
 
+    # Working directory — optional. When set, passed as ``workdir`` to the
+    # container exec_run call so claude starts in that directory. Claude Code
+    # auto-loads CLAUDE.md files upward from cwd, so setting this to the
+    # codebase root (e.g. /workspace/codebase) makes the project's CLAUDE.md
+    # available to every agent without an explicit Read. When None, the
+    # container image's WORKDIR is used (/workspace by default).
+    cwd: str | None = None
+
 
 def get_type_args(prim: Primitive) -> tuple[type[BaseModel], type[BaseModel]]:
     """Extract (input_type, output_type) from a parameterized primitive.
