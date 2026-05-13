@@ -61,7 +61,9 @@ ENV PATH="/home/claude/.local/bin:${PATH}"
 # no apt / deadsnakes). Pin it as the default python for this user so
 # `python` and `pip` resolve to 3.14.
 RUN uv python install 3.14 \
-    && uv python pin 3.14
+    && uv python pin 3.14 \
+    && ln -s /home/claude/.local/bin/python3.14 /home/claude/.local/bin/python \
+    && ln -s /home/claude/.local/bin/python3.14 /home/claude/.local/bin/python3
 
 # Install pdm and pyright as user-level Python tools. uv tool install
 # uses pip semantics under the hood (per the "use pip" decision) but
