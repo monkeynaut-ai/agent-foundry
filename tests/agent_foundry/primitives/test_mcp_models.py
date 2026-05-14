@@ -95,3 +95,18 @@ class TestMcpServerUnion:
             {"kind": "streamable_http", "url": "http://localhost:8080/mcp"}
         )
         assert isinstance(result, StreamableHttpMcpServer)
+
+
+class TestPublicAPI:
+    def test_mcp_types_importable_from_primitives(self):
+        from agent_foundry.primitives import (
+            McpServer,
+            McpTransport,
+            StdioMcpServer,
+            StreamableHttpMcpServer,
+        )
+
+        assert McpTransport
+        assert StdioMcpServer
+        assert StreamableHttpMcpServer
+        assert McpServer

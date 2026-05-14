@@ -8,6 +8,12 @@ from agent_foundry.primitives.errors import (
     TypeMismatchError,
     UnregisteredPrimitiveError,
 )
+from agent_foundry.primitives.mcp import (
+    McpServer,
+    McpTransport,
+    StdioMcpServer,
+    StreamableHttpMcpServer,
+)
 from agent_foundry.primitives.models import (
     AgentAction,
     Conditional,
@@ -32,12 +38,16 @@ __all__ = [
     "GateAction",
     "InvalidPromptKeyError",
     "Loop",
+    "McpServer",
+    "McpTransport",
     "Primitive",
     "PrimitiveCompilationError",
     "PrimitivePlan",
     "PrimitiveValidationError",
     "Retry",
     "Sequence",
+    "StdioMcpServer",
+    "StreamableHttpMcpServer",
     "TypeMismatchError",
     "UnregisteredPrimitiveError",
     "list_claude_models",
