@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -22,6 +23,7 @@ from agent_foundry.agents.lifecycle import (
     HealthReport,
     HealthStatus,
 )
+from agent_foundry.agents.mcp_settings import build_mcp_settings
 from agent_foundry.orchestration.env import build_container_env
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 
@@ -32,6 +34,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 ROLE_INSTRUCTIONS_PATH = "/home/claude/role-instructions.md"
+MCP_SETTINGS_PATH = "/home/claude/.claude/settings.local.json"
 
 # Maximum seconds to wait for the container's Docker health check to
 # report ``healthy`` before raising. The base Agent Container image's HEALTHCHECK
@@ -176,6 +179,14 @@ class AgentContainerRegistry:
                     handle,
                     ROLE_INSTRUCTIONS_PATH,
                     instructions,
+                )
+            if primitive.mcp_servers:
+                mcp_settings = build_mcp_settings(primitive.mcp_servers)
+                await asyncio.to_thread(
+                    manager.write_file_to_container,
+                    handle,
+                    MCP_SETTINGS_PATH,
+                    json.dumps(mcp_settings),
                 )
             await asyncio.to_thread(manager.start, handle)
             if self._wait_for_health:
