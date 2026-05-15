@@ -12,7 +12,7 @@ from typing import Any
 from agent_foundry.primitives.mcp import McpServer, McpTransport
 
 
-def build_mcp_settings(servers: dict[str, McpServer]) -> dict[str, Any]:
+def build_mcp_permissions(servers: dict[str, McpServer]) -> dict[str, Any]:
     """Build the permissions patch for settings.json."""
     return {
         "permissions": {"allow": [f"mcp__{name}__*" for name in servers]},

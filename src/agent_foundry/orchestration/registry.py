@@ -23,7 +23,7 @@ from agent_foundry.agents.lifecycle import (
     HealthReport,
     HealthStatus,
 )
-from agent_foundry.agents.mcp_settings import build_claude_json_project_entry, build_mcp_settings
+from agent_foundry.agents.mcp_settings import build_claude_json_project_entry, build_mcp_permissions
 from agent_foundry.orchestration.env import build_container_env
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 
@@ -210,7 +210,7 @@ class AgentContainerRegistry:
                     settings: dict = json.loads(settings_raw) if settings_raw else {}
                 except json.JSONDecodeError:
                     settings = {}
-                mcp_perms = build_mcp_settings(primitive.mcp_servers)
+                mcp_perms = build_mcp_permissions(primitive.mcp_servers)
                 merged_settings = {
                     **settings,
                     "permissions": {
