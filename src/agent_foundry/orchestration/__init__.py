@@ -12,10 +12,7 @@ from agent_foundry.orchestration.lifecycle_writer import (
     LifecycleWriter,
     NoOpLifecycleWriter,
 )
-from agent_foundry.orchestration.runner import (
-    run_primitive_plan,
-    run_primitive_plan_sync,
-)
+from agent_foundry.orchestration.runner import run_primitive_plan
 from agent_foundry.orchestration.summary import render_summary
 
 __all__ = [
@@ -29,5 +26,4 @@ __all__ = [
     "bootstrap_run_artifacts",
     "render_summary",
     "run_primitive_plan",
-    "run_primitive_plan_sync",
 ]
