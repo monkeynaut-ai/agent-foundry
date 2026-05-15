@@ -12,3 +12,8 @@ dist/
 hide/
 .tmp/
 *.db
+
+# Eval harness run artifacts
+evals/runs/
+lab/eval_tests/.artifacts/
+lab/eval_tests/.runs/
