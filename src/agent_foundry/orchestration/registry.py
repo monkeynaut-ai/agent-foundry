@@ -115,7 +115,6 @@ class AgentContainerRegistry:
         docker_client_factory: Callable[[], Any] | None = None,
         manager: ContainerManagerBase | None = None,
         oauth_token: str | None = None,
-        inject_instructions: bool = False,
         health_wait_timeout_seconds: float = _DEFAULT_HEALTH_WAIT_TIMEOUT_SECONDS,
         wait_for_health: bool = False,
     ) -> None:
@@ -124,7 +123,6 @@ class AgentContainerRegistry:
         self._docker_client_factory = docker_client_factory
         self._manager_override = manager
         self._oauth_token = oauth_token
-        self._inject_instructions = inject_instructions
         self._health_wait_timeout_seconds = health_wait_timeout_seconds
         self._wait_for_health = wait_for_health
         self._containers: dict[int, LiveContainer] = {}
@@ -148,10 +146,9 @@ class AgentContainerRegistry:
         Emits an ``agent_container_started`` lifecycle event on first
         creation (not on cache hits). Identity-keyed by ``id(primitive)``.
 
-        If ``instructions`` is provided and this registry is configured to
-        inject instructions, the string is written into the container at
-        creation time. The caller (typically the compiler) is responsible
-        for resolving ``primitive.instructions_provider(input_state)``
+        If ``instructions`` is provided, the string is written into the
+        container at creation time. The caller (typically the compiler) is
+        responsible for resolving ``primitive.instructions_provider(input_state)``
         against the per-invocation input state before calling; the registry
         takes the pre-resolved text.
         """
@@ -174,7 +171,7 @@ class AgentContainerRegistry:
             # If configured to inject role instructions, write them before
             # start so the base-image entrypoint's append block sees them
             # on boot (matches ``create_for_invocation`` semantics).
-            if self._inject_instructions and instructions is not None:
+            if instructions is not None:
                 await asyncio.to_thread(
                     manager.write_file_to_container,
                     handle,
