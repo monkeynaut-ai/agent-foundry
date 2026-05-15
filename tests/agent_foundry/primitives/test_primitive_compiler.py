@@ -20,7 +20,7 @@ from agent_foundry.primitives.models import (
 from agent_foundry.primitives.plan import PrimitivePlan
 
 
-async def run_primitive_plan(plan: PrimitivePlan, state: BaseModel | None = None) -> Any:
+async def compile_and_run(plan: PrimitivePlan, state: BaseModel | None = None) -> Any:
     """Minimal async test runner: compile and ainvoke without the full production pipeline."""
     _, root_out = get_type_args(plan.root)
     graph = _compile_primitive(plan)
@@ -280,22 +280,22 @@ class TestCompileFunctionAction:
         )
         seq = Sequence[InputState, TransformOutput](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, InputState(query="hello"))
+        result = await compile_and_run(plan, InputState(query="hello"))
         assert result.result == "HELLO"
 
     @pytest.mark.asyncio
-    async def test_run_primitive_plan_typed(self):
-        """run_primitive_plan accepts and returns Pydantic models."""
+    async def test_compile_and_run_typed(self):
+        """compile_and_run accepts and returns Pydantic models."""
         action = FunctionAction[InputState, TransformOutput](
             function=lambda s: TransformOutput(result=s.query.upper()),
         )
         plan = PrimitivePlan(root=action)
-        result = await run_primitive_plan(plan, InputState(query="hello"))
+        result = await compile_and_run(plan, InputState(query="hello"))
         assert isinstance(result, TransformOutput)
         assert result.result == "HELLO"
 
     @pytest.mark.asyncio
-    async def test_run_primitive_plan_default_input(self):
+    async def test_compile_and_run_default_input(self):
         class DefaultInput(BaseModel):
             value: str = "default"
 
@@ -307,7 +307,7 @@ class TestCompileFunctionAction:
             function=lambda s: DefaultOutput(value=s.value, result=s.value.upper()),
         )
         plan = PrimitivePlan(root=action)
-        result = await run_primitive_plan(plan)
+        result = await compile_and_run(plan)
         assert isinstance(result, DefaultOutput)
         assert result.result == "DEFAULT"
 
@@ -327,7 +327,7 @@ class TestCompileFunctionAction:
 
         action = FunctionAction[Empty, DateOut](function=get_today)
         plan = PrimitivePlan(root=action)
-        result = await run_primitive_plan(plan)
+        result = await compile_and_run(plan)
         assert isinstance(result, DateOut)
         assert result.today == date(2026, 4, 6)
 
@@ -353,7 +353,7 @@ class TestCompileSequence:
         )
         seq = Sequence[InputState, OutputState](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, InputState(query="hello"))
+        result = await compile_and_run(plan, InputState(query="hello"))
         assert result.result == "processed:HELLO"
 
     @pytest.mark.asyncio
@@ -377,7 +377,7 @@ class TestCompileSequence:
         s3 = FunctionAction[ListState, ListState](function=append_c)
         seq = Sequence[ListState, ListState](steps=[s1, s2, s3])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, ListState(items=[]))
+        result = await compile_and_run(plan, ListState(items=[]))
         assert result.items == ["a", "b", "c"]
 
     @pytest.mark.asyncio
@@ -409,7 +409,7 @@ class TestCompileSequence:
         step2 = FunctionAction[ResultState, SeqOut](function=add_days)
         seq = Sequence[SeqIn, SeqOut](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, SeqIn(offset=3))
+        result = await compile_and_run(plan, SeqIn(offset=3))
         assert result.result == "2026-04-09"
 
     @pytest.mark.asyncio
@@ -437,7 +437,7 @@ class TestCompileSequence:
         )
         seq = Sequence[In, Out](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, In(x="hello"))
+        result = await compile_and_run(plan, In(x="hello"))
         assert result.mid_value == "HELLO"
         assert result.final_value == "done:HELLO"
 
@@ -480,7 +480,7 @@ class TestCompileSequence:
         )
         seq = Sequence[StepIn, SeqOut](steps=[step1, step2, step3])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, StepIn(seed="x"))
+        result = await compile_and_run(plan, StepIn(seed="x"))
         assert result.a == "x_a"
         assert result.b == "x_a_b"
         assert result.c == "x_a_x_a_b_c"
@@ -533,7 +533,7 @@ class TestCompileConditional:
             else_branch=else_,
         )
         plan = PrimitivePlan(root=cond)
-        result = await run_primitive_plan(plan, BranchState(value="start", flag=True))
+        result = await compile_and_run(plan, BranchState(value="start", flag=True))
         assert result.value == "then"
 
     @pytest.mark.asyncio
@@ -550,7 +550,7 @@ class TestCompileConditional:
             else_branch=else_,
         )
         plan = PrimitivePlan(root=cond)
-        result = await run_primitive_plan(plan, BranchState(value="start", flag=False))
+        result = await compile_and_run(plan, BranchState(value="start", flag=False))
         assert result.value == "else"
 
     @pytest.mark.asyncio
@@ -563,7 +563,7 @@ class TestCompileConditional:
             then_branch=then,
         )
         plan = PrimitivePlan(root=cond)
-        result = await run_primitive_plan(plan, BranchState(value="original", flag=False))
+        result = await compile_and_run(plan, BranchState(value="original", flag=False))
         assert result.value == "original"
 
     @pytest.mark.asyncio
@@ -576,7 +576,7 @@ class TestCompileConditional:
             then_branch=then,
         )
         plan = PrimitivePlan(root=cond)
-        result = await run_primitive_plan(plan, BranchState(value="original", flag=True))
+        result = await compile_and_run(plan, BranchState(value="original", flag=True))
         assert result.value == "detoured"
 
     @pytest.mark.asyncio
@@ -616,7 +616,7 @@ class TestCompileConditional:
         )
         seq = Sequence[SeqIn, StrictBranchState](steps=[step1, cond])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, SeqIn(value="start", flag=True))
+        result = await compile_and_run(plan, SeqIn(value="start", flag=True))
         assert result.value == "then"
 
 
@@ -647,7 +647,7 @@ class TestCompileLoop:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        result = await run_primitive_plan(plan, LoopInput(items=["a", "b", "c"], processed=[]))
+        result = await compile_and_run(plan, LoopInput(items=["a", "b", "c"], processed=[]))
         assert result.processed == ["A", "B", "C"]
 
     @pytest.mark.asyncio
@@ -666,7 +666,7 @@ class TestCompileLoop:
             max_iterations=2,
         )
         plan = PrimitivePlan(root=loop)
-        result = await run_primitive_plan(
+        result = await compile_and_run(
             plan, LoopInput(items=["a", "b", "c", "d", "e"], processed=[])
         )
         assert len(result.processed) == 2
@@ -686,7 +686,7 @@ class TestCompileLoop:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        result = await run_primitive_plan(plan, LoopInput(items=[], processed=[]))
+        result = await compile_and_run(plan, LoopInput(items=[], processed=[]))
         assert result.processed == []
 
     @pytest.mark.asyncio
@@ -704,7 +704,7 @@ class TestCompileLoop:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        result = await run_primitive_plan(plan, LoopInput(items=["x"], processed=[]))
+        result = await compile_and_run(plan, LoopInput(items=["x"], processed=[]))
         assert result.processed == ["X"]
 
     @pytest.mark.asyncio
@@ -751,7 +751,7 @@ class TestCompileLoop:
         )
         seq = Sequence[SeqIn, StrictLoopIn](steps=[step1, loop])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, SeqIn(items=["a", "b"]))
+        result = await compile_and_run(plan, SeqIn(items=["a", "b"]))
         assert result.processed == ["A", "B"]
 
 
@@ -777,7 +777,7 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = await run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
         assert result.attempts == 1
         assert result.done is True
 
@@ -796,7 +796,7 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = await run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
         assert result.attempts == 2
         assert result.done is True
 
@@ -812,7 +812,7 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = await run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
         assert result.attempts == 2
         assert result.done is False
 
@@ -827,7 +827,7 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = await run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
         assert result.attempts == 1
         assert result.done is False
 
@@ -864,7 +864,7 @@ class TestCompileRetry:
         )
         seq = Sequence[SeqIn, StrictRetryState](steps=[step1, retry])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, SeqIn(attempts=0, done=False))
+        result = await compile_and_run(plan, SeqIn(attempts=0, done=False))
         assert result.attempts == 1
         assert result.done is True
 
@@ -939,7 +939,7 @@ class TestNestedComposition:
         s3 = FunctionAction[S, S](function=lambda s: S(n=s.n + 100))
         seq = Sequence[S, S](steps=[s1, s2, s3])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, S(n=0))
+        result = await compile_and_run(plan, S(n=0))
         assert result.n == 111
 
     @pytest.mark.asyncio
@@ -966,7 +966,7 @@ class TestNestedComposition:
         body = Sequence[S, S](steps=[step1, step2])
         loop = Loop[S, S](over=lambda s: s.items, item_key="current_item", body=body)
         plan = PrimitivePlan(root=loop)
-        result = await run_primitive_plan(plan, S(items=["a", "b"], processed=[]))
+        result = await compile_and_run(plan, S(items=["a", "b"], processed=[]))
         assert result.processed == ["A", "B"]
 
     @pytest.mark.asyncio
@@ -990,7 +990,7 @@ class TestNestedComposition:
         )
         seq = Sequence[S, S](steps=[retry, check_exhausted])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, S(n=0, done=False))
+        result = await compile_and_run(plan, S(n=0, done=False))
         assert result.n == 2
         assert result.done is True
 
@@ -1011,7 +1011,7 @@ class TestNestedComposition:
         step3 = FunctionAction[S, S](function=lambda s: S(value=s.value + "_done", flag=s.flag))
         seq = Sequence[S, S](steps=[step1, cond, step3])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, S(value="", flag=True))
+        result = await compile_and_run(plan, S(value="", flag=True))
         assert result.value == "step1_then_done"
 
 
@@ -1053,7 +1053,7 @@ class TestStateIsolation:
             else_branch=else_,
         )
         plan = PrimitivePlan(root=cond)
-        result = await run_primitive_plan(plan, CondState(flag=True, value="start"))
+        result = await compile_and_run(plan, CondState(flag=True, value="start"))
         assert result.value == "then"
         assert "branch_temp" not in result.model_dump()
 
@@ -1084,7 +1084,7 @@ class TestStateIsolation:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = await run_primitive_plan(plan, RS(attempts=0, done=False))
+        result = await compile_and_run(plan, RS(attempts=0, done=False))
         assert result.attempts == 1
         assert "debug_info" not in result.model_dump()
 
@@ -1110,7 +1110,7 @@ class TestStateIsolation:
         )
         seq = Sequence[StepIn, StepOut](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, StepIn(value="start"))
+        result = await compile_and_run(plan, StepIn(value="start"))
         assert result.value == "start_a_b"
         assert "temp" not in result.model_dump()
 
@@ -1158,7 +1158,7 @@ class TestStateIsolation:
         )
         seq = Sequence[SeqState, SeqState](steps=[pre, loop, post])
         plan = PrimitivePlan(root=seq)
-        result = await run_primitive_plan(plan, SeqState(items=["a", "b"], results=[]))
+        result = await compile_and_run(plan, SeqState(items=["a", "b"], results=[]))
         assert result.results == ["pre", "A", "B", "post"]
         assert "processing_temp" not in result.model_dump()
 
@@ -1202,7 +1202,7 @@ class TestStateIsolation:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        result = await run_primitive_plan(plan, LoopIO(items=["a", "b", "c"], results=[]))
+        result = await compile_and_run(plan, LoopIO(items=["a", "b", "c"], results=[]))
         assert result.results == ["a", "b", "c"]
         assert "temp" not in result.model_dump()
 
@@ -1244,6 +1244,6 @@ class TestStateIsolation:
         )
         outer_seq = Sequence[Outer, Outer](steps=[loop])
         plan = PrimitivePlan(root=outer_seq)
-        result = await run_primitive_plan(plan, Outer(items=["x", "y"], final=[]))
+        result = await compile_and_run(plan, Outer(items=["x", "y"], final=[]))
         assert result.final == ["X", "Y"]
         assert "inner_temp" not in result.model_dump()
