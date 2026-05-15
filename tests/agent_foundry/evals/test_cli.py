@@ -1,0 +1,167 @@
+"""Tests for ``agent_foundry.evals.cli``."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from agent_foundry.evals.cli import (
+    SuiteLoadError,
+    load_suite,
+    parse_args,
+)
+from agent_foundry.evals.models import EvalSuite
+
+_SUITE_MODULE_TEMPLATE = '''
+"""Minimal eval suite for CLI tests."""
+
+from pydantic import BaseModel
+from pydantic_evals import Case, Dataset
+from pydantic_evals.evaluators import EqualsExpected
+
+from agent_foundry.evals.models import EvalSuite
+from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
+
+
+class _Input(BaseModel):
+    text: str
+
+
+class _Output(BaseModel):
+    result: str
+
+
+def _stub_executor(*, primitive, prompt, instructions, run_ctx):
+    return _Output(result="")
+
+
+_agent = AgentAction[_Input, _Output](
+    name="test_agent",
+    prompt_builder=lambda inp: inp.text,
+    instructions_provider=lambda inp: "do the thing",
+    executor=_stub_executor,
+    reuse_policy=ContainerReusePolicy.REUSE_RESUME,
+    model="claude-sonnet-4-6",
+)
+
+suite = EvalSuite(
+    name="loaded_suite",
+    agent=_agent,
+    dataset=Dataset[_Input, _Output, None](
+        name="ds",
+        cases=[Case(name="c1", inputs=_Input(text="a"), expected_output=_Output(result="A"))],
+        evaluators=[EqualsExpected()],
+    ),
+    invocations_per_case=1,
+)
+'''
+
+
+def test_load_suite_returns_eval_suite(tmp_path: Path) -> None:
+    """load_suite imports the module and returns its 'suite' symbol."""
+    suite_file = tmp_path / "my_suite.py"
+    suite_file.write_text(_SUITE_MODULE_TEMPLATE)
+    suite = load_suite(suite_file)
+    assert isinstance(suite, EvalSuite)
+    assert suite.name == "loaded_suite"
+
+
+def test_load_suite_missing_file_raises(tmp_path: Path) -> None:
+    with pytest.raises(SuiteLoadError) as exc_info:
+        load_suite(tmp_path / "nope.py")
+    assert "not found" in str(exc_info.value).lower()
+
+
+def test_load_suite_missing_suite_symbol_raises(tmp_path: Path) -> None:
+    """Module must export a 'suite' symbol."""
+    no_symbol = tmp_path / "no_symbol.py"
+    no_symbol.write_text("x = 1\n")
+    with pytest.raises(SuiteLoadError) as exc_info:
+        load_suite(no_symbol)
+    assert "suite" in str(exc_info.value).lower()
+
+
+def test_load_suite_wrong_type_raises(tmp_path: Path) -> None:
+    """'suite' must be an EvalSuite instance."""
+    wrong = tmp_path / "wrong.py"
+    wrong.write_text("suite = 'not an EvalSuite'\n")
+    with pytest.raises(SuiteLoadError) as exc_info:
+        load_suite(wrong)
+    assert "evalsuite" in str(exc_info.value).lower()
+
+
+# --- argument parsing ---
+
+
+def test_parse_args_minimal() -> None:
+    args = parse_args(
+        [
+            "evals/agent_a/suite.py",
+            "--artifacts-dir",
+            "/tmp/artifacts",
+            "--workspace-volume",
+            "vol",
+            "--base-image-tag",
+            "agent-worker:latest",
+        ]
+    )
+    assert args.suite_path == Path("evals/agent_a/suite.py")
+    assert args.artifacts_dir == Path("/tmp/artifacts")
+    assert args.workspace_volume == "vol"
+    assert args.base_image_tag == "agent-worker:latest"
+    # Defaults.
+    assert args.out_dir == Path("evals/runs")
+    assert args.max_concurrency == 1
+    assert args.invocations is None
+
+
+def test_parse_args_invocations_override() -> None:
+    args = parse_args(
+        [
+            "evals/agent_a/suite.py",
+            "--artifacts-dir",
+            "/tmp/a",
+            "--workspace-volume",
+            "v",
+            "--base-image-tag",
+            "t",
+            "--invocations",
+            "5",
+        ]
+    )
+    assert args.invocations == 5
+
+
+def test_parse_args_max_concurrency_override() -> None:
+    args = parse_args(
+        [
+            "evals/agent_a/suite.py",
+            "--artifacts-dir",
+            "/tmp/a",
+            "--workspace-volume",
+            "v",
+            "--base-image-tag",
+            "t",
+            "--max-concurrency",
+            "10",
+        ]
+    )
+    assert args.max_concurrency == 10
+
+
+def test_parse_args_out_dir_override() -> None:
+    args = parse_args(
+        [
+            "evals/agent_a/suite.py",
+            "--artifacts-dir",
+            "/tmp/a",
+            "--workspace-volume",
+            "v",
+            "--base-image-tag",
+            "t",
+            "--out-dir",
+            "custom/path",
+        ]
+    )
+    assert args.out_dir == Path("custom/path")

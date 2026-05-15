@@ -23,7 +23,7 @@ repos:
         stages: [pre-commit]
       - id: pytest-all
         name: pytest (unit + integration)
-        entry: pdm run test-all
+        entry: "bash -c 'if docker info > /dev/null 2>&1; then pdm run test-all; else echo \"WARNING: Docker not available — skipping integration tests. Run the full suite before merging.\" >&2; pdm run test-unit; fi'"
         language: system
         pass_filenames: false
         always_run: true
