@@ -168,11 +168,6 @@ async def run_primitive_plan(
     lifecycle = JsonlLifecycleWriter(run_id=resolved_run_id, path=run_dir / "lifecycle.jsonl")
 
     oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
-    # Wait for container health only when we have a real OAuth token — unit
-    # tests that wire a fake driver skip this and keep a minimal registry
-    # shape. The base image declares a HEALTHCHECK that polls for
-    # ``/tmp/.container-ready``; the entrypoint touches that marker after
-    # all setup completes.
     registry = AgentContainerRegistry(
         workspace_volume=workspace_volume,
         base_image_tag=base_image_tag,

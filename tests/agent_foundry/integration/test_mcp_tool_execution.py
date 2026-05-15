@@ -74,7 +74,7 @@ class _FailResponder(Responder):
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_agent_calls_mcp_tool_and_returns_result(tmp_path: Path) -> None:
+async def test_agent_calls_stdio_mcp_tool_and_returns_result(tmp_path: Path) -> None:
     """MCP server declared on AgentAction is loaded by Claude Code and the
     agent can call its tools, with results surfaced in structured output."""
 
