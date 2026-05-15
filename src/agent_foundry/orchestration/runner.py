@@ -177,7 +177,6 @@ async def run_primitive_plan(
         workspace_volume=workspace_volume,
         base_image_tag=base_image_tag,
         oauth_token=oauth_token,
-        wait_for_health=oauth_token is not None,
     )
     cancel = asyncio.Event()
 

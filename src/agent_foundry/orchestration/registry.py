@@ -116,7 +116,6 @@ class AgentContainerRegistry:
         manager: ContainerManagerBase | None = None,
         oauth_token: str | None = None,
         health_wait_timeout_seconds: float = _DEFAULT_HEALTH_WAIT_TIMEOUT_SECONDS,
-        wait_for_health: bool = False,
     ) -> None:
         self._workspace_volume = workspace_volume
         self._base_image_tag = base_image_tag
@@ -124,7 +123,6 @@ class AgentContainerRegistry:
         self._manager_override = manager
         self._oauth_token = oauth_token
         self._health_wait_timeout_seconds = health_wait_timeout_seconds
-        self._wait_for_health = wait_for_health
         self._containers: dict[int, LiveContainer] = {}
         self._lock = asyncio.Lock()
         self._shut_down = False
@@ -225,8 +223,7 @@ class AgentContainerRegistry:
                     json.dumps(merged_settings),
                 )
             await asyncio.to_thread(manager.start, handle)
-            if self._wait_for_health:
-                await self._wait_until_healthy(manager, handle)
+            await self._wait_until_healthy(manager, handle)
             live = LiveContainer(
                 handle=handle,
                 manager=manager,

@@ -251,6 +251,10 @@ class FakeDockerContainer:
     def reload(self) -> None:  # no-op; status already set by start()
         return None
 
+    @property
+    def attrs(self) -> dict:
+        return {"State": {"Status": self.status}}
+
     def stop(self, timeout: int = 10) -> None:
         self.started = False
         self.status = "stopped"

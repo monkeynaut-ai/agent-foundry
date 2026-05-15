@@ -286,7 +286,6 @@ async def test_wait_for_health_polls_manager_health_status_when_enabled(
         workspace_volume="vol",
         base_image_tag="img",
         manager=fake_mgr,
-        wait_for_health=True,
     )
     primitive = _make_primitive()
     await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
@@ -303,7 +302,6 @@ async def test_wait_for_health_returns_when_status_healthy(
         workspace_volume="vol",
         base_image_tag="img",
         manager=fake_mgr,
-        wait_for_health=True,
     )
     primitive = _make_primitive()
     # FakeContainerManager defaults to HEALTHY → loop exits on first poll.
@@ -321,7 +319,6 @@ async def test_wait_for_health_raises_on_unhealthy_report(
         workspace_volume="vol",
         base_image_tag="img",
         manager=fake_mgr,
-        wait_for_health=True,
     )
     primitive = _make_primitive()
     # Pre-script the next handle to come back UNHEALTHY. The handle's
@@ -376,7 +373,6 @@ async def test_wait_for_health_treats_health_none_as_ready(
         workspace_volume="vol",
         base_image_tag="img",
         manager=fake_mgr,
-        wait_for_health=True,
     )
     primitive = _make_primitive()
     fake_mgr.health_script["fake-1"] = HealthReport(status=HealthStatus.NONE)
