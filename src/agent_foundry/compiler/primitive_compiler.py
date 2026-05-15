@@ -212,7 +212,7 @@ def _compile_function_action(
             )
         return result.model_dump()
 
-    graph.add_node(node_id, node_fn)
+    graph.add_node(node_id, node_fn)  # type: ignore[arg-type]
     return (node_id, node_id)
 
 
@@ -264,7 +264,7 @@ def _compile_sequence(
 
     async def seq_node(state: dict[str, Any]) -> dict[str, Any]:
         scoped_input = _scope_in(state, seq_in)
-        result = await compiled_sub.ainvoke(scoped_input)
+        result = await compiled_sub.ainvoke(scoped_input)  # type: ignore[arg-type]
         return _scope_out(result, seq_out)
 
     graph.add_node(node_id, RunnableCallable(None, seq_node, name=node_id, trace=False))
@@ -340,7 +340,7 @@ def _compile_conditional(
     node_id = f"{prefix}_cond"
 
     async def cond_node(state: dict[str, Any]) -> dict[str, Any]:
-        result = await compiled_sub.ainvoke(dict(state))
+        result = await compiled_sub.ainvoke(dict(state))  # type: ignore[arg-type]
         return _scope_out(result, cond_out)
 
     graph.add_node(node_id, RunnableCallable(None, cond_node, name=node_id, trace=False))
@@ -390,7 +390,7 @@ def _compile_loop(
                 break
             # Inject item, then pass full accumulated state to body
             current_state[item_key] = item
-            result = await compiled_body.ainvoke(dict(current_state))
+            result = await compiled_body.ainvoke(dict(current_state))  # type: ignore[arg-type]
             # Merge body output back into accumulated state
             updates = _scope_out(result, body_out)
             current_state.update(updates)
@@ -435,7 +435,7 @@ def _compile_retry(
     async def retry_node(state: dict[str, Any]) -> dict[str, Any]:
         current_state = dict(state)
         for _ in range(max_attempts):
-            result = await compiled_body.ainvoke(dict(current_state))
+            result = await compiled_body.ainvoke(dict(current_state))  # type: ignore[arg-type]
             current_state.update(_scope_out(result, body_out))
             model = _validate_scoped_input(current_state, retry_in, node_id)
             if until_fn(model):
@@ -460,7 +460,7 @@ def _compile_gate_action(
     def gate_node(state: dict[str, Any]) -> dict[str, Any]:
         return state  # interrupt_before pauses BEFORE this node
 
-    graph.add_node(gate_id, gate_node)
+    graph.add_node(gate_id, gate_node)  # type: ignore[arg-type]
     gate_ids.append(gate_id)
     return (gate_id, gate_id)
 
@@ -566,7 +566,7 @@ def _compile_agent_action(
                 handle.set_output(typed)
                 return typed.model_dump()
 
-        graph.add_node(node_id, node_fn_sync)
+        graph.add_node(node_id, node_fn_sync)  # type: ignore[arg-type]
 
     return (node_id, node_id)
 
