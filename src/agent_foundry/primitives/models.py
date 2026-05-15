@@ -8,6 +8,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agent_foundry.agents.lifecycle import ContainerConfig
+from agent_foundry.primitives.mcp import McpServer
 
 
 class ContainerReusePolicy(StrEnum):
@@ -209,6 +210,12 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     # available to every agent without an explicit Read. When None, the
     # container image's WORKDIR is used (/workspace by default).
     cwd: str | None = None
+
+    # MCP servers — optional. Maps server name to MCP server configuration.
+    # Empty dict (the default) means no MCP tool access (safe by default).
+    # The dict key is the server name Claude Code uses in tool calls:
+    # ``mcp__<server_name>__<tool_name>``.
+    mcp_servers: dict[str, McpServer] = Field(default_factory=dict)
 
 
 def get_type_args(prim: Primitive) -> tuple[type[BaseModel], type[BaseModel]]:

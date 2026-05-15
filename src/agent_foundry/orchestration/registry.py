@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -22,6 +23,7 @@ from agent_foundry.agents.lifecycle import (
     HealthReport,
     HealthStatus,
 )
+from agent_foundry.agents.mcp_settings import build_claude_json_project_entry, build_mcp_permissions
 from agent_foundry.orchestration.env import build_container_env
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 
@@ -32,6 +34,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 ROLE_INSTRUCTIONS_PATH = "/home/claude/role-instructions.md"
+MCP_SETTINGS_PATH = "/home/claude/.claude/settings.json"
+CLAUDE_CONFIG_PATH = "/home/claude/.claude.json"
 
 # Maximum seconds to wait for the container's Docker health check to
 # report ``healthy`` before raising. The base Agent Container image's HEALTHCHECK
@@ -111,18 +115,14 @@ class AgentContainerRegistry:
         docker_client_factory: Callable[[], Any] | None = None,
         manager: ContainerManagerBase | None = None,
         oauth_token: str | None = None,
-        inject_instructions: bool = False,
         health_wait_timeout_seconds: float = _DEFAULT_HEALTH_WAIT_TIMEOUT_SECONDS,
-        wait_for_health: bool = False,
     ) -> None:
         self._workspace_volume = workspace_volume
         self._base_image_tag = base_image_tag
         self._docker_client_factory = docker_client_factory
         self._manager_override = manager
         self._oauth_token = oauth_token
-        self._inject_instructions = inject_instructions
         self._health_wait_timeout_seconds = health_wait_timeout_seconds
-        self._wait_for_health = wait_for_health
         self._containers: dict[int, LiveContainer] = {}
         self._lock = asyncio.Lock()
         self._shut_down = False
@@ -144,10 +144,9 @@ class AgentContainerRegistry:
         Emits an ``agent_container_started`` lifecycle event on first
         creation (not on cache hits). Identity-keyed by ``id(primitive)``.
 
-        If ``instructions`` is provided and this registry is configured to
-        inject instructions, the string is written into the container at
-        creation time. The caller (typically the compiler) is responsible
-        for resolving ``primitive.instructions_provider(input_state)``
+        If ``instructions`` is provided, the string is written into the
+        container at creation time. The caller (typically the compiler) is
+        responsible for resolving ``primitive.instructions_provider(input_state)``
         against the per-invocation input state before calling; the registry
         takes the pre-resolved text.
         """
@@ -170,16 +169,61 @@ class AgentContainerRegistry:
             # If configured to inject role instructions, write them before
             # start so the base-image entrypoint's append block sees them
             # on boot (matches ``create_for_invocation`` semantics).
-            if self._inject_instructions and instructions is not None:
+            if instructions is not None:
                 await asyncio.to_thread(
                     manager.write_file_to_container,
                     handle,
                     ROLE_INSTRUCTIONS_PATH,
                     instructions,
                 )
+            if primitive.mcp_servers:
+                cwd = getattr(primitive, "cwd", None) or "/workspace"
+                # Write MCP server definitions to .claude.json under projects[cwd].
+                claude_json_raw = await asyncio.to_thread(
+                    manager.read_file_from_container, handle, CLAUDE_CONFIG_PATH
+                )
+                try:
+                    claude_json: dict = json.loads(claude_json_raw) if claude_json_raw else {}
+                except json.JSONDecodeError:
+                    claude_json = {}
+                projects = claude_json.setdefault("projects", {})
+                existing_project: dict = projects.get(cwd, {})
+                project_entry = build_claude_json_project_entry(primitive.mcp_servers)
+                merged_project = {**existing_project, **project_entry}
+                projects[cwd] = merged_project
+                await asyncio.to_thread(
+                    manager.write_file_to_container,
+                    handle,
+                    CLAUDE_CONFIG_PATH,
+                    json.dumps(claude_json),
+                )
+                # Write tool permissions to settings.json.
+                settings_raw = await asyncio.to_thread(
+                    manager.read_file_from_container, handle, MCP_SETTINGS_PATH
+                )
+                try:
+                    settings: dict = json.loads(settings_raw) if settings_raw else {}
+                except json.JSONDecodeError:
+                    settings = {}
+                mcp_perms = build_mcp_permissions(primitive.mcp_servers)
+                merged_settings = {
+                    **settings,
+                    "permissions": {
+                        **settings.get("permissions", {}),
+                        "allow": (
+                            settings.get("permissions", {}).get("allow", [])
+                            + mcp_perms["permissions"]["allow"]
+                        ),
+                    },
+                }
+                await asyncio.to_thread(
+                    manager.write_file_to_container,
+                    handle,
+                    MCP_SETTINGS_PATH,
+                    json.dumps(merged_settings),
+                )
             await asyncio.to_thread(manager.start, handle)
-            if self._wait_for_health:
-                await self._wait_until_healthy(manager, handle)
+            await self._wait_until_healthy(manager, handle)
             live = LiveContainer(
                 handle=handle,
                 manager=manager,

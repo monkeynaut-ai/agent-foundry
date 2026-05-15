@@ -17,3 +17,6 @@ hide/
 evals/runs/
 lab/eval_tests/.artifacts/
 lab/eval_tests/.runs/
+
+lab/*/runs/
+lab/*/tmp/

@@ -5,8 +5,14 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel, ValidationError
 
+from agent_foundry.primitives import (
+    AgentAction,
+    StdioMcpServer,
+    StreamableHttpMcpServer,
+)
 from agent_foundry.primitives.models import (
     Conditional,
+    ContainerReusePolicy,
     FunctionAction,
     GateAction,
     Loop,
@@ -443,8 +449,6 @@ class TestPublicAPI:
         assert PrimitivePlan is not None
 
     def test_agent_action_importable_from_package(self):
-        from agent_foundry.primitives import AgentAction
-
         assert AgentAction is not None
 
     def test_container_reuse_policy_importable_from_package(self):
@@ -460,3 +464,95 @@ class TestPublicAPI:
         assert not hasattr(primitives, "FileCollectionChannel")
         assert not hasattr(primitives, "ResponseChannel")
         assert not hasattr(primitives, "ResponseChannelKind")
+
+
+# -- stub helpers for AgentAction mcp_servers tests --
+
+
+class AgentMcpInput(BaseModel):
+    task: str
+
+
+class AgentMcpOutput(BaseModel):
+    result: str
+
+
+def _mcp_prompt_builder(state: AgentMcpInput) -> str:
+    return f"task: {state.task}"
+
+
+def _mcp_instructions_provider(_state: object) -> str:
+    return "# Agent instructions\n\nDo the task."
+
+
+def _mcp_executor(*, primitive, prompt) -> AgentMcpOutput:
+    return AgentMcpOutput(result="done")
+
+
+# ======================================================================
+# AgentAction — mcp_servers field
+# ======================================================================
+
+
+class TestAgentActionMcpServers:
+    """AgentAction.mcp_servers declares which MCP servers the agent can access."""
+
+    def test_agent_action_mcp_servers_defaults_to_empty_dict(self):
+        action = AgentAction[AgentMcpInput, AgentMcpOutput](
+            name="test-agent",
+            model="claude-sonnet-4-6",
+            prompt_builder=_mcp_prompt_builder,
+            instructions_provider=_mcp_instructions_provider,
+            executor=_mcp_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+        )
+        assert action.mcp_servers == {}
+
+    def test_agent_action_accepts_stdio_mcp_servers(self):
+        action = AgentAction[AgentMcpInput, AgentMcpOutput](
+            name="test-agent",
+            model="claude-sonnet-4-6",
+            prompt_builder=_mcp_prompt_builder,
+            instructions_provider=_mcp_instructions_provider,
+            executor=_mcp_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            mcp_servers={"fs": StdioMcpServer(command="npx", args=["-y", "mcp-fs"])},
+        )
+        assert action.mcp_servers == {"fs": StdioMcpServer(command="npx", args=["-y", "mcp-fs"])}
+
+    def test_agent_action_accepts_http_mcp_servers(self):
+        action = AgentAction[AgentMcpInput, AgentMcpOutput](
+            name="test-agent",
+            model="claude-sonnet-4-6",
+            prompt_builder=_mcp_prompt_builder,
+            instructions_provider=_mcp_instructions_provider,
+            executor=_mcp_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            mcp_servers={
+                "svc": StreamableHttpMcpServer(
+                    url="http://localhost:9000/mcp",
+                    headers={"Authorization": "Bearer tok"},
+                )
+            },
+        )
+        assert action.mcp_servers == {
+            "svc": StreamableHttpMcpServer(
+                url="http://localhost:9000/mcp",
+                headers={"Authorization": "Bearer tok"},
+            )
+        }
+
+    def test_agent_action_accepts_mixed_mcp_servers(self):
+        stdio_server = StdioMcpServer(command="npx", args=["-y", "mcp-fs"])
+        http_server = StreamableHttpMcpServer(url="http://localhost:9000/mcp")
+        action = AgentAction[AgentMcpInput, AgentMcpOutput](
+            name="test-agent",
+            model="claude-sonnet-4-6",
+            prompt_builder=_mcp_prompt_builder,
+            instructions_provider=_mcp_instructions_provider,
+            executor=_mcp_executor,
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            mcp_servers={"fs": stdio_server, "svc": http_server},
+        )
+        assert isinstance(action.mcp_servers["fs"], StdioMcpServer)
+        assert isinstance(action.mcp_servers["svc"], StreamableHttpMcpServer)

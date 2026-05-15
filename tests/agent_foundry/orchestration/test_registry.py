@@ -10,7 +10,9 @@ Covers the full public contract:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import BaseModel
@@ -20,7 +22,12 @@ from agent_foundry.orchestration.lifecycle_writer import (
     JsonlLifecycleWriter,
     LifecycleWriter,
 )
-from agent_foundry.orchestration.registry import AgentContainerRegistry
+from agent_foundry.orchestration.registry import (
+    CLAUDE_CONFIG_PATH,
+    MCP_SETTINGS_PATH,
+    AgentContainerRegistry,
+)
+from agent_foundry.primitives import StdioMcpServer
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
 from .fakes import FakeContainerManager, FakeDockerClient
@@ -236,7 +243,6 @@ async def test_get_or_create_emits_agent_container_started(
     await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
     # Flush: close the writer through its public API — but the fixture
     # closes on teardown, so read via a second handle mid-test.
-    import json
 
     lines = (tmp_path / "lifecycle.jsonl").read_text().splitlines()
     records = [json.loads(line) for line in lines]
@@ -255,8 +261,6 @@ async def test_get_or_create_emits_event_only_on_first_creation(
     primitive = _make_primitive()
     await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
     await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
-
-    import json
 
     lines = (tmp_path / "lifecycle.jsonl").read_text().splitlines()
     started = [
@@ -282,7 +286,6 @@ async def test_wait_for_health_polls_manager_health_status_when_enabled(
         workspace_volume="vol",
         base_image_tag="img",
         manager=fake_mgr,
-        wait_for_health=True,
     )
     primitive = _make_primitive()
     await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
@@ -299,7 +302,6 @@ async def test_wait_for_health_returns_when_status_healthy(
         workspace_volume="vol",
         base_image_tag="img",
         manager=fake_mgr,
-        wait_for_health=True,
     )
     primitive = _make_primitive()
     # FakeContainerManager defaults to HEALTHY → loop exits on first poll.
@@ -317,7 +319,6 @@ async def test_wait_for_health_raises_on_unhealthy_report(
         workspace_volume="vol",
         base_image_tag="img",
         manager=fake_mgr,
-        wait_for_health=True,
     )
     primitive = _make_primitive()
     # Pre-script the next handle to come back UNHEALTHY. The handle's
@@ -372,7 +373,6 @@ async def test_wait_for_health_treats_health_none_as_ready(
         workspace_volume="vol",
         base_image_tag="img",
         manager=fake_mgr,
-        wait_for_health=True,
     )
     primitive = _make_primitive()
     fake_mgr.health_script["fake-1"] = HealthReport(status=HealthStatus.NONE)
@@ -506,3 +506,127 @@ class TestGetOrCreateSupplementaryGidsEnv:
         primitive = _make_primitive()
         await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="reader")
         assert "SUPPLEMENTARY_GIDS" not in fake_mgr.handles[0].env
+
+
+def _make_primitive_with_mcp() -> AgentAction[InputModel, OutputModel]:
+    return AgentAction[InputModel, OutputModel](
+        name="mcp-agent",
+        model="claude-sonnet-4-6",
+        prompt_builder=lambda s: f"do: {s.task}",
+        instructions_provider=lambda _s: "Use MCP.",
+        executor=lambda **kwargs: OutputModel(answer="x"),
+        reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+        mcp_servers={"fs": StdioMcpServer(command="npx", args=["-y", "mcp-fs"])},
+    )
+
+
+class OrderCaptureFakeManager(FakeContainerManager):
+    """FakeContainerManager subclass that records write_file_to_container and start call order."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.call_log: list[str] = []
+
+    def write_file_to_container(self, handle: Any, path: str, content: str) -> None:
+        self.call_log.append(f"write:{path}")
+        super().write_file_to_container(handle, path, content)
+
+    def start(self, handle: Any) -> None:
+        self.call_log.append("start")
+        super().start(handle)
+
+
+class TestMcpSettingsInjection:
+    @pytest.mark.asyncio
+    async def test_mcp_servers_written_to_claude_json(self, writer: LifecycleWriter) -> None:
+        fake_mgr = FakeContainerManager()
+        registry = AgentContainerRegistry(
+            workspace_volume="vol",
+            base_image_tag="img",
+            manager=fake_mgr,
+        )
+        primitive = _make_primitive_with_mcp()
+        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
+        assert CLAUDE_CONFIG_PATH in fake_mgr.handles[0].files
+        claude_json = json.loads(fake_mgr.handles[0].files[CLAUDE_CONFIG_PATH])
+        servers = claude_json["projects"]["/workspace"]["mcpServers"]
+        assert "fs" in servers
+
+    @pytest.mark.asyncio
+    async def test_permissions_written_to_settings_json(self, writer: LifecycleWriter) -> None:
+        fake_mgr = FakeContainerManager()
+        registry = AgentContainerRegistry(
+            workspace_volume="vol",
+            base_image_tag="img",
+            manager=fake_mgr,
+        )
+        primitive = _make_primitive_with_mcp()
+        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
+        assert MCP_SETTINGS_PATH in fake_mgr.handles[0].files
+        settings = json.loads(fake_mgr.handles[0].files[MCP_SETTINGS_PATH])
+        assert "mcp__fs__*" in settings["permissions"]["allow"]
+
+    @pytest.mark.asyncio
+    async def test_mcp_settings_not_written_when_no_servers(self, writer: LifecycleWriter) -> None:
+        fake_mgr = FakeContainerManager()
+        registry = AgentContainerRegistry(
+            workspace_volume="vol",
+            base_image_tag="img",
+            manager=fake_mgr,
+        )
+        primitive = _make_primitive()
+        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="test-agent")
+        assert CLAUDE_CONFIG_PATH not in fake_mgr.handles[0].files
+        assert MCP_SETTINGS_PATH not in fake_mgr.handles[0].files
+
+    @pytest.mark.asyncio
+    async def test_claude_json_server_entry_format(self, writer: LifecycleWriter) -> None:
+        fake_mgr = FakeContainerManager()
+        registry = AgentContainerRegistry(
+            workspace_volume="vol",
+            base_image_tag="img",
+            manager=fake_mgr,
+        )
+        primitive = AgentAction[InputModel, OutputModel](
+            name="mcp-agent",
+            model="claude-sonnet-4-6",
+            prompt_builder=lambda s: f"do: {s.task}",
+            instructions_provider=lambda _s: "Use MCP.",
+            executor=lambda **kwargs: OutputModel(answer="x"),
+            reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+            mcp_servers={
+                "fs": StdioMcpServer(
+                    command="npx",
+                    args=["-y", "mcp-fs"],
+                    env={"HOME": "/tmp"},
+                )
+            },
+        )
+        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
+        claude_json = json.loads(fake_mgr.handles[0].files[CLAUDE_CONFIG_PATH])
+        server = claude_json["projects"]["/workspace"]["mcpServers"]["fs"]
+        assert server == {
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "mcp-fs"],
+            "env": {"HOME": "/tmp"},
+        }
+
+    @pytest.mark.asyncio
+    async def test_mcp_files_written_before_container_start(self, writer: LifecycleWriter) -> None:
+        tracking_mgr = OrderCaptureFakeManager()
+        registry = AgentContainerRegistry(
+            workspace_volume="vol",
+            base_image_tag="img",
+            manager=tracking_mgr,
+        )
+        primitive = _make_primitive_with_mcp()
+        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
+        claude_json_key = f"write:{CLAUDE_CONFIG_PATH}"
+        settings_key = f"write:{MCP_SETTINGS_PATH}"
+        assert claude_json_key in tracking_mgr.call_log
+        assert settings_key in tracking_mgr.call_log
+        assert "start" in tracking_mgr.call_log
+        start_idx = tracking_mgr.call_log.index("start")
+        assert tracking_mgr.call_log.index(claude_json_key) < start_idx
+        assert tracking_mgr.call_log.index(settings_key) < start_idx
