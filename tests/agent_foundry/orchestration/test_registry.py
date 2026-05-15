@@ -23,6 +23,7 @@ from agent_foundry.orchestration.lifecycle_writer import (
     LifecycleWriter,
 )
 from agent_foundry.orchestration.registry import (
+    CLAUDE_CONFIG_PATH,
     MCP_SETTINGS_PATH,
     AgentContainerRegistry,
 )
@@ -541,9 +542,22 @@ class OrderCaptureFakeManager(FakeContainerManager):
 
 class TestMcpSettingsInjection:
     @pytest.mark.asyncio
-    async def test_mcp_settings_written_when_servers_configured(
-        self, writer: LifecycleWriter
-    ) -> None:
+    async def test_mcp_servers_written_to_claude_json(self, writer: LifecycleWriter) -> None:
+        fake_mgr = FakeContainerManager()
+        registry = AgentContainerRegistry(
+            workspace_volume="vol",
+            base_image_tag="img",
+            manager=fake_mgr,
+        )
+        primitive = _make_primitive_with_mcp()
+        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
+        assert CLAUDE_CONFIG_PATH in fake_mgr.handles[0].files
+        claude_json = json.loads(fake_mgr.handles[0].files[CLAUDE_CONFIG_PATH])
+        servers = claude_json["projects"]["/workspace"]["mcpServers"]
+        assert "fs" in servers
+
+    @pytest.mark.asyncio
+    async def test_permissions_written_to_settings_json(self, writer: LifecycleWriter) -> None:
         fake_mgr = FakeContainerManager()
         registry = AgentContainerRegistry(
             workspace_volume="vol",
@@ -553,9 +567,8 @@ class TestMcpSettingsInjection:
         primitive = _make_primitive_with_mcp()
         await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
         assert MCP_SETTINGS_PATH in fake_mgr.handles[0].files
-        written = json.loads(fake_mgr.handles[0].files[MCP_SETTINGS_PATH])
-        assert "mcpServers" in written
-        assert "fs" in written["mcpServers"]
+        settings = json.loads(fake_mgr.handles[0].files[MCP_SETTINGS_PATH])
+        assert "mcp__fs__*" in settings["permissions"]["allow"]
 
     @pytest.mark.asyncio
     async def test_mcp_settings_not_written_when_no_servers(self, writer: LifecycleWriter) -> None:
@@ -567,12 +580,11 @@ class TestMcpSettingsInjection:
         )
         primitive = _make_primitive()
         await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="test-agent")
+        assert CLAUDE_CONFIG_PATH not in fake_mgr.handles[0].files
         assert MCP_SETTINGS_PATH not in fake_mgr.handles[0].files
 
     @pytest.mark.asyncio
-    async def test_mcp_settings_content_matches_expected_format(
-        self, writer: LifecycleWriter
-    ) -> None:
+    async def test_claude_json_server_entry_format(self, writer: LifecycleWriter) -> None:
         fake_mgr = FakeContainerManager()
         registry = AgentContainerRegistry(
             workspace_volume="vol",
@@ -595,22 +607,17 @@ class TestMcpSettingsInjection:
             },
         )
         await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
-        written = json.loads(fake_mgr.handles[0].files[MCP_SETTINGS_PATH])
-        assert written == {
-            "mcpServers": {
-                "fs": {
-                    "command": "npx",
-                    "args": ["-y", "mcp-fs"],
-                    "env": {"HOME": "/tmp"},
-                }
-            },
-            "permissions": {"allow": ["mcp__fs__*"]},
+        claude_json = json.loads(fake_mgr.handles[0].files[CLAUDE_CONFIG_PATH])
+        server = claude_json["projects"]["/workspace"]["mcpServers"]["fs"]
+        assert server == {
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "mcp-fs"],
+            "env": {"HOME": "/tmp"},
         }
 
     @pytest.mark.asyncio
-    async def test_mcp_settings_written_before_container_start(
-        self, writer: LifecycleWriter
-    ) -> None:
+    async def test_mcp_files_written_before_container_start(self, writer: LifecycleWriter) -> None:
         tracking_mgr = OrderCaptureFakeManager()
         registry = AgentContainerRegistry(
             workspace_volume="vol",
@@ -619,14 +626,11 @@ class TestMcpSettingsInjection:
         )
         primitive = _make_primitive_with_mcp()
         await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
-        write_key = f"write:{MCP_SETTINGS_PATH}"
-        assert write_key in tracking_mgr.call_log, (
-            f"Expected {write_key!r} in call_log but got {tracking_mgr.call_log}"
-        )
+        claude_json_key = f"write:{CLAUDE_CONFIG_PATH}"
+        settings_key = f"write:{MCP_SETTINGS_PATH}"
+        assert claude_json_key in tracking_mgr.call_log
+        assert settings_key in tracking_mgr.call_log
         assert "start" in tracking_mgr.call_log
-        write_idx = tracking_mgr.call_log.index(write_key)
         start_idx = tracking_mgr.call_log.index("start")
-        assert write_idx < start_idx, (
-            f"MCP settings must be written before container start; "
-            f"write at index {write_idx}, start at index {start_idx} in {tracking_mgr.call_log}"
-        )
+        assert tracking_mgr.call_log.index(claude_json_key) < start_idx
+        assert tracking_mgr.call_log.index(settings_key) < start_idx

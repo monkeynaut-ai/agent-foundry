@@ -12,3 +12,6 @@ dist/
 hide/
 .tmp/
 *.db
+
+lab/*/runs/
+lab/*/tmp/

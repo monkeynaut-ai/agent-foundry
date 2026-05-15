@@ -1,4 +1,9 @@
-"""MCP settings builder for Claude Code settings.local.json."""
+"""MCP settings builder for Claude Code configuration files.
+
+Claude Code stores MCP server configuration in two places:
+  - /home/claude/.claude.json  — server definitions, keyed by project directory
+  - /home/claude/.claude/settings.json — tool permissions (allow list)
+"""
 
 from __future__ import annotations
 
@@ -8,14 +13,29 @@ from agent_foundry.primitives.mcp import McpServer, McpTransport
 
 
 def build_mcp_settings(servers: dict[str, McpServer]) -> dict[str, Any]:
-    """Convert platform MCP server declarations into Claude Code settings format."""
+    """Build the permissions patch for settings.json."""
     return {
-        "mcpServers": {name: _serialize_server(cfg) for name, cfg in servers.items()},
         "permissions": {"allow": [f"mcp__{name}__*" for name in servers]},
     }
 
 
-def _serialize_server(cfg: McpServer) -> dict[str, Any]:
+def build_claude_json_project_entry(servers: dict[str, McpServer]) -> dict[str, Any]:
+    """Build the project entry for .claude.json mcpServers.
+
+    Claude Code reads MCP server definitions from
+    ``projects[<project_dir>]["mcpServers"]`` in ``~/.claude.json``.
+    """
+    return {
+        "allowedTools": [],
+        "mcpContextUris": [],
+        "mcpServers": {name: _serialize_server_claude_json(cfg) for name, cfg in servers.items()},
+        "enabledMcpjsonServers": [],
+        "disabledMcpjsonServers": [],
+        "hasTrustDialogAccepted": True,
+    }
+
+
+def _serialize_server_claude_json(cfg: McpServer) -> dict[str, Any]:
     if cfg.kind == McpTransport.STDIO:
-        return {"command": cfg.command, "args": cfg.args, "env": cfg.env}
-    return {"url": cfg.url, "headers": cfg.headers}
+        return {"type": "stdio", "command": cfg.command, "args": cfg.args, "env": cfg.env}
+    return {"type": "http", "url": cfg.url, "headers": cfg.headers}

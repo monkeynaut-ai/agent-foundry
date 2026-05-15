@@ -23,7 +23,7 @@ from agent_foundry.agents.lifecycle import (
     HealthReport,
     HealthStatus,
 )
-from agent_foundry.agents.mcp_settings import build_mcp_settings
+from agent_foundry.agents.mcp_settings import build_claude_json_project_entry, build_mcp_settings
 from agent_foundry.orchestration.env import build_container_env
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 
@@ -34,7 +34,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 ROLE_INSTRUCTIONS_PATH = "/home/claude/role-instructions.md"
-MCP_SETTINGS_PATH = "/home/claude/.claude/settings.local.json"
+MCP_SETTINGS_PATH = "/home/claude/.claude/settings.json"
+CLAUDE_CONFIG_PATH = "/home/claude/.claude.json"
 
 # Maximum seconds to wait for the container's Docker health check to
 # report ``healthy`` before raising. The base Agent Container image's HEALTHCHECK
@@ -181,12 +182,50 @@ class AgentContainerRegistry:
                     instructions,
                 )
             if primitive.mcp_servers:
-                mcp_settings = build_mcp_settings(primitive.mcp_servers)
+                cwd = getattr(primitive, "cwd", None) or "/workspace"
+                # Write MCP server definitions to .claude.json under projects[cwd].
+                claude_json_raw = await asyncio.to_thread(
+                    manager.read_file_from_container, handle, CLAUDE_CONFIG_PATH
+                )
+                try:
+                    claude_json: dict = json.loads(claude_json_raw) if claude_json_raw else {}
+                except json.JSONDecodeError:
+                    claude_json = {}
+                projects = claude_json.setdefault("projects", {})
+                existing_project: dict = projects.get(cwd, {})
+                project_entry = build_claude_json_project_entry(primitive.mcp_servers)
+                merged_project = {**existing_project, **project_entry}
+                projects[cwd] = merged_project
+                await asyncio.to_thread(
+                    manager.write_file_to_container,
+                    handle,
+                    CLAUDE_CONFIG_PATH,
+                    json.dumps(claude_json),
+                )
+                # Write tool permissions to settings.json.
+                settings_raw = await asyncio.to_thread(
+                    manager.read_file_from_container, handle, MCP_SETTINGS_PATH
+                )
+                try:
+                    settings: dict = json.loads(settings_raw) if settings_raw else {}
+                except json.JSONDecodeError:
+                    settings = {}
+                mcp_perms = build_mcp_settings(primitive.mcp_servers)
+                merged_settings = {
+                    **settings,
+                    "permissions": {
+                        **settings.get("permissions", {}),
+                        "allow": (
+                            settings.get("permissions", {}).get("allow", [])
+                            + mcp_perms["permissions"]["allow"]
+                        ),
+                    },
+                }
                 await asyncio.to_thread(
                     manager.write_file_to_container,
                     handle,
                     MCP_SETTINGS_PATH,
-                    json.dumps(mcp_settings),
+                    json.dumps(merged_settings),
                 )
             await asyncio.to_thread(manager.start, handle)
             if self._wait_for_health:
