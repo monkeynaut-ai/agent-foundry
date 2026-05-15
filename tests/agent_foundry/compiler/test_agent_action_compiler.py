@@ -319,7 +319,8 @@ class SeqOutput(BaseModel):
 
 
 class TestAgentActionCompiler_Composition:
-    def test_agent_action_inside_sequence(self):
+    @pytest.mark.asyncio
+    async def test_agent_action_inside_sequence(self):
         from agent_foundry.primitives.models import FunctionAction, Sequence
 
         class AgentStepInput(BaseModel):
@@ -350,13 +351,14 @@ class TestAgentActionCompiler_Composition:
         plan = PrimitivePlan(root=seq)
         graph = _compile_primitive(plan)
 
-        result = graph.invoke({"query": "hello"})
+        result = await graph.ainvoke({"query": "hello"})
 
         assert result["query"] == "hello"
         assert result["answer"] == "42"
         assert result["annotated"] == "[42]"
 
-    def test_input_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+    @pytest.mark.asyncio
+    async def test_input_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
         """Pin scope-then-validate at the AgentAction boundary inside a
         Sequence: when an upstream step's output adds fields not in the
         downstream agent's input, those fields must be projected away
@@ -394,7 +396,7 @@ class TestAgentActionCompiler_Composition:
         plan = PrimitivePlan(root=seq)
         graph = _compile_primitive(plan)
 
-        result = graph.invoke({"query": "hello"})
+        result = await graph.ainvoke({"query": "hello"})
         assert result["answer"] == "42"
 
 

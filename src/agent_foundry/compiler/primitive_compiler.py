@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, TypedDict, cast
 
-from langgraph._internal._runnable import RunnableCallable
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ValidationError
 
@@ -131,9 +130,9 @@ def _compile_node(
 def _compile_primitive(plan: PrimitivePlan) -> Any:
     """Internal: build the executable graph for a plan.
 
-    Not part of the public API — products use :func:`run_primitive_plan`
-    (async) or :func:`run_primitive_plan_sync`. The returned object is
-    opaque; calling methods on it directly is unsupported.
+    Not part of the public API — products use :func:`run_primitive_plan`.
+    The returned object is opaque; calling methods on it directly is
+    unsupported.
     """
     plan.validate()
     root = plan.root
@@ -178,9 +177,8 @@ def _compile_function_action(
         # Resolve the current ``RunContext`` once — we need it to
         # emit ``FUNCTION_ACTION_STARTED`` / ``_COMPLETED`` / ``_FAILED``
         # lifecycle events regardless of callable arity. When no run is
-        # in progress (legacy ``run_primitive_plan_sync`` + unit tests
-        # that compile nodes without a run context), skip event emission
-        # so the compiler remains usable outside the async run path.
+        # in progress (e.g. unit tests that compile nodes without a run
+        # context), skip event emission.
         from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
         from agent_foundry.orchestration.run_context import (
             current_run_context,
@@ -213,7 +211,7 @@ def _compile_function_action(
             )
         return result.model_dump()
 
-    graph.add_node(node_id, node_fn)
+    graph.add_node(node_id, node_fn)  # type: ignore[arg-type]
     return (node_id, node_id)
 
 
@@ -263,17 +261,12 @@ def _compile_sequence(
     # Wrapper node: scope-in → execute subgraph → scope-out
     node_id = f"{prefix}_seq"
 
-    def seq_node(state: dict[str, Any]) -> dict[str, Any]:
+    async def seq_node(state: dict[str, Any]) -> dict[str, Any]:
         scoped_input = _scope_in(state, seq_in)
-        result = compiled_sub.invoke(scoped_input)
+        result = await compiled_sub.ainvoke(scoped_input)  # type: ignore[arg-type]
         return _scope_out(result, seq_out)
 
-    async def seq_node_async(state: dict[str, Any]) -> dict[str, Any]:
-        scoped_input = _scope_in(state, seq_in)
-        result = await compiled_sub.ainvoke(scoped_input)
-        return _scope_out(result, seq_out)
-
-    graph.add_node(node_id, RunnableCallable(seq_node, seq_node_async, name=node_id, trace=False))
+    graph.add_node(node_id, seq_node)  # type: ignore[arg-type]
     return (node_id, node_id)
 
 
@@ -345,16 +338,11 @@ def _compile_conditional(
     # Wrapper node: scope-in → execute subgraph → scope-out
     node_id = f"{prefix}_cond"
 
-    def cond_node(state: dict[str, Any]) -> dict[str, Any]:
-        # Pass full parent state — branches read what they need from accumulated state
-        result = compiled_sub.invoke(dict(state))
+    async def cond_node(state: dict[str, Any]) -> dict[str, Any]:
+        result = await compiled_sub.ainvoke(dict(state))  # type: ignore[arg-type]
         return _scope_out(result, cond_out)
 
-    async def cond_node_async(state: dict[str, Any]) -> dict[str, Any]:
-        result = await compiled_sub.ainvoke(dict(state))
-        return _scope_out(result, cond_out)
-
-    graph.add_node(node_id, RunnableCallable(cond_node, cond_node_async, name=node_id, trace=False))
+    graph.add_node(node_id, cond_node)  # type: ignore[arg-type]
     return (node_id, node_id)
 
 
@@ -390,7 +378,7 @@ def _compile_loop(
     # Wrapper node: iterates, scoping in/out per iteration
     node_id = f"{prefix}_loop"
 
-    def loop_node(state: dict[str, Any]) -> dict[str, Any]:
+    async def loop_node(state: dict[str, Any]) -> dict[str, Any]:
         model = _validate_scoped_input(state, loop_in, node_id)
         items = over_fn(model)
         # Accumulated state — starts with full parent state, grows across iterations
@@ -401,29 +389,14 @@ def _compile_loop(
                 break
             # Inject item, then pass full accumulated state to body
             current_state[item_key] = item
-            result = compiled_body.invoke(dict(current_state))
+            result = await compiled_body.ainvoke(dict(current_state))  # type: ignore[arg-type]
             # Merge body output back into accumulated state
             updates = _scope_out(result, body_out)
             current_state.update(updates)
 
         return _scope_out(current_state, loop_out)
 
-    async def loop_node_async(state: dict[str, Any]) -> dict[str, Any]:
-        model = _validate_scoped_input(state, loop_in, node_id)
-        items = over_fn(model)
-        current_state = dict(state)
-
-        for i, item in enumerate(items):
-            if i >= max_iter:
-                break
-            current_state[item_key] = item
-            result = await compiled_body.ainvoke(dict(current_state))
-            updates = _scope_out(result, body_out)
-            current_state.update(updates)
-
-        return _scope_out(current_state, loop_out)
-
-    graph.add_node(node_id, RunnableCallable(loop_node, loop_node_async, name=node_id, trace=False))
+    graph.add_node(node_id, loop_node)  # type: ignore[arg-type]
     return (node_id, node_id)
 
 
@@ -458,32 +431,17 @@ def _compile_retry(
     # Wrapper node: retry loop with scoped body execution
     node_id = f"{prefix}_retry"
 
-    def retry_node(state: dict[str, Any]) -> dict[str, Any]:
-        # Accumulated state — starts with full parent state
+    async def retry_node(state: dict[str, Any]) -> dict[str, Any]:
         current_state = dict(state)
         for _ in range(max_attempts):
-            # Pass full accumulated state to body
-            result = compiled_body.invoke(dict(current_state))
-            current_state.update(_scope_out(result, body_out))
-            # Check until condition
-            model = _validate_scoped_input(current_state, retry_in, node_id)
-            if until_fn(model):
-                break
-        return _scope_out(current_state, retry_out)
-
-    async def retry_node_async(state: dict[str, Any]) -> dict[str, Any]:
-        current_state = dict(state)
-        for _ in range(max_attempts):
-            result = await compiled_body.ainvoke(dict(current_state))
+            result = await compiled_body.ainvoke(dict(current_state))  # type: ignore[arg-type]
             current_state.update(_scope_out(result, body_out))
             model = _validate_scoped_input(current_state, retry_in, node_id)
             if until_fn(model):
                 break
         return _scope_out(current_state, retry_out)
 
-    graph.add_node(
-        node_id, RunnableCallable(retry_node, retry_node_async, name=node_id, trace=False)
-    )
+    graph.add_node(node_id, retry_node)  # type: ignore[arg-type]
     return (node_id, node_id)
 
 
@@ -501,7 +459,7 @@ def _compile_gate_action(
     def gate_node(state: dict[str, Any]) -> dict[str, Any]:
         return state  # interrupt_before pauses BEFORE this node
 
-    graph.add_node(gate_id, gate_node)
+    graph.add_node(gate_id, gate_node)  # type: ignore[arg-type]
     gate_ids.append(gate_id)
     return (gate_id, gate_id)
 
@@ -581,7 +539,7 @@ def _compile_agent_action(
         # No sync function — attempting ``graph.invoke`` on a plan with
         # an async AgentAction raises a clear TypeError from LangGraph
         # pointing callers at ``ainvoke`` / ``run_primitive_plan``.
-        graph.add_node(node_id, RunnableCallable(None, node_fn_async, name=node_id, trace=False))
+        graph.add_node(node_id, node_fn_async)  # type: ignore[arg-type]
     else:
 
         def node_fn_sync(state: dict[str, Any]) -> dict[str, Any]:
@@ -607,7 +565,7 @@ def _compile_agent_action(
                 handle.set_output(typed)
                 return typed.model_dump()
 
-        graph.add_node(node_id, node_fn_sync)
+        graph.add_node(node_id, node_fn_sync)  # type: ignore[arg-type]
 
     return (node_id, node_id)
 

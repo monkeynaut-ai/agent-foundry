@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import (
-    _compile_primitive,
-)
-from agent_foundry.orchestration.runner import (
-    run_primitive_plan_sync as run_primitive_plan,
-)
+from agent_foundry.compiler.primitive_compiler import _compile_primitive, get_type_args
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     Conditional,
@@ -25,12 +19,15 @@ from agent_foundry.primitives.models import (
 )
 from agent_foundry.primitives.plan import PrimitivePlan
 
-# Existing sync-entry-point tests intentionally exercise the legacy
-# ``run_primitive_plan_sync`` path (aliased as ``run_primitive_plan``
-# above). Silence the intentional DeprecationWarning emitted on every
-# call so pytest's ``-W error`` configurations stay green.
-pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
-warnings.filterwarnings("ignore", category=DeprecationWarning, module=__name__)
+
+async def compile_and_run(plan: PrimitivePlan, state: BaseModel | None = None) -> Any:
+    """Minimal async test runner: compile and ainvoke without the full production pipeline."""
+    _, root_out = get_type_args(plan.root)
+    graph = _compile_primitive(plan)
+    input_dict = state.model_dump() if state is not None else {}
+    result_dict = await graph.ainvoke(input_dict)
+    return root_out.model_validate(result_dict)
+
 
 # -- Test fixtures --
 
@@ -254,7 +251,8 @@ class TestCompileFunctionAction:
         with pytest.raises(PrimitiveCompilationError):
             graph.invoke({})  # missing required 'query'
 
-    def test_input_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+    @pytest.mark.asyncio
+    async def test_input_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
         """Pin scope-then-validate at the FunctionAction boundary inside
         a Sequence: even when a step's input model forbids extras, the
         compiler projects accumulated state down to declared fields
@@ -282,20 +280,22 @@ class TestCompileFunctionAction:
         )
         seq = Sequence[InputState, TransformOutput](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, InputState(query="hello"))
+        result = await compile_and_run(plan, InputState(query="hello"))
         assert result.result == "HELLO"
 
-    def test_run_primitive_plan_typed(self):
-        """run_primitive_plan accepts and returns Pydantic models."""
+    @pytest.mark.asyncio
+    async def test_compile_and_run_typed(self):
+        """compile_and_run accepts and returns Pydantic models."""
         action = FunctionAction[InputState, TransformOutput](
             function=lambda s: TransformOutput(result=s.query.upper()),
         )
         plan = PrimitivePlan(root=action)
-        result = run_primitive_plan(plan, InputState(query="hello"))
+        result = await compile_and_run(plan, InputState(query="hello"))
         assert isinstance(result, TransformOutput)
         assert result.result == "HELLO"
 
-    def test_run_primitive_plan_default_input(self):
+    @pytest.mark.asyncio
+    async def test_compile_and_run_default_input(self):
         class DefaultInput(BaseModel):
             value: str = "default"
 
@@ -307,11 +307,12 @@ class TestCompileFunctionAction:
             function=lambda s: DefaultOutput(value=s.value, result=s.value.upper()),
         )
         plan = PrimitivePlan(root=action)
-        result = run_primitive_plan(plan)
+        result = await compile_and_run(plan)
         assert isinstance(result, DefaultOutput)
         assert result.result == "DEFAULT"
 
-    def test_zero_arg_function(self):
+    @pytest.mark.asyncio
+    async def test_zero_arg_function(self):
         """Functions that take no arguments work without Empty input model."""
         from datetime import date
 
@@ -326,7 +327,7 @@ class TestCompileFunctionAction:
 
         action = FunctionAction[Empty, DateOut](function=get_today)
         plan = PrimitivePlan(root=action)
-        result = run_primitive_plan(plan)
+        result = await compile_and_run(plan)
         assert isinstance(result, DateOut)
         assert result.today == date(2026, 4, 6)
 
@@ -342,7 +343,8 @@ class MidState(BaseModel):
 
 
 class TestCompileSequence:
-    def test_two_steps_chain(self):
+    @pytest.mark.asyncio
+    async def test_two_steps_chain(self):
         step1 = FunctionAction[InputState, MidState](
             function=lambda s: MidState(query=s.query, mid=s.query.upper()),
         )
@@ -351,10 +353,11 @@ class TestCompileSequence:
         )
         seq = Sequence[InputState, OutputState](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, InputState(query="hello"))
+        result = await compile_and_run(plan, InputState(query="hello"))
         assert result.result == "processed:HELLO"
 
-    def test_three_steps_order(self):
+    @pytest.mark.asyncio
+    async def test_three_steps_order(self):
         """Verify steps execute in order by accumulating into a list."""
 
         class ListState(BaseModel):
@@ -374,10 +377,11 @@ class TestCompileSequence:
         s3 = FunctionAction[ListState, ListState](function=append_c)
         seq = Sequence[ListState, ListState](steps=[s1, s2, s3])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, ListState(items=[]))
+        result = await compile_and_run(plan, ListState(items=[]))
         assert result.items == ["a", "b", "c"]
 
-    def test_step_reads_from_accumulated_state(self):
+    @pytest.mark.asyncio
+    async def test_step_reads_from_accumulated_state(self):
         """Step 2 reads a field from Sequence input that step 1 didn't produce."""
         from datetime import date, timedelta
 
@@ -405,10 +409,11 @@ class TestCompileSequence:
         step2 = FunctionAction[ResultState, SeqOut](function=add_days)
         seq = Sequence[SeqIn, SeqOut](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, SeqIn(offset=3))
+        result = await compile_and_run(plan, SeqIn(offset=3))
         assert result.result == "2026-04-09"
 
-    def test_output_from_intermediate_step(self):
+    @pytest.mark.asyncio
+    async def test_output_from_intermediate_step(self):
         """Sequence output includes a field produced by an intermediate step, not the last."""
 
         class In(BaseModel):
@@ -432,11 +437,12 @@ class TestCompileSequence:
         )
         seq = Sequence[In, Out](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, In(x="hello"))
+        result = await compile_and_run(plan, In(x="hello"))
         assert result.mid_value == "HELLO"
         assert result.final_value == "done:HELLO"
 
-    def test_three_steps_each_add_field(self):
+    @pytest.mark.asyncio
+    async def test_three_steps_each_add_field(self):
         """Three steps, each adds a different field. Output assembles from all three."""
 
         class StepIn(BaseModel):
@@ -474,7 +480,7 @@ class TestCompileSequence:
         )
         seq = Sequence[StepIn, SeqOut](steps=[step1, step2, step3])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, StepIn(seed="x"))
+        result = await compile_and_run(plan, StepIn(seed="x"))
         assert result.a == "x_a"
         assert result.b == "x_a_b"
         assert result.c == "x_a_x_a_b_c"
@@ -513,7 +519,8 @@ class BranchState(BaseModel):
 
 
 class TestCompileConditional:
-    def test_then_branch_taken(self):
+    @pytest.mark.asyncio
+    async def test_then_branch_taken(self):
         then = FunctionAction[BranchState, BranchState](
             function=lambda s: BranchState(value="then", flag=s.flag),
         )
@@ -526,10 +533,11 @@ class TestCompileConditional:
             else_branch=else_,
         )
         plan = PrimitivePlan(root=cond)
-        result = run_primitive_plan(plan, BranchState(value="start", flag=True))
+        result = await compile_and_run(plan, BranchState(value="start", flag=True))
         assert result.value == "then"
 
-    def test_else_branch_taken(self):
+    @pytest.mark.asyncio
+    async def test_else_branch_taken(self):
         then = FunctionAction[BranchState, BranchState](
             function=lambda s: BranchState(value="then", flag=s.flag),
         )
@@ -542,10 +550,11 @@ class TestCompileConditional:
             else_branch=else_,
         )
         plan = PrimitivePlan(root=cond)
-        result = run_primitive_plan(plan, BranchState(value="start", flag=False))
+        result = await compile_and_run(plan, BranchState(value="start", flag=False))
         assert result.value == "else"
 
-    def test_no_else_passthrough(self):
+    @pytest.mark.asyncio
+    async def test_no_else_passthrough(self):
         then = FunctionAction[BranchState, BranchState](
             function=lambda s: BranchState(value="detoured", flag=s.flag),
         )
@@ -554,10 +563,11 @@ class TestCompileConditional:
             then_branch=then,
         )
         plan = PrimitivePlan(root=cond)
-        result = run_primitive_plan(plan, BranchState(value="original", flag=False))
+        result = await compile_and_run(plan, BranchState(value="original", flag=False))
         assert result.value == "original"
 
-    def test_no_else_condition_true(self):
+    @pytest.mark.asyncio
+    async def test_no_else_condition_true(self):
         then = FunctionAction[BranchState, BranchState](
             function=lambda s: BranchState(value="detoured", flag=s.flag),
         )
@@ -566,10 +576,11 @@ class TestCompileConditional:
             then_branch=then,
         )
         plan = PrimitivePlan(root=cond)
-        result = run_primitive_plan(plan, BranchState(value="original", flag=True))
+        result = await compile_and_run(plan, BranchState(value="original", flag=True))
         assert result.value == "detoured"
 
-    def test_cond_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+    @pytest.mark.asyncio
+    async def test_cond_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
         """Pin scope-then-validate at the Conditional's `condition`
         boundary: when an upstream step's output adds fields not in
         cond_in, those fields must be projected away before the
@@ -605,7 +616,7 @@ class TestCompileConditional:
         )
         seq = Sequence[SeqIn, StrictBranchState](steps=[step1, cond])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, SeqIn(value="start", flag=True))
+        result = await compile_and_run(plan, SeqIn(value="start", flag=True))
         assert result.value == "then"
 
 
@@ -621,7 +632,8 @@ class LoopInput(BaseModel):
 
 
 class TestCompileLoop:
-    def test_iterates_over_collection(self):
+    @pytest.mark.asyncio
+    async def test_iterates_over_collection(self):
         body = FunctionAction[LoopInput, LoopInput](
             function=lambda s: LoopInput(
                 items=s.items,
@@ -635,10 +647,11 @@ class TestCompileLoop:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        result = run_primitive_plan(plan, LoopInput(items=["a", "b", "c"], processed=[]))
+        result = await compile_and_run(plan, LoopInput(items=["a", "b", "c"], processed=[]))
         assert result.processed == ["A", "B", "C"]
 
-    def test_respects_max_iterations(self):
+    @pytest.mark.asyncio
+    async def test_respects_max_iterations(self):
         body = FunctionAction[LoopInput, LoopInput](
             function=lambda s: LoopInput(
                 items=s.items,
@@ -653,10 +666,13 @@ class TestCompileLoop:
             max_iterations=2,
         )
         plan = PrimitivePlan(root=loop)
-        result = run_primitive_plan(plan, LoopInput(items=["a", "b", "c", "d", "e"], processed=[]))
+        result = await compile_and_run(
+            plan, LoopInput(items=["a", "b", "c", "d", "e"], processed=[])
+        )
         assert len(result.processed) == 2
 
-    def test_empty_collection(self):
+    @pytest.mark.asyncio
+    async def test_empty_collection(self):
         body = FunctionAction[LoopInput, LoopInput](
             function=lambda s: LoopInput(
                 items=s.items,
@@ -670,10 +686,11 @@ class TestCompileLoop:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        result = run_primitive_plan(plan, LoopInput(items=[], processed=[]))
+        result = await compile_and_run(plan, LoopInput(items=[], processed=[]))
         assert result.processed == []
 
-    def test_single_item(self):
+    @pytest.mark.asyncio
+    async def test_single_item(self):
         body = FunctionAction[LoopInput, LoopInput](
             function=lambda s: LoopInput(
                 items=s.items,
@@ -687,10 +704,11 @@ class TestCompileLoop:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        result = run_primitive_plan(plan, LoopInput(items=["x"], processed=[]))
+        result = await compile_and_run(plan, LoopInput(items=["x"], processed=[]))
         assert result.processed == ["X"]
 
-    def test_loop_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+    @pytest.mark.asyncio
+    async def test_loop_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
         """Pin scope-then-validate at the Loop's `over` boundary: when an
         upstream step's output adds fields not in loop_in, those fields
         must be projected away before validation, even if loop_in
@@ -733,7 +751,7 @@ class TestCompileLoop:
         )
         seq = Sequence[SeqIn, StrictLoopIn](steps=[step1, loop])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, SeqIn(items=["a", "b"]))
+        result = await compile_and_run(plan, SeqIn(items=["a", "b"]))
         assert result.processed == ["A", "B"]
 
 
@@ -748,7 +766,8 @@ class RetryState(BaseModel):
 
 
 class TestCompileRetry:
-    def test_succeeds_first_attempt(self):
+    @pytest.mark.asyncio
+    async def test_succeeds_first_attempt(self):
         body = FunctionAction[RetryState, RetryState](
             function=lambda s: RetryState(attempts=s.attempts + 1, done=True),
         )
@@ -758,11 +777,12 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
         assert result.attempts == 1
         assert result.done is True
 
-    def test_succeeds_second_attempt(self):
+    @pytest.mark.asyncio
+    async def test_succeeds_second_attempt(self):
         call_count = {"n": 0}
 
         def body_fn(s: RetryState) -> RetryState:
@@ -776,11 +796,12 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
         assert result.attempts == 2
         assert result.done is True
 
-    def test_exhausted_exits_normally(self):
+    @pytest.mark.asyncio
+    async def test_exhausted_exits_normally(self):
         """When max_attempts exhausted, Retry exits with domain state intact."""
         body = FunctionAction[RetryState, RetryState](
             function=lambda s: RetryState(attempts=s.attempts + 1, done=False),
@@ -791,11 +812,12 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
         assert result.attempts == 2
         assert result.done is False
 
-    def test_max_attempts_one(self):
+    @pytest.mark.asyncio
+    async def test_max_attempts_one(self):
         body = FunctionAction[RetryState, RetryState](
             function=lambda s: RetryState(attempts=s.attempts + 1, done=False),
         )
@@ -805,11 +827,12 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = run_primitive_plan(plan, RetryState(attempts=0, done=False))
+        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
         assert result.attempts == 1
         assert result.done is False
 
-    def test_retry_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
+    @pytest.mark.asyncio
+    async def test_retry_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
         """Pin scope-then-validate at the Retry's `until` boundary: when
         an upstream step's output adds fields not in retry_in, those
         fields must be projected away before validation, even if
@@ -841,7 +864,7 @@ class TestCompileRetry:
         )
         seq = Sequence[SeqIn, StrictRetryState](steps=[step1, retry])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, SeqIn(attempts=0, done=False))
+        result = await compile_and_run(plan, SeqIn(attempts=0, done=False))
         assert result.attempts == 1
         assert result.done is True
 
@@ -906,7 +929,8 @@ class TestCompileGateAction:
 
 
 class TestNestedComposition:
-    def test_sequence_of_actions(self):
+    @pytest.mark.asyncio
+    async def test_sequence_of_actions(self):
         class S(BaseModel):
             n: int = 0
 
@@ -915,10 +939,11 @@ class TestNestedComposition:
         s3 = FunctionAction[S, S](function=lambda s: S(n=s.n + 100))
         seq = Sequence[S, S](steps=[s1, s2, s3])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, S(n=0))
+        result = await compile_and_run(plan, S(n=0))
         assert result.n == 111
 
-    def test_loop_body_is_sequence(self):
+    @pytest.mark.asyncio
+    async def test_loop_body_is_sequence(self):
         class S(BaseModel):
             items: list[str] = []
             processed: list[str] = []
@@ -941,10 +966,11 @@ class TestNestedComposition:
         body = Sequence[S, S](steps=[step1, step2])
         loop = Loop[S, S](over=lambda s: s.items, item_key="current_item", body=body)
         plan = PrimitivePlan(root=loop)
-        result = run_primitive_plan(plan, S(items=["a", "b"], processed=[]))
+        result = await compile_and_run(plan, S(items=["a", "b"], processed=[]))
         assert result.processed == ["A", "B"]
 
-    def test_retry_then_conditional_escalation(self):
+    @pytest.mark.asyncio
+    async def test_retry_then_conditional_escalation(self):
         """Retry exhausts, parent Conditional routes to escalation based on domain state."""
 
         class S(BaseModel):
@@ -964,11 +990,12 @@ class TestNestedComposition:
         )
         seq = Sequence[S, S](steps=[retry, check_exhausted])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, S(n=0, done=False))
+        result = await compile_and_run(plan, S(n=0, done=False))
         assert result.n == 2
         assert result.done is True
 
-    def test_sequence_containing_conditional(self):
+    @pytest.mark.asyncio
+    async def test_sequence_containing_conditional(self):
         class S(BaseModel):
             value: str = ""
             flag: bool = True
@@ -984,7 +1011,7 @@ class TestNestedComposition:
         step3 = FunctionAction[S, S](function=lambda s: S(value=s.value + "_done", flag=s.flag))
         seq = Sequence[S, S](steps=[step1, cond, step3])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, S(value="", flag=True))
+        result = await compile_and_run(plan, S(value="", flag=True))
         assert result.value == "step1_then_done"
 
 
@@ -996,7 +1023,8 @@ class TestNestedComposition:
 class TestStateIsolation:
     """Verify state scoping at every composition boundary."""
 
-    def test_conditional_branches_dont_leak(self):
+    @pytest.mark.asyncio
+    async def test_conditional_branches_dont_leak(self):
         """Branch internal fields don't appear in parent output."""
 
         class CondState(BaseModel):
@@ -1025,11 +1053,12 @@ class TestStateIsolation:
             else_branch=else_,
         )
         plan = PrimitivePlan(root=cond)
-        result = run_primitive_plan(plan, CondState(flag=True, value="start"))
+        result = await compile_and_run(plan, CondState(flag=True, value="start"))
         assert result.value == "then"
         assert "branch_temp" not in result.model_dump()
 
-    def test_retry_body_internals_dont_leak(self):
+    @pytest.mark.asyncio
+    async def test_retry_body_internals_dont_leak(self):
         """Retry body's internal fields don't appear in retry output."""
 
         class RS(BaseModel):
@@ -1055,11 +1084,12 @@ class TestStateIsolation:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = run_primitive_plan(plan, RS(attempts=0, done=False))
+        result = await compile_and_run(plan, RS(attempts=0, done=False))
         assert result.attempts == 1
         assert "debug_info" not in result.model_dump()
 
-    def test_sibling_primitives_dont_interfere(self):
+    @pytest.mark.asyncio
+    async def test_sibling_primitives_dont_interfere(self):
         """Two sequential steps using the same internal field name don't collide."""
 
         class StepIn(BaseModel):
@@ -1080,11 +1110,12 @@ class TestStateIsolation:
         )
         seq = Sequence[StepIn, StepOut](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, StepIn(value="start"))
+        result = await compile_and_run(plan, StepIn(value="start"))
         assert result.value == "start_a_b"
         assert "temp" not in result.model_dump()
 
-    def test_nested_loop_in_sequence_isolation(self):
+    @pytest.mark.asyncio
+    async def test_nested_loop_in_sequence_isolation(self):
         """Loop body internals don't leak to sequence siblings."""
 
         class SeqState(BaseModel):
@@ -1127,11 +1158,12 @@ class TestStateIsolation:
         )
         seq = Sequence[SeqState, SeqState](steps=[pre, loop, post])
         plan = PrimitivePlan(root=seq)
-        result = run_primitive_plan(plan, SeqState(items=["a", "b"], results=[]))
+        result = await compile_and_run(plan, SeqState(items=["a", "b"], results=[]))
         assert result.results == ["pre", "A", "B", "post"]
         assert "processing_temp" not in result.model_dump()
 
-    def test_loop_iterations_get_fresh_scope(self):
+    @pytest.mark.asyncio
+    async def test_loop_iterations_get_fresh_scope(self):
         """Each loop iteration starts fresh — body's internal fields reset to defaults."""
 
         class LoopIO(BaseModel):
@@ -1170,11 +1202,12 @@ class TestStateIsolation:
             body=body,
         )
         plan = PrimitivePlan(root=loop)
-        result = run_primitive_plan(plan, LoopIO(items=["a", "b", "c"], results=[]))
+        result = await compile_and_run(plan, LoopIO(items=["a", "b", "c"], results=[]))
         assert result.results == ["a", "b", "c"]
         assert "temp" not in result.model_dump()
 
-    def test_three_levels_deep_isolation(self):
+    @pytest.mark.asyncio
+    async def test_three_levels_deep_isolation(self):
         """Isolation holds across Sequence > Loop > Sequence > FunctionAction."""
 
         class Outer(BaseModel):
@@ -1211,6 +1244,6 @@ class TestStateIsolation:
         )
         outer_seq = Sequence[Outer, Outer](steps=[loop])
         plan = PrimitivePlan(root=outer_seq)
-        result = run_primitive_plan(plan, Outer(items=["x", "y"], final=[]))
+        result = await compile_and_run(plan, Outer(items=["x", "y"], final=[]))
         assert result.final == ["X", "Y"]
         assert "inner_temp" not in result.model_dump()

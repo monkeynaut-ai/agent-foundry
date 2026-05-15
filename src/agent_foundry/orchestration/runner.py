@@ -1,14 +1,8 @@
 """Run-level orchestration for primitive plans.
 
-Two entry points:
-
-  * :func:`run_primitive_plan` — async, full orchestration wiring
-    (RunContext, container registry, lifecycle writer, signal
-    handlers, artifacts). The primary public entry point.
-
-  * :func:`run_primitive_plan_sync` — legacy synchronous entry.
-    Useful for plans with no ``AgentAction`` (no containers); emits a
-    ``DeprecationWarning`` nudging toward the async entry.
+:func:`run_primitive_plan` is the single public entry point: async, full
+orchestration wiring (RunContext, container registry, lifecycle writer,
+signal handlers, artifacts).
 
 Orchestration depends on the compiler (calls ``_compile_primitive`` to
 build the executable graph), not the other way around. The compiler
@@ -24,7 +18,6 @@ import os
 import signal
 import threading
 import uuid
-import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -52,32 +45,6 @@ from agent_foundry.telemetry import setup as telemetry_setup
 from agent_foundry.telemetry.config import TelemetryConfig
 
 logger = logging.getLogger(__name__)
-
-
-def run_primitive_plan_sync(
-    plan: PrimitivePlan,
-    initial_state: BaseModel | None = None,
-    config: dict[str, Any] | None = None,
-) -> BaseModel:
-    """Legacy synchronous entry point.
-
-    Preserved for call sites that do not build a
-    :class:`RunContext`. Emits a ``DeprecationWarning``; prefer the
-    async :func:`run_primitive_plan` which builds the context and wires
-    lifecycle + registry teardown.
-    """
-    warnings.warn(
-        "run_primitive_plan_sync is deprecated; migrate to the async "
-        "run_primitive_plan entry point.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    _, root_out = get_type_args(plan.root)
-    graph = _compile_primitive(plan)
-
-    input_dict = initial_state.model_dump() if initial_state is not None else {}
-    result_dict = graph.invoke(input_dict, config=config or {})
-    return root_out.model_validate(result_dict)
 
 
 def _safe_invoke_hooks(
