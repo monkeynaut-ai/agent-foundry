@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, TypedDict, cast
 
-from langgraph._internal._runnable import RunnableCallable
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ValidationError
 
@@ -267,7 +266,7 @@ def _compile_sequence(
         result = await compiled_sub.ainvoke(scoped_input)  # type: ignore[arg-type]
         return _scope_out(result, seq_out)
 
-    graph.add_node(node_id, RunnableCallable(None, seq_node, name=node_id, trace=False))
+    graph.add_node(node_id, seq_node)  # type: ignore[arg-type]
     return (node_id, node_id)
 
 
@@ -343,7 +342,7 @@ def _compile_conditional(
         result = await compiled_sub.ainvoke(dict(state))  # type: ignore[arg-type]
         return _scope_out(result, cond_out)
 
-    graph.add_node(node_id, RunnableCallable(None, cond_node, name=node_id, trace=False))
+    graph.add_node(node_id, cond_node)  # type: ignore[arg-type]
     return (node_id, node_id)
 
 
@@ -397,7 +396,7 @@ def _compile_loop(
 
         return _scope_out(current_state, loop_out)
 
-    graph.add_node(node_id, RunnableCallable(None, loop_node, name=node_id, trace=False))
+    graph.add_node(node_id, loop_node)  # type: ignore[arg-type]
     return (node_id, node_id)
 
 
@@ -442,7 +441,7 @@ def _compile_retry(
                 break
         return _scope_out(current_state, retry_out)
 
-    graph.add_node(node_id, RunnableCallable(None, retry_node, name=node_id, trace=False))
+    graph.add_node(node_id, retry_node)  # type: ignore[arg-type]
     return (node_id, node_id)
 
 
@@ -540,7 +539,7 @@ def _compile_agent_action(
         # No sync function — attempting ``graph.invoke`` on a plan with
         # an async AgentAction raises a clear TypeError from LangGraph
         # pointing callers at ``ainvoke`` / ``run_primitive_plan``.
-        graph.add_node(node_id, RunnableCallable(None, node_fn_async, name=node_id, trace=False))
+        graph.add_node(node_id, node_fn_async)  # type: ignore[arg-type]
     else:
 
         def node_fn_sync(state: dict[str, Any]) -> dict[str, Any]:
