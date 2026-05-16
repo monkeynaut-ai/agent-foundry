@@ -16,11 +16,11 @@ from agent_foundry.orchestration.run_context import (
 class TestPauseOnFailure:
     """``pause_on_failure`` controls whether the failed container's
     destroy is skipped during ``shutdown_all`` so a developer can
-    ``docker exec`` into it. Default is False; env var
-    ``AGENT_FOUNDRY_PAUSE_ON_FAILURE=1`` flips the default to True.
+    ``docker exec`` into it. Default is True (matching workspace-volume
+    retention); env var ``AGENT_FOUNDRY_PAUSE_ON_FAILURE=0`` opts out.
     """
 
-    def test_default_is_false_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_is_true_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("AGENT_FOUNDRY_PAUSE_ON_FAILURE", raising=False)
         ctx = RunContext(
             run_id="r1",
@@ -28,30 +28,41 @@ class TestPauseOnFailure:
             lifecycle_writer=NoOpLifecycleWriter(),
             env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
         )
-        assert ctx.pause_on_failure is False
+        assert ctx.pause_on_failure is True
 
-    def test_env_var_enables_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("AGENT_FOUNDRY_PAUSE_ON_FAILURE", "1")
+    def test_env_var_zero_opts_out(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AGENT_FOUNDRY_PAUSE_ON_FAILURE", "0")
         ctx = RunContext(
             run_id="r2",
             container_registry=object(),
             lifecycle_writer=NoOpLifecycleWriter(),
             env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
         )
-        assert ctx.pause_on_failure is True
+        assert ctx.pause_on_failure is False
+
+    def test_env_var_false_opts_out(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Accept "false" (and "no") for human-readable env values.
+        monkeypatch.setenv("AGENT_FOUNDRY_PAUSE_ON_FAILURE", "false")
+        ctx = RunContext(
+            run_id="r2b",
+            container_registry=object(),
+            lifecycle_writer=NoOpLifecycleWriter(),
+            env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
+        )
+        assert ctx.pause_on_failure is False
 
     def test_explicit_argument_wins_over_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # The programmatic field takes precedence over the env var so
         # tests and library callers always know what they're getting.
-        monkeypatch.setenv("AGENT_FOUNDRY_PAUSE_ON_FAILURE", "1")
+        monkeypatch.setenv("AGENT_FOUNDRY_PAUSE_ON_FAILURE", "0")
         ctx = RunContext(
             run_id="r3",
             container_registry=object(),
             lifecycle_writer=NoOpLifecycleWriter(),
             env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
-            pause_on_failure=False,
+            pause_on_failure=True,
         )
-        assert ctx.pause_on_failure is False
+        assert ctx.pause_on_failure is True
 
 
 def test_run_context_has_required_core_fields() -> None:

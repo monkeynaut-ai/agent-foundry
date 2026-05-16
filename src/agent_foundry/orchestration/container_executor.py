@@ -279,6 +279,25 @@ _CGROUP_MEMORY_FILES: tuple[str, ...] = (
 )
 
 
+def _read_cgroup_text(live: LiveContainer, path: str) -> str | None:
+    """Read a cgroup pseudo-file from inside the container via ``cat``.
+
+    ``ContainerManager.read_file_from_container`` routes through docker's
+    ``get_archive`` (a tar stream). That fails for cgroup-v2 entries
+    because sysfs pseudo-files do not tar-serialize — every read returns
+    ``None`` even though the file is readable via ``cat``. So this helper
+    shells out instead, returning the decoded stdout on exit_code == 0
+    and ``None`` otherwise (file missing, cgroup-v1 host, exec error).
+    """
+    try:
+        result = live.manager.exec_run(live.handle, ["cat", path])
+        if result.exit_code == 0 and result.output:
+            return result.output.decode(errors="replace")
+    except Exception as exc:
+        logger.warning("cgroup read of %s failed for %s: %s", path, live.agent_name, exc)
+    return None
+
+
 def _capture_forensic_fields(
     live: LiveContainer,
     *,
@@ -320,13 +339,19 @@ def _capture_forensic_fields(
         if "OOMKilled" in state:
             fields["oom_killed"] = state["OOMKilled"]
 
-    # memory.peak (cgroup-v2). Strip whitespace, parse as int.
-    try:
-        peak_raw = live.manager.read_file_from_container(live.handle, "/sys/fs/cgroup/memory.peak")
-        if isinstance(peak_raw, str) and peak_raw.strip():
+    # memory.peak (cgroup-v2). Read via exec_run + cat — sysfs pseudo-files
+    # do not tar-serialize, so ``read_file_from_container`` returns None.
+    peak_raw = _read_cgroup_text(live, "/sys/fs/cgroup/memory.peak")
+    if peak_raw is not None and peak_raw.strip():
+        try:
             fields["memory_peak_bytes"] = int(peak_raw.strip())
-    except Exception as exc:
-        logger.warning("forensic: memory.peak read failed for %s: %s", live.agent_name, exc)
+        except ValueError as exc:
+            logger.warning(
+                "forensic: memory.peak unparseable for %s: %r (%s)",
+                live.agent_name,
+                peak_raw,
+                exc,
+            )
 
     return fields
 
@@ -436,13 +461,14 @@ def _snapshot_container_artifacts(
 
     # --- cgroup-memory.txt ---
     # Each section is a path header followed by the file's content (or
-    # "(unavailable)" if the read returned None — happens on cgroup-v1
-    # hosts or in test fakes that don't script these reads).
+    # "(unavailable)" if the read failed — happens on cgroup-v1 hosts,
+    # in test fakes that don't script these reads, or when the container
+    # is no longer reachable).
     try:
         sections: list[str] = []
         for cgroup_path in _CGROUP_MEMORY_FILES:
-            content = live.manager.read_file_from_container(live.handle, cgroup_path)
-            body = content if isinstance(content, str) and content else "(unavailable)"
+            content = _read_cgroup_text(live, cgroup_path)
+            body = content if content else "(unavailable)"
             sections.append(f"=== {cgroup_path} ===\n{body}\n")
         (agent_dir / "cgroup-memory.txt").write_text("\n".join(sections), encoding="utf-8")
     except Exception as exc:

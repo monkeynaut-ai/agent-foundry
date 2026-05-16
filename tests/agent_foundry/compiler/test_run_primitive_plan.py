@@ -312,10 +312,11 @@ async def test_cancel_mid_run_propagates_and_cleans_up(
     run_dir = artifacts_dir / "run-cancel"
     # Summary still written even after cancel.
     assert (run_dir / "summary.txt").is_file()
-    # Registry shutdown happened — every container the fake created was
-    # destroyed.
-    assert patch_registry_manager.destroyed_ids, (
-        "shutdown_all should destroy at least one container on cancel path"
+    # Registry shutdown happened — the failed container is retained for
+    # postmortem (pause_on_failure defaults to True), so it does NOT
+    # appear in destroyed_ids. The retention message is logged at WARNING.
+    assert patch_registry_manager.destroyed_ids == [], (
+        "default pause_on_failure=True should retain the failed container"
     )
 
 
@@ -349,6 +350,7 @@ async def test_exception_mid_run_propagates_and_cleans_up(
 
     run_dir = artifacts_dir / "run-fail"
     assert (run_dir / "summary.txt").is_file()
-    assert patch_registry_manager.destroyed_ids, (
-        "shutdown_all should destroy containers even on failure path"
+    # Failed container retained by default (pause_on_failure=True).
+    assert patch_registry_manager.destroyed_ids == [], (
+        "default pause_on_failure=True should retain the failed container"
     )

@@ -402,13 +402,12 @@ class TestExecutorFilePathVerification:
 
         assert "unresolvable ambiguity" in excinfo.value.reason
 
-        # No verification reads on non-success envelopes. Filter out
-        # postmortem-snapshot reads (CLAUDE.md, cgroup files) — those
-        # run unconditionally on invocation end and are not verification.
-        def _is_snapshot_read(path: str) -> bool:
-            return path.endswith("CLAUDE.md") or path.startswith("/sys/fs/cgroup/")
-
-        verification_reads = [r for r in fake_mgr.read_file_log if not _is_snapshot_read(r[0])]
+        # No verification reads on non-success envelopes (the executor
+        # still snapshots /home/claude/.claude/CLAUDE.md at invocation
+        # end; filter that out of the assertion). Cgroup reads are
+        # routed through exec_run, not read_file_from_container, so
+        # they don't appear in read_file_log.
+        verification_reads = [r for r in fake_mgr.read_file_log if not r[0].endswith("CLAUDE.md")]
         assert verification_reads == []
         # Only the initial turn — no retry for FailureOutcome.
         assert len(adapter.calls) == 1

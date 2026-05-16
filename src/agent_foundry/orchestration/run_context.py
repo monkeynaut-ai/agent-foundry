@@ -46,17 +46,14 @@ __all__ = [
 def _read_pause_on_failure_env() -> bool:
     """Read ``AGENT_FOUNDRY_PAUSE_ON_FAILURE`` and parse it as a bool.
 
-    Accepts ``1``, ``true``, ``yes`` (case-insensitive) as truthy;
-    anything else (including unset) is False. Used as
-    :class:`RunContext.pause_on_failure`'s ``default_factory`` so the
-    env var can flip the default for ad-hoc forensic runs without
-    requiring a code change.
+    Default behavior is to retain failed containers (True), matching the
+    "retain forensic state, require manual cleanup" stance the codebase
+    already takes for workspace volumes. The env var lets ad-hoc runs
+    opt OUT — ``0`` / ``false`` / ``no`` (case-insensitive) returns
+    False, anything else (including unset) returns True.
     """
-    return os.environ.get("AGENT_FOUNDRY_PAUSE_ON_FAILURE", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
+    val = os.environ.get("AGENT_FOUNDRY_PAUSE_ON_FAILURE", "").strip().lower()
+    return val not in {"0", "false", "no"}
 
 
 def _default_artifacts_dir() -> Path:
@@ -104,17 +101,19 @@ class RunContext(BaseModel):
     env: dict[str, str]
 
     pause_on_failure: bool = Field(default_factory=lambda: _read_pause_on_failure_env())
-    """When ``True``, the agent container that produced a failure is
-    retained at run teardown (its destroy in
+    """When ``True`` (default), the agent container that produced a
+    failure is retained at run teardown (its destroy in
     :meth:`AgentContainerRegistry.shutdown_all` is skipped) so a developer
     can ``docker exec`` into it to inspect state. Successful containers
-    in the same run still destroy normally.
+    in the same run still destroy normally — retention is narrow.
 
-    Default is ``False``: production runs don't accumulate dead
-    containers. The default factory checks
-    ``AGENT_FOUNDRY_PAUSE_ON_FAILURE=1`` so ad-hoc forensic runs can
-    enable retention without changing code; an explicit constructor
-    argument always wins over the env var.
+    Default is ``True``, matching the "retain forensic state, require
+    manual cleanup" stance the codebase already takes for workspace
+    volumes. To opt out (e.g. long-running automated environments where
+    accumulated stopped containers are unwanted), set
+    ``AGENT_FOUNDRY_PAUSE_ON_FAILURE=0`` or pass ``pause_on_failure=False``
+    explicitly. The explicit constructor argument always wins over the
+    env var.
     """
 
     on_run_starting: list[Callable[[RunStartingEvent], None]] = Field(default_factory=list)

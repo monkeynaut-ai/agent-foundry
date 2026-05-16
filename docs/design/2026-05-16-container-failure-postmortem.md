@@ -102,11 +102,11 @@ second; (b) handles the first.
 
 ### (a) Opt-in retention of the failed container
 
-Add `pause_on_failure: bool` to `RunContext`, default `False`. Env-var
-override (`AGENT_FOUNDRY_PAUSE_ON_FAILURE=1`) for ad-hoc forensic runs that
-don't touch code.
+Add `pause_on_failure: bool` to `RunContext`, default `True`. Env-var
+override (`AGENT_FOUNDRY_PAUSE_ON_FAILURE=0` or `false` / `no`) for
+runs that want to opt out of retention without touching code.
 
-When `True`:
+When `True` (default):
 
 - `registry.shutdown_all` excludes the failed container from its destroy
   list. Successful containers in the same run still destroy normally — we
@@ -117,8 +117,9 @@ When `True`:
 - The auto-generated `inspect-container.sh` (see (b)) gives the developer a
   ready-to-run shell into the container.
 
-When `False` (default): current behavior. Production runs don't accumulate
-dead containers.
+When `False`: every container destroys regardless of failure state —
+matches the previous (pre-feature) behavior. Useful for long-running
+automated environments where accumulated stopped containers are unwanted.
 
 ### (b) Always-on postmortem snapshot
 
@@ -213,8 +214,13 @@ both small.
 
 ## Decisions (resolved 2026-05-16)
 
-- **Default for `pause_on_failure`: `False`.** Opt-in only. Production runs
-  don't accumulate dead containers; forensic runs explicitly enable.
+- **Default for `pause_on_failure`: `True`.** Matches the codebase's
+  existing stance on workspace volumes (retained by default, manually
+  pruned). The forensic value of being able to inspect any historical
+  failure outweighs the cleanup burden for this codebase's solo-developer
+  context. Opt out via `AGENT_FOUNDRY_PAUSE_ON_FAILURE=0` (or
+  `pause_on_failure=False`) in environments where accumulated stopped
+  containers are unwanted.
 - **Retention scope: per-run.** One flag per `RunContext`; every container
   in the run honors the same setting. Per-agent retention deferred until
   someone asks for it.

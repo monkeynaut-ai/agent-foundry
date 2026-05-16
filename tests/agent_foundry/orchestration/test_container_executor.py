@@ -936,13 +936,16 @@ class TestSnapshotContainerArtifacts:
     def test_writes_cgroup_memory_txt(self, tmp_path: Path) -> None:
         fake_mgr = FakeContainerManager()
         live = self._make_live(fake_mgr)
-        fake_mgr.read_file_script = {
-            "/sys/fs/cgroup/memory.events": [
-                "low 0\nhigh 0\nmax 1167\noom 0\noom_kill 0\noom_group_kill 0\n"
-            ],
-            "/sys/fs/cgroup/memory.peak": ["3221225472\n"],
-            "/sys/fs/cgroup/memory.current": ["9981952\n"],
-            "/sys/fs/cgroup/memory.max": ["3221225472\n"],
+        # Cgroup reads now go through exec_run + cat (sysfs pseudo-files
+        # do not tar-archive). Script exec_run accordingly.
+        fake_mgr.exec_script = {
+            ("cat", "/sys/fs/cgroup/memory.events"): _ExecResult(
+                exit_code=0,
+                output=b"low 0\nhigh 0\nmax 1167\noom 0\noom_kill 0\noom_group_kill 0\n",
+            ),
+            ("cat", "/sys/fs/cgroup/memory.peak"): _ExecResult(exit_code=0, output=b"3221225472\n"),
+            ("cat", "/sys/fs/cgroup/memory.current"): _ExecResult(exit_code=0, output=b"9981952\n"),
+            ("cat", "/sys/fs/cgroup/memory.max"): _ExecResult(exit_code=0, output=b"3221225472\n"),
         }
 
         _snapshot_container_artifacts(live, tmp_path, "test-agent")
@@ -963,12 +966,14 @@ class TestSnapshotContainerArtifacts:
         assert "3221225472" in content
 
     def test_cgroup_missing_files_handled_gracefully(self, tmp_path: Path) -> None:
-        # On a host without cgroup v2 (or in test environments), the reads
-        # return None. The snapshot must still write the file with a
-        # diagnostic line per missing entry rather than crash.
+        # On a host without cgroup v2 (or in test environments without
+        # scripted exec_run output), the reads come back empty. The
+        # snapshot must still write the file with a diagnostic line per
+        # missing entry rather than crash.
         fake_mgr = FakeContainerManager()
         live = self._make_live(fake_mgr)
-        # No read_file_script entries — every read returns None.
+        # No exec_script entries — fake's exec_run returns (0, b"") by
+        # default, which _read_cgroup_text treats as unavailable.
 
         _snapshot_container_artifacts(live, tmp_path, "test-agent")
 
@@ -1111,8 +1116,9 @@ class TestAgentInvocationFailedEventEnrichment:
 
         fake_mgr.inspect_script = {}
         fake_mgr.create_container = _create_and_script  # type: ignore[method-assign]
-        fake_mgr.read_file_script = {
-            "/sys/fs/cgroup/memory.peak": ["3221229568\n"],
+        # memory.peak now sourced via exec_run + cat.
+        fake_mgr.exec_script = {
+            ("cat", "/sys/fs/cgroup/memory.peak"): _ExecResult(exit_code=0, output=b"3221229568\n"),
         }
 
         primitive = _make_primitive()
@@ -1246,7 +1252,9 @@ class TestInspectContainerScript:
                 container_logs="",
             )
 
-        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        ctx_default, _, _ = _make_ctx(tmp_path=tmp_path)
+        # Default is pause_on_failure=True; override to False for this test.
+        ctx = ctx_default.model_copy(update={"pause_on_failure": False})
         primitive = _make_primitive()
 
         with pytest.raises(AgentFailedError):
