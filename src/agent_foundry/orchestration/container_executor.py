@@ -581,6 +581,7 @@ async def run_agent_in_container(
         lifecycle_writer=lifecycle,
         agent_name=agent_name,
         instructions=instructions,
+        extra_volumes=run_ctx.extra_volumes,
     )
 
     # Invocation number: per-container counter stamped on the live

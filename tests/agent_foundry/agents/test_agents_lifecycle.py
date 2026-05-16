@@ -115,6 +115,26 @@ class TestCreateContainer:
         env = mock_client.containers.create.call_args.kwargs["environment"]
         assert env["WS_URL"] == "ws://host:1234"
 
+    def test_given_extra_volumes_when_create_called_then_merged_into_volumes(
+        self, manager, mock_client
+    ):
+        manager.create_container(
+            workspace_volume="ws-vol",
+            extra_volumes={"/host/path/ca.crt": {"bind": "/etc/ca.crt", "mode": "ro"}},
+        )
+        volumes = mock_client.containers.create.call_args.kwargs["volumes"]
+        # workspace volume still present
+        assert volumes["ws-vol"] == {"bind": "/workspace", "mode": "rw"}
+        # extra volume merged in
+        assert volumes["/host/path/ca.crt"] == {"bind": "/etc/ca.crt", "mode": "ro"}
+
+    def test_given_no_extra_volumes_when_create_called_then_volumes_unchanged(
+        self, manager, mock_client
+    ):
+        manager.create_container(workspace_volume="ws-vol")
+        volumes = mock_client.containers.create.call_args.kwargs["volumes"]
+        assert volumes == {"ws-vol": {"bind": "/workspace", "mode": "rw"}}
+
     def test_given_docker_error_when_create_called_then_raises_container_creation_error(
         self, mock_client
     ):

@@ -100,6 +100,11 @@ class RunContext(BaseModel):
     cancel_event: asyncio.Event = Field(default_factory=asyncio.Event)
     env: dict[str, str]
 
+    extra_volumes: dict[str, dict[str, str]] | None = None
+    """Additional bind mounts (in docker-SDK shape) applied to every agent
+    container created in this run. Merged into the workspace volume mount.
+    """
+
     pause_on_failure: bool = Field(default_factory=_read_pause_on_failure_env)
     """If true, the agent container that produced a failure is not torn
     down at the end of the run. Default sourced from

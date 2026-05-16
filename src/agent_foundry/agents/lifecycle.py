@@ -144,6 +144,7 @@ class ContainerManagerBase(ABC):
         workspace_volume: str = "",
         constraints: Any = None,
         extra_env: dict[str, str] | None = None,
+        extra_volumes: dict[str, dict[str, str]] | None = None,
     ) -> ContainerHandleBase: ...
 
     @abstractmethod
@@ -242,6 +243,7 @@ class ContainerManager(ContainerManagerBase):
         workspace_volume: str = "",
         constraints: Any = None,
         extra_env: dict[str, str] | None = None,
+        extra_volumes: dict[str, dict[str, str]] | None = None,
     ) -> ContainerHandle:
         """Create a container with safety baseline enforced."""
         image = image or self._default_image
@@ -250,6 +252,8 @@ class ContainerManager(ContainerManagerBase):
         volumes = {}
         if workspace_volume:
             volumes[workspace_volume] = {"bind": "/workspace", "mode": "rw"}
+        if extra_volumes:
+            volumes.update(extra_volumes)
 
         environment = {k: v for k, v in os.environ.items() if k in self._env_allowlist}
         if extra_env:
