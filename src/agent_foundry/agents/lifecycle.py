@@ -213,6 +213,17 @@ class ContainerManagerBase(ABC):
         polling for a transition see fresh values.
         """
 
+    @abstractmethod
+    def inspect(self, handle: ContainerHandleBase) -> dict[str, Any]:
+        """Return the container's full attrs dict (after refreshing state).
+
+        Includes the fields exposed by ``docker inspect``: ``State`` (with
+        ``ExitCode``, ``OOMKilled``, ``Status``), ``Mounts``, ``Config``,
+        ``HostConfig``, etc. Callers read the keys they need; this method
+        does not pre-pluck. Returns ``{}`` if the underlying transport
+        has no attrs (defensive — production docker SDK always populates).
+        """
+
 
 class ContainerManager(ContainerManagerBase):
     """Manages Docker container lifecycle with safety baseline enforcement."""
@@ -426,6 +437,18 @@ class ContainerManager(ContainerManagerBase):
         else:
             status = HealthStatus.NONE
         return HealthReport(status=status, raw=dict(health))
+
+    def inspect(self, handle: ContainerHandle) -> dict[str, Any]:
+        """Reload the container and return its full docker-SDK attrs dict.
+
+        Postmortem callers (container_executor's snapshot path) read
+        ``State.ExitCode``, ``State.OOMKilled``, ``HostConfig.Memory``,
+        ``Mounts``, etc. Reload first so the snapshot reflects current
+        state (e.g. a container that has exited since handle creation).
+        """
+        handle._container.reload()
+        attrs = handle._container.attrs
+        return attrs if isinstance(attrs, dict) else {}
 
     def cleanup_all(self) -> None:
         """Emergency cleanup of all tracked containers."""

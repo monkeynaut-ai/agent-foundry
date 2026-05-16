@@ -158,6 +158,27 @@ class FakeContainerManager(ContainerManagerBase):
             handle.container_id, HealthReport(status=HealthStatus.HEALTHY)
         )
 
+    # --- inspect hook --------------------------------------------------------
+    #
+    # ``inspect_script`` maps container_id -> attrs dict the fake should
+    # return. Default is {} so tests that don't care about inspect data
+    # still get a well-typed dict back. ``inspect_log`` records every
+    # container_id inspected so tests can assert call counts.
+    inspect_script: dict[str, dict[str, Any]]
+    inspect_log: list[str]
+
+    def inspect(self, handle: FakeContainerHandle) -> dict[str, Any]:
+        script = getattr(self, "inspect_script", None)
+        if script is None:
+            self.inspect_script = {}
+            script = self.inspect_script
+        log = getattr(self, "inspect_log", None)
+        if log is None:
+            self.inspect_log = []
+            log = self.inspect_log
+        log.append(handle.container_id)
+        return script.get(handle.container_id, {})
+
     # --- Host-side file-path verification hooks ------------------------------
     #
     # ``read_file_script`` maps a container path to a FIFO list of values.
