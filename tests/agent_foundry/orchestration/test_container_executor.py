@@ -978,3 +978,87 @@ class TestSnapshotContainerArtifacts:
         # All four expected paths still appear as section headers, marked
         # missing rather than absent.
         assert content.count("(unavailable)") == 4
+
+
+# --- Failed-turn raw-output persistence -------------------------------------
+#
+# When a run_turn implementation raises ClaudeExecFailedError (the typed
+# exception _do_exec emits on exit_code != 0 or no-envelope-captured),
+# the executor must persist the raw output to turns/<N>/stream.jsonl
+# before the exception propagates. Today the raw output is mashed into
+# the agent_invocation_failed event's reason field (215 KB blob) — this
+# step makes it a first-class on-disk artifact.
+
+
+class TestFailedTurnStreamJsonl:
+    @pytest.mark.asyncio
+    async def test_failed_turn_persists_stream_jsonl(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            ClaudeExecFailedError,
+        )
+
+        raw = b'{"type":"system","subtype":"init","session_id":"s1"}\n'
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise ClaudeExecFailedError(
+                "claude exec failed (exit=137)",
+                exit_code=137,
+                output=raw,
+                container_logs="",
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        stream_path = ctx.artifacts_dir / "test-agent" / "turns" / "1" / "stream.jsonl"
+        assert stream_path.exists(), f"expected failed-turn stream.jsonl at {stream_path}"
+        assert stream_path.read_bytes() == raw
+
+    @pytest.mark.asyncio
+    async def test_failed_turn_persists_even_when_output_is_large(self, tmp_path: Path) -> None:
+        # Capped at 50 MB per the design doc. A 60 MB raw_output should
+        # be truncated, not dropped, with a marker that it was truncated.
+        from agent_foundry.orchestration.container_executor import (
+            ClaudeExecFailedError,
+        )
+
+        # 60 MB of "x" — well over the 50 MB cap.
+        raw = b"x" * (60 * 1024 * 1024)
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise ClaudeExecFailedError(
+                "claude exec failed (exit=1)",
+                exit_code=1,
+                output=raw,
+                container_logs="",
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        stream_path = ctx.artifacts_dir / "test-agent" / "turns" / "1" / "stream.jsonl"
+        assert stream_path.exists()
+        # File is written but capped at the 50 MB limit.
+        size = stream_path.stat().st_size
+        assert size <= 50 * 1024 * 1024 + 1024, (
+            f"expected stream.jsonl <= 50 MB (with small marker slack), got {size}"
+        )
+        # Truncation marker present in the file.
+        tail = stream_path.read_bytes()[-200:]
+        assert b"truncated" in tail.lower()

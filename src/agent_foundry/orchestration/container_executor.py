@@ -71,6 +71,46 @@ logger = logging.getLogger(__name__)
 
 MAX_RESPONDER_ITERATIONS = 20
 
+# Per-turn cap on stream.jsonl writes for failed turns. The full claude
+# stream-json for a turn typically lands well under 1 MB; failures that
+# blow past this are pathological and indicate a separate bug to chase.
+# We still want a postmortem trail, so cap-and-mark rather than drop.
+_FAILED_TURN_STREAM_MAX_BYTES: int = 50 * 1024 * 1024
+_FAILED_TURN_TRUNCATION_MARKER: bytes = (
+    b"\n--- output truncated by container_executor (exceeded 50MB failed-turn cap) ---\n"
+)
+
+
+class ClaudeExecFailedError(RuntimeError):
+    """Raised by ``_do_exec`` when the in-container ``claude`` call fails.
+
+    Subclasses :class:`RuntimeError` so existing ``except RuntimeError``
+    sites still catch it. The additional attributes let the caller
+    persist the raw stream to the failed turn's ``stream.jsonl`` before
+    converting the failure into an :class:`AgentFailedError`.
+
+    Attributes:
+      exit_code: claude's exit code. ``137`` is the SIGKILL/OOM case.
+      output: full stdout/stderr bytes returned by the docker exec
+        — same content that previously got mashed into the
+        ``RuntimeError`` message and the lifecycle ``reason`` field.
+      container_logs: last-N container log tail captured at the time
+        of failure (already passes through ``manager.read_logs``).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        exit_code: int,
+        output: bytes,
+        container_logs: str,
+    ) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code
+        self.output = output
+        self.container_logs = container_logs
+
 
 class TurnResult(BaseModel):
     """Result of one ``RunTurn`` invocation.
@@ -162,10 +202,13 @@ async def _run_claude_turn(
         output = result.output
         if exit_code != 0:
             logs = live.manager.read_logs(live.handle, tail=80).decode(errors="replace")
-            raise RuntimeError(
+            raise ClaudeExecFailedError(
                 f"claude exec failed (exit={exit_code}):\n"
                 f"stdout/stderr: {output.decode(errors='replace')}\n\n"
-                f"container logs: {logs}"
+                f"container logs: {logs}",
+                exit_code=exit_code,
+                output=output,
+                container_logs=logs,
             )
         envelope: dict[str, Any] | None = None
         session_id: str | None = None
@@ -205,11 +248,14 @@ async def _run_claude_turn(
                         envelope = {"outcome": {"kind": "success", "payload": parsed}}
         if envelope is None:
             logs = live.manager.read_logs(live.handle, tail=40).decode(errors="replace")
-            raise RuntimeError(
+            raise ClaudeExecFailedError(
                 "no StructuredOutput tool use captured\n"
                 f"--- claude stdout ({len(output)} bytes) ---\n"
                 f"{output.decode(errors='replace')}\n"
-                f"--- container logs ---\n{logs}"
+                f"--- container logs ---\n{logs}",
+                exit_code=exit_code,
+                output=output,
+                container_logs=logs,
             )
         return TurnResult(envelope=envelope, session_id=session_id, raw_output=output)
 
@@ -505,16 +551,34 @@ async def run_agent_in_container(
             except Exception:
                 logger.warning("failed to persist prompt.txt for turn %s", turn_number)
 
-            result = await run_turn(
-                live,
-                prompt=current_prompt,
-                resume_session_id=current_resume,
-                schema=schema,
-                model=primitive.model,
-                effort=primitive.effort,
-                skip_permissions=primitive.skip_permissions,
-                cwd=primitive.cwd,
-            )
+            try:
+                result = await run_turn(
+                    live,
+                    prompt=current_prompt,
+                    resume_session_id=current_resume,
+                    schema=schema,
+                    model=primitive.model,
+                    effort=primitive.effort,
+                    skip_permissions=primitive.skip_permissions,
+                    cwd=primitive.cwd,
+                )
+            except ClaudeExecFailedError as exec_err:
+                # The turn died mid-stream. Persist the raw output to
+                # stream.jsonl before the exception propagates so the
+                # failed turn has the same on-disk artifact a successful
+                # turn would (capped at _FAILED_TURN_STREAM_MAX_BYTES;
+                # pathological outputs get marked, not dropped).
+                try:
+                    body = exec_err.output
+                    if len(body) > _FAILED_TURN_STREAM_MAX_BYTES:
+                        body = body[:_FAILED_TURN_STREAM_MAX_BYTES] + _FAILED_TURN_TRUNCATION_MARKER
+                    (turn_dir / "stream.jsonl").write_bytes(body)
+                except Exception:
+                    logger.warning(
+                        "failed to persist stream.jsonl for failed turn %s",
+                        turn_number,
+                    )
+                raise
 
             # Tee the raw stream regardless of outcome so every RunTurn
             # implementation gets stderr + stream.jsonl persistence for
