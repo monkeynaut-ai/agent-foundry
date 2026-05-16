@@ -71,6 +71,39 @@ logger = logging.getLogger(__name__)
 
 MAX_RESPONDER_ITERATIONS = 20
 
+# Per-turn cap on stream.jsonl writes for failed turns. The full claude
+# stream-json for a turn typically lands well under 1 MB; failures that
+# blow past this are pathological and indicate a separate bug to chase.
+# We still want a postmortem trail, so cap-and-mark rather than drop.
+_FAILED_TURN_STREAM_MAX_BYTES: int = 100 * 1024 * 1024
+_FAILED_TURN_TRUNCATION_MARKER: bytes = (
+    b"\n--- output truncated by container_executor (exceeded 100MiB failed-turn cap) ---\n"
+)
+
+
+class AgentExecFailedError(RuntimeError):
+    """Raised when an in-container agent invocation exits non-zero or
+    fails to produce a parseable envelope.
+
+    Attributes:
+      exit_code: the agent process's exit code (137 = SIGKILL/OOM).
+      output: full stdout/stderr bytes from the exec.
+      container_logs: container log tail captured at the time of failure.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        exit_code: int,
+        output: bytes,
+        container_logs: str,
+    ) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code
+        self.output = output
+        self.container_logs = container_logs
+
 
 class TurnResult(BaseModel):
     """Result of one ``RunTurn`` invocation.
@@ -162,10 +195,13 @@ async def _run_claude_turn(
         output = result.output
         if exit_code != 0:
             logs = live.manager.read_logs(live.handle, tail=80).decode(errors="replace")
-            raise RuntimeError(
+            raise AgentExecFailedError(
                 f"claude exec failed (exit={exit_code}):\n"
                 f"stdout/stderr: {output.decode(errors='replace')}\n\n"
-                f"container logs: {logs}"
+                f"container logs: {logs}",
+                exit_code=exit_code,
+                output=output,
+                container_logs=logs,
             )
         envelope: dict[str, Any] | None = None
         session_id: str | None = None
@@ -205,11 +241,14 @@ async def _run_claude_turn(
                         envelope = {"outcome": {"kind": "success", "payload": parsed}}
         if envelope is None:
             logs = live.manager.read_logs(live.handle, tail=40).decode(errors="replace")
-            raise RuntimeError(
+            raise AgentExecFailedError(
                 "no StructuredOutput tool use captured\n"
                 f"--- claude stdout ({len(output)} bytes) ---\n"
                 f"{output.decode(errors='replace')}\n"
-                f"--- container logs ---\n{logs}"
+                f"--- container logs ---\n{logs}",
+                exit_code=exit_code,
+                output=output,
+                container_logs=logs,
             )
         return TurnResult(envelope=envelope, session_id=session_id, raw_output=output)
 
@@ -225,28 +264,135 @@ def _agent_name(primitive: AgentAction) -> str:
     return primitive.name
 
 
+_CGROUP_MEMORY_FILES: tuple[str, ...] = (
+    "/sys/fs/cgroup/memory.events",
+    "/sys/fs/cgroup/memory.peak",
+    "/sys/fs/cgroup/memory.current",
+    "/sys/fs/cgroup/memory.max",
+)
+
+
+def _read_cgroup_text(live: LiveContainer, path: str) -> str | None:
+    """Read a cgroup pseudo-file from inside the container via ``cat``.
+
+    ``ContainerManager.read_file_from_container`` routes through docker's
+    ``get_archive`` (a tar stream). That fails for cgroup-v2 entries
+    because sysfs pseudo-files do not tar-serialize — every read returns
+    ``None`` even though the file is readable via ``cat``. So this helper
+    shells out instead, returning the decoded stdout on exit_code == 0
+    and ``None`` otherwise (file missing, cgroup-v1 host, exec error).
+    """
+    try:
+        result = live.manager.exec_run(live.handle, ["cat", path])
+        if result.exit_code == 0 and result.output:
+            return result.output.decode(errors="replace")
+    except Exception as exc:
+        logger.warning("cgroup read of %s failed for %s: %s", path, live.agent_name, exc)
+    return None
+
+
+def _capture_forensic_fields(
+    live: LiveContainer,
+    *,
+    exit_code_hint: int | None = None,
+) -> dict[str, Any]:
+    """Return structured failure-cause fields for a lifecycle event.
+
+    Best-effort: each lookup is independently try/except'd, and a key is
+    only included if the underlying read succeeded.
+
+    Fields:
+      * ``exit_code``: ``exit_code_hint`` if supplied, else inspect's
+        ``State.ExitCode``.
+      * ``oom_killed``: inspect's ``State.OOMKilled``.
+      * ``memory_peak_bytes``: cgroup-v2 ``/sys/fs/cgroup/memory.peak``.
+    """
+    fields: dict[str, Any] = {}
+
+    # exit_code (from the typed exception when available, else inspect).
+    inspect_attrs: dict[str, Any] | None = None
+    try:
+        inspect_attrs = live.manager.inspect(live.handle)
+    except Exception as exc:
+        logger.warning("forensic: inspect failed for %s: %s", live.agent_name, exc)
+
+    if exit_code_hint is not None:
+        fields["exit_code"] = exit_code_hint
+    elif isinstance(inspect_attrs, dict):
+        state = inspect_attrs.get("State", {}) or {}
+        if "ExitCode" in state:
+            fields["exit_code"] = state["ExitCode"]
+
+    if isinstance(inspect_attrs, dict):
+        state = inspect_attrs.get("State", {}) or {}
+        if "OOMKilled" in state:
+            fields["oom_killed"] = state["OOMKilled"]
+
+    # memory.peak (cgroup-v2). Read via exec_run + cat — sysfs pseudo-files
+    # do not tar-serialize, so ``read_file_from_container`` returns None.
+    peak_raw = _read_cgroup_text(live, "/sys/fs/cgroup/memory.peak")
+    if peak_raw is not None and peak_raw.strip():
+        try:
+            fields["memory_peak_bytes"] = int(peak_raw.strip())
+        except ValueError as exc:
+            logger.warning(
+                "forensic: memory.peak unparseable for %s: %r (%s)",
+                live.agent_name,
+                peak_raw,
+                exc,
+            )
+
+    return fields
+
+
 def _snapshot_container_artifacts(
     live: LiveContainer,
     run_dir: Any,
     agent_name: str,
+    *,
+    pause_on_failure: bool = False,
+    run_id: str = "",
 ) -> None:
-    """Persist container logs and the rendered CLAUDE.md to the host.
+    """Persist container postmortem artifacts to the host.
 
-    Called at the end of every ``run_agent_in_container`` invocation.
-    Both writes are best-effort — failures log a warning and do not
-    propagate, because this runs in a ``finally`` block that must not
-    shadow the primary exception (if any).
+    Each write is independently best-effort and must not propagate —
+    writes are independent and none should mask the primary exception.
 
-    - ``<run_dir>/<agent>/container.log`` : full container stdout +
-      stderr captured so far. Overwritten each invocation; captures
-      everything from container start through the most recent turn.
-    - ``<run_dir>/<agent>/CLAUDE.md`` : the merged role-instructions
-      file the agent actually sees (base image CLAUDE.md + appended
-      role instructions). Overwritten each invocation. The content is
-      ephemeral inside the container filesystem (which is destroyed at
-      run teardown), so this snapshot is the only postmortem record.
+    Writes (under ``<run_dir>/<agent>/``):
+
+    - ``container.log`` — full container stdout + stderr to date.
+    - ``CLAUDE.md`` — merged role-instructions seen by the agent.
+    - ``docker-inspect.json`` — container attrs at teardown.
+    - ``cgroup-memory.txt`` — cgroup-v2 memory accounting snapshot.
+    - ``inspect-container.sh`` — only when ``pause_on_failure`` and
+      ``live.failed``; wraps ``docker exec`` for postmortem.
     """
-    from agent_foundry.orchestration.artifacts import agent_log_path
+    from agent_foundry.orchestration.artifacts import (
+        agent_log_path,
+        write_inspect_container_script,
+    )
+
+    agent_dir = run_dir / agent_name
+    agent_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- inspect-container.sh (only when the container will be retained) ---
+    # Written only when both conditions hold: pause_on_failure was enabled
+    # AND this container's invocation failed. Otherwise the container will
+    # be destroyed at teardown and the script would point at nothing.
+    if pause_on_failure and live.failed:
+        try:
+            write_inspect_container_script(
+                run_dir=run_dir,
+                agent_name=agent_name,
+                container_id=live.handle.container_id,
+                run_id=run_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "failed to write inspect-container.sh for agent %s: %s",
+                agent_name,
+                exc,
+            )
 
     # --- container.log ---
     # Routes through manager.read_logs so the docker-SDK shape stays
@@ -271,12 +417,43 @@ def _snapshot_container_artifacts(
             live.handle, "/home/claude/.claude/CLAUDE.md"
         )
         if isinstance(content, str):
-            agent_dir = run_dir / agent_name
-            agent_dir.mkdir(parents=True, exist_ok=True)
             (agent_dir / "CLAUDE.md").write_text(content, encoding="utf-8")
     except Exception as exc:
         logger.warning(
             "failed to snapshot CLAUDE.md for agent %s: %s",
+            agent_name,
+            exc,
+        )
+
+    # --- docker-inspect.json ---
+    try:
+        attrs = live.manager.inspect(live.handle)
+        (agent_dir / "docker-inspect.json").write_text(
+            json.dumps(attrs, indent=2, default=str),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.warning(
+            "failed to snapshot docker-inspect.json for agent %s: %s",
+            agent_name,
+            exc,
+        )
+
+    # --- cgroup-memory.txt ---
+    # Each section is a path header followed by the file's content (or
+    # "(unavailable)" if the read failed — happens on cgroup-v1 hosts,
+    # in test fakes that don't script these reads, or when the container
+    # is no longer reachable).
+    try:
+        sections: list[str] = []
+        for cgroup_path in _CGROUP_MEMORY_FILES:
+            content = _read_cgroup_text(live, cgroup_path)
+            body = content if content else "(unavailable)"
+            sections.append(f"=== {cgroup_path} ===\n{body}\n")
+        (agent_dir / "cgroup-memory.txt").write_text("\n".join(sections), encoding="utf-8")
+    except Exception as exc:
+        logger.warning(
+            "failed to snapshot cgroup-memory.txt for agent %s: %s",
             agent_name,
             exc,
         )
@@ -457,16 +634,34 @@ async def run_agent_in_container(
             except Exception:
                 logger.warning("failed to persist prompt.txt for turn %s", turn_number)
 
-            result = await run_turn(
-                live,
-                prompt=current_prompt,
-                resume_session_id=current_resume,
-                schema=schema,
-                model=primitive.model,
-                effort=primitive.effort,
-                skip_permissions=primitive.skip_permissions,
-                cwd=primitive.cwd,
-            )
+            try:
+                result = await run_turn(
+                    live,
+                    prompt=current_prompt,
+                    resume_session_id=current_resume,
+                    schema=schema,
+                    model=primitive.model,
+                    effort=primitive.effort,
+                    skip_permissions=primitive.skip_permissions,
+                    cwd=primitive.cwd,
+                )
+            except AgentExecFailedError as exec_err:
+                # The turn died mid-stream. Persist the raw output to
+                # stream.jsonl before the exception propagates so the
+                # failed turn has the same on-disk artifact a successful
+                # turn would (capped at _FAILED_TURN_STREAM_MAX_BYTES;
+                # pathological outputs get marked, not dropped).
+                try:
+                    body = exec_err.output
+                    if len(body) > _FAILED_TURN_STREAM_MAX_BYTES:
+                        body = body[:_FAILED_TURN_STREAM_MAX_BYTES] + _FAILED_TURN_TRUNCATION_MARKER
+                    (turn_dir / "stream.jsonl").write_bytes(body)
+                except Exception:
+                    logger.warning(
+                        "failed to persist stream.jsonl for failed turn %s",
+                        turn_number,
+                    )
+                raise
 
             # Tee the raw stream regardless of outcome so every RunTurn
             # implementation gets stderr + stream.jsonl persistence for
@@ -669,14 +864,27 @@ async def run_agent_in_container(
                 invocation=invocation,
             )
     except AgentFailedError:
-        # Already logged above at the point of raise.
+        # Already logged above at the point of raise. Mark the live
+        # container failed so an outer ``shutdown_all(pause_on_failure=True)``
+        # can retain it for postmortem inspection.
+        live.failed = True
         raise
     except Exception as exc:
+        # Mark the container failed (see above) before doing the
+        # best-effort forensic capture.
+        live.failed = True
+        # Best-effort: capture structured forensic fields (exit_code,
+        # oom_killed, memory_peak_bytes) for the lifecycle event so
+        # common dispatch on the cause is a one-line check rather than
+        # parsing the reason string. ``reason`` stays for the long tail.
+        exit_code_hint = exc.exit_code if isinstance(exc, AgentExecFailedError) else None
+        forensic_fields = _capture_forensic_fields(live, exit_code_hint=exit_code_hint)
         lifecycle.append(
             LifecycleEvent.AGENT_INVOCATION_FAILED,
             agent_name=agent_name,
             invocation=invocation,
             reason=str(exc),
+            **forensic_fields,
         )
         raise AgentFailedError(
             reason=str(exc),
@@ -690,4 +898,10 @@ async def run_agent_in_container(
         # postmortem always has both artifacts available even if the
         # agent crashed. The container filesystem is ephemeral; this
         # is the only durable record.
-        _snapshot_container_artifacts(live, run_ctx.artifacts_dir, agent_name)
+        _snapshot_container_artifacts(
+            live,
+            run_ctx.artifacts_dir,
+            agent_name,
+            pause_on_failure=run_ctx.pause_on_failure,
+            run_id=run_ctx.run_id,
+        )

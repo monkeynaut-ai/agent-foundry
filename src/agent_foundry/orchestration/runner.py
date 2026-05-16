@@ -204,7 +204,7 @@ async def run_primitive_plan(
         #      its own try/except so a teardown failure can't prevent
         #      on_close from firing.
         try:
-            await registry.shutdown_all()
+            await registry.shutdown_all(pause_on_failure=run_ctx.pause_on_failure)
         except Exception:
             logger.warning("registry.shutdown_all raised during teardown", exc_info=True)
         try:

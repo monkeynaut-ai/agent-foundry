@@ -317,6 +317,38 @@ class TestHealthStatus:
         assert report.raw["Log"][0]["Output"] == "boom"
 
 
+class TestInspect:
+    """`inspect` returns the container's full docker-SDK attrs dict
+    (post-reload), so callers can read OOMKilled, ExitCode, State.Status,
+    Mounts, HostConfig, etc. without each duplicating the reload+attrs
+    boilerplate.
+    """
+
+    def test_inspect_returns_attrs_dict(self, manager):
+        handle = manager.create_container()
+        handle._container.attrs = {
+            "State": {"Status": "exited", "ExitCode": 137, "OOMKilled": True}
+        }
+        out = manager.inspect(handle)
+        assert out["State"]["ExitCode"] == 137
+        assert out["State"]["OOMKilled"] is True
+
+    def test_inspect_calls_reload_to_refresh_state(self, manager):
+        # Without reload, the cached attrs from create_container may still
+        # show "running" after the container has exited.
+        handle = manager.create_container()
+        handle._container.attrs = {"State": {"Status": "exited"}}
+        manager.inspect(handle)
+        handle._container.reload.assert_called_once()
+
+    def test_inspect_returns_empty_dict_when_attrs_missing(self, manager):
+        # Defensive: docker SDK never returns None for attrs in practice,
+        # but the abstraction promises a dict, not Optional[dict].
+        handle = manager.create_container()
+        handle._container.attrs = {}
+        assert manager.inspect(handle) == {}
+
+
 class TestValidateImage:
     def test_given_claude_available_when_validate_called_then_no_error(self, manager):
         handle = manager.create_container()

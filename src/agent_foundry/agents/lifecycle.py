@@ -213,6 +213,14 @@ class ContainerManagerBase(ABC):
         polling for a transition see fresh values.
         """
 
+    @abstractmethod
+    def inspect(self, handle: ContainerHandleBase) -> dict[str, Any]:
+        """Return a snapshot dict of the container's runtime metadata.
+
+        Implementations refresh underlying state before returning.
+        Returns ``{}`` if the underlying transport has no attrs.
+        """
+
 
 class ContainerManager(ContainerManagerBase):
     """Manages Docker container lifecycle with safety baseline enforcement."""
@@ -426,6 +434,15 @@ class ContainerManager(ContainerManagerBase):
         else:
             status = HealthStatus.NONE
         return HealthReport(status=status, raw=dict(health))
+
+    def inspect(self, handle: ContainerHandle) -> dict[str, Any]:
+        """Reload the container and return its docker-SDK attrs dict.
+
+        Reload first so the snapshot reflects current state.
+        """
+        handle._container.reload()
+        attrs = handle._container.attrs
+        return attrs if isinstance(attrs, dict) else {}
 
     def cleanup_all(self) -> None:
         """Emergency cleanup of all tracked containers."""

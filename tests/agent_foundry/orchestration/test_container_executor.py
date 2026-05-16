@@ -32,6 +32,7 @@ from agent_foundry.orchestration import container_executor
 from agent_foundry.orchestration.artifacts import bootstrap_run_artifacts
 from agent_foundry.orchestration.container_executor import (
     _run_claude_turn,
+    _snapshot_container_artifacts,
     run_agent_in_container,
 )
 from agent_foundry.orchestration.errors import AgentFailedError
@@ -888,3 +889,394 @@ class TestRunAgentInContainerEffortThreading:
         await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
 
         assert driver.calls[0]["effort"] is None
+
+
+# --- Postmortem snapshot tests ----------------------------------------------
+#
+# Tests for ``_snapshot_container_artifacts`` directly. The function runs
+# in the ``finally`` of every ``run_agent_in_container`` invocation and is
+# the only on-disk record once the container is destroyed.
+
+
+class TestSnapshotContainerArtifacts:
+    """Postmortem snapshot of container state for offline forensics.
+
+    Always writes ``container.log`` and ``CLAUDE.md``; with step 2 of the
+    container-failure-postmortem design, also writes ``docker-inspect.json``
+    and ``cgroup-memory.txt``. Each write is best-effort (a failure in one
+    must not prevent the others).
+    """
+
+    def _make_live(self, fake_mgr: FakeContainerManager) -> _LiveContainer:
+        handle = fake_mgr.create_container()
+        return _LiveContainer(
+            handle=handle,
+            manager=fake_mgr,
+            agent_name="test-agent",
+        )
+
+    def test_writes_docker_inspect_json(self, tmp_path: Path) -> None:
+        fake_mgr = FakeContainerManager()
+        live = self._make_live(fake_mgr)
+        fake_mgr.inspect_script = {
+            live.handle.container_id: {
+                "State": {"ExitCode": 137, "OOMKilled": True, "Status": "exited"},
+                "Id": "abc",
+            }
+        }
+
+        _snapshot_container_artifacts(live, tmp_path, "test-agent")
+
+        inspect_path = tmp_path / "test-agent" / "docker-inspect.json"
+        assert inspect_path.exists(), f"expected inspect snapshot at {inspect_path}"
+        data = _json_test.loads(inspect_path.read_text())
+        assert data["State"]["ExitCode"] == 137
+        assert data["State"]["OOMKilled"] is True
+
+    def test_writes_cgroup_memory_txt(self, tmp_path: Path) -> None:
+        fake_mgr = FakeContainerManager()
+        live = self._make_live(fake_mgr)
+        # Cgroup reads now go through exec_run + cat (sysfs pseudo-files
+        # do not tar-archive). Script exec_run accordingly.
+        fake_mgr.exec_script = {
+            ("cat", "/sys/fs/cgroup/memory.events"): _ExecResult(
+                exit_code=0,
+                output=b"low 0\nhigh 0\nmax 1167\noom 0\noom_kill 0\noom_group_kill 0\n",
+            ),
+            ("cat", "/sys/fs/cgroup/memory.peak"): _ExecResult(exit_code=0, output=b"3221225472\n"),
+            ("cat", "/sys/fs/cgroup/memory.current"): _ExecResult(exit_code=0, output=b"9981952\n"),
+            ("cat", "/sys/fs/cgroup/memory.max"): _ExecResult(exit_code=0, output=b"3221225472\n"),
+        }
+
+        _snapshot_container_artifacts(live, tmp_path, "test-agent")
+
+        cgroup_path = tmp_path / "test-agent" / "cgroup-memory.txt"
+        assert cgroup_path.exists(), f"expected cgroup snapshot at {cgroup_path}"
+        content = cgroup_path.read_text()
+        # Each scripted file appears, with its path as a header so a reader
+        # can disambiguate.
+        for header in (
+            "/sys/fs/cgroup/memory.events",
+            "/sys/fs/cgroup/memory.peak",
+            "/sys/fs/cgroup/memory.current",
+            "/sys/fs/cgroup/memory.max",
+        ):
+            assert header in content, f"missing section header {header} in {content!r}"
+        assert "oom_kill" in content
+        assert "3221225472" in content
+
+    def test_cgroup_missing_files_handled_gracefully(self, tmp_path: Path) -> None:
+        # On a host without cgroup v2 (or in test environments without
+        # scripted exec_run output), the reads come back empty. The
+        # snapshot must still write the file with a diagnostic line per
+        # missing entry rather than crash.
+        fake_mgr = FakeContainerManager()
+        live = self._make_live(fake_mgr)
+        # No exec_script entries — fake's exec_run returns (0, b"") by
+        # default, which _read_cgroup_text treats as unavailable.
+
+        _snapshot_container_artifacts(live, tmp_path, "test-agent")
+
+        cgroup_path = tmp_path / "test-agent" / "cgroup-memory.txt"
+        assert cgroup_path.exists()
+        content = cgroup_path.read_text()
+        # All four expected paths still appear as section headers, marked
+        # missing rather than absent.
+        assert content.count("(unavailable)") == 4
+
+
+# --- Failed-turn raw-output persistence -------------------------------------
+#
+# When a run_turn implementation raises AgentExecFailedError (the typed
+# exception _do_exec emits on exit_code != 0 or no-envelope-captured),
+# the executor must persist the raw output to turns/<N>/stream.jsonl
+# before the exception propagates. Today the raw output is mashed into
+# the agent_invocation_failed event's reason field (215 KB blob) — this
+# step makes it a first-class on-disk artifact.
+
+
+class TestFailedTurnStreamJsonl:
+    @pytest.mark.asyncio
+    async def test_failed_turn_persists_stream_jsonl(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        raw = b'{"type":"system","subtype":"init","session_id":"s1"}\n'
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise AgentExecFailedError(
+                "claude exec failed (exit=137)",
+                exit_code=137,
+                output=raw,
+                container_logs="",
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        stream_path = ctx.artifacts_dir / "test-agent" / "turns" / "1" / "stream.jsonl"
+        assert stream_path.exists(), f"expected failed-turn stream.jsonl at {stream_path}"
+        assert stream_path.read_bytes() == raw
+
+    @pytest.mark.asyncio
+    async def test_failed_turn_persists_even_when_output_is_large(self, tmp_path: Path) -> None:
+        # Capped at 100 MiB per the design doc. An output larger than
+        # the cap should be truncated, not dropped, with a marker that
+        # it was truncated.
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        # 110 MiB of "x" — well over the 100 MiB cap.
+        raw = b"x" * (110 * 1024 * 1024)
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise AgentExecFailedError(
+                "claude exec failed (exit=1)",
+                exit_code=1,
+                output=raw,
+                container_logs="",
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        stream_path = ctx.artifacts_dir / "test-agent" / "turns" / "1" / "stream.jsonl"
+        assert stream_path.exists()
+        # File is written but capped at the 100 MiB limit.
+        size = stream_path.stat().st_size
+        assert size <= 100 * 1024 * 1024 + 1024, (
+            f"expected stream.jsonl <= 100 MiB (with small marker slack), got {size}"
+        )
+        # Truncation marker present in the file.
+        tail = stream_path.read_bytes()[-200:]
+        assert b"truncated" in tail.lower()
+
+
+# --- Enriched agent_invocation_failed event ---------------------------------
+#
+# On unexpected container/exec failures, the AGENT_INVOCATION_FAILED
+# lifecycle event payload now carries structured forensic fields
+# (exit_code, oom_killed, memory_peak_bytes) alongside the existing
+# `reason` string. Common dispatch becomes a one-line check instead
+# of parsing the 215 KB reason blob.
+
+
+class TestAgentInvocationFailedEventEnrichment:
+    @pytest.mark.asyncio
+    async def test_event_includes_oom_killed_exit_code_memory_peak(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise AgentExecFailedError(
+                "claude exec failed (exit=137)",
+                exit_code=137,
+                output=b"",
+                container_logs="",
+            )
+
+        ctx, registry, writer = _make_ctx(tmp_path=tmp_path)
+        # Pre-script the manager so the forensic capture finds usable data.
+        fake_mgr: FakeContainerManager = registry._manager_override  # type: ignore[assignment]
+        # inspect returns OOMKilled=True; container_id is assigned when the
+        # registry calls create_container, so script the *path-agnostic*
+        # default — see fake's inspect_script behavior — by populating
+        # it with the actual id once the container is created. The test
+        # here uses a special pre-script approach via create_container.
+
+        # Pre-create the container by registering primitive — done inside
+        # run_agent_in_container, after our setup runs. To set the inspect
+        # script for the right container_id, hook create_container.
+        orig_create = fake_mgr.create_container
+
+        def _create_and_script(*a: Any, **kw: Any) -> Any:
+            h = orig_create(*a, **kw)
+            fake_mgr.inspect_script[h.container_id] = {
+                "State": {"ExitCode": 137, "OOMKilled": True, "Status": "exited"}
+            }
+            return h
+
+        fake_mgr.inspect_script = {}
+        fake_mgr.create_container = _create_and_script  # type: ignore[method-assign]
+        # memory.peak now sourced via exec_run + cat.
+        fake_mgr.exec_script = {
+            ("cat", "/sys/fs/cgroup/memory.peak"): _ExecResult(exit_code=0, output=b"3221229568\n"),
+        }
+
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        failed_events = [
+            e for e in writer.events if e["type"] is LifecycleEvent.AGENT_INVOCATION_FAILED
+        ]
+        assert len(failed_events) == 1, f"expected exactly one failure event, got {writer.events}"
+        evt = failed_events[0]
+        assert evt["exit_code"] == 137
+        assert evt["oom_killed"] is True
+        assert evt["memory_peak_bytes"] == 3221229568
+        # The unstructured reason stays available for the long tail of
+        # "something weird happened, read the blob".
+        assert "exit=137" in evt["reason"]
+
+    @pytest.mark.asyncio
+    async def test_event_still_writes_when_forensic_capture_fails(self, tmp_path: Path) -> None:
+        # If the inspect/cgroup reads raise, the lifecycle event must
+        # still be written. The forensic fields are absent (or None)
+        # rather than blocking the event.
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise AgentExecFailedError(
+                "claude exec failed (exit=1)",
+                exit_code=1,
+                output=b"",
+                container_logs="",
+            )
+
+        ctx, registry, writer = _make_ctx(tmp_path=tmp_path)
+        fake_mgr: FakeContainerManager = registry._manager_override  # type: ignore[assignment]
+
+        # Make every inspect call raise. The lifecycle event must still
+        # be appended.
+        def _raise_inspect(*a: Any, **kw: Any) -> Any:
+            raise RuntimeError("inspect broke")
+
+        fake_mgr.inspect = _raise_inspect  # type: ignore[method-assign]
+
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        failed_events = [
+            e for e in writer.events if e["type"] is LifecycleEvent.AGENT_INVOCATION_FAILED
+        ]
+        assert len(failed_events) == 1
+        evt = failed_events[0]
+        # reason is the load-bearing field that must always be present.
+        assert "exit=1" in evt["reason"]
+        # exit_code is taken from the typed exception, not from inspect,
+        # so it's still available even if inspect raises.
+        assert evt["exit_code"] == 1
+        # oom_killed and memory_peak_bytes come from inspect/cgroup and
+        # are unavailable. Either absent or None.
+        assert evt.get("oom_killed") in (None, False) or "oom_killed" not in evt
+        assert evt.get("memory_peak_bytes") is None or "memory_peak_bytes" not in evt
+
+
+# --- inspect-container.sh auto-generation -----------------------------------
+#
+# When a container is retained for postmortem (pause_on_failure=True AND
+# the container's invocation failed), the executor's snapshot path writes
+# an inspect-container.sh helper to <run>/<agent>/ so the operator can
+# `docker exec -it <id> bash` without re-deriving the user/group/cwd.
+
+
+class TestInspectContainerScript:
+    @pytest.mark.asyncio
+    async def test_script_written_when_failed_and_pause_on_failure(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise AgentExecFailedError(
+                "claude exec failed (exit=137)",
+                exit_code=137,
+                output=b"",
+                container_logs="",
+            )
+
+        ctx_default, _, _ = _make_ctx(tmp_path=tmp_path)
+        ctx = ctx_default.model_copy(update={"pause_on_failure": True})
+
+        primitive = _make_primitive()
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        script_path = ctx.artifacts_dir / "test-agent" / "inspect-container.sh"
+        assert script_path.exists(), f"expected inspect-container.sh at {script_path}"
+        body = script_path.read_text()
+        assert "docker exec" in body
+        assert "fake-1" in body
+        assert script_path.stat().st_mode & 0o111
+
+    @pytest.mark.asyncio
+    async def test_script_not_written_when_pause_on_failure_false(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise AgentExecFailedError(
+                "claude exec failed",
+                exit_code=1,
+                output=b"",
+                container_logs="",
+            )
+
+        ctx_default, _, _ = _make_ctx(tmp_path=tmp_path)
+        # Default is pause_on_failure=True; override to False for this test.
+        ctx = ctx_default.model_copy(update={"pause_on_failure": False})
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        script_path = ctx.artifacts_dir / "test-agent" / "inspect-container.sh"
+        assert not script_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_script_not_written_on_success(self, tmp_path: Path) -> None:
+        driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
+        ctx_default, _, _ = _make_ctx(tmp_path=tmp_path)
+        ctx = ctx_default.model_copy(update={"pause_on_failure": True})
+
+        primitive = _make_primitive()
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+
+        script_path = ctx.artifacts_dir / "test-agent" / "inspect-container.sh"
+        assert not script_path.exists()

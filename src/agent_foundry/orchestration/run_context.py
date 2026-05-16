@@ -14,6 +14,7 @@ helper expose the active context to compiled nodes and to product code via
 from __future__ import annotations
 
 import asyncio
+import os
 import tempfile
 from collections.abc import Callable
 from contextvars import ContextVar
@@ -40,6 +41,19 @@ __all__ = [
     "current_run_context",
     "require_current_run_context",
 ]
+
+
+def _read_pause_on_failure_env() -> bool:
+    """Read ``AGENT_FOUNDRY_PAUSE_ON_FAILURE`` and parse it as a bool.
+
+    Default behavior is to retain failed containers (True), matching the
+    "retain forensic state, require manual cleanup" stance the codebase
+    already takes for workspace volumes. The env var lets ad-hoc runs
+    opt OUT — ``0`` / ``false`` / ``no`` (case-insensitive) returns
+    False, anything else (including unset) returns True.
+    """
+    val = os.environ.get("AGENT_FOUNDRY_PAUSE_ON_FAILURE", "").strip().lower()
+    return val not in {"0", "false", "no"}
 
 
 def _default_artifacts_dir() -> Path:
@@ -85,6 +99,13 @@ class RunContext(BaseModel):
     lifecycle_writer: LifecycleWriter
     cancel_event: asyncio.Event = Field(default_factory=asyncio.Event)
     env: dict[str, str]
+
+    pause_on_failure: bool = Field(default_factory=_read_pause_on_failure_env)
+    """If true, the agent container that produced a failure is not torn
+    down at the end of the run. Default sourced from
+    ``AGENT_FOUNDRY_PAUSE_ON_FAILURE`` (0/false/no → False, anything
+    else → True).
+    """
 
     on_run_starting: list[Callable[[RunStartingEvent], None]] = Field(default_factory=list)
     """Hooks invoked while the run is in the act of starting.
