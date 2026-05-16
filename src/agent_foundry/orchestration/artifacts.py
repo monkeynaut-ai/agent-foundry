@@ -81,10 +81,6 @@ _INSPECT_CONTAINER_SCRIPT_TEMPLATE = """\
 # Auto-generated on {iso_timestamp}
 # Drop a shell into the retained container for run {run_id}, agent {agent_name}.
 #
-# This script is written only when the run set ``pause_on_failure=True``
-# AND this agent's container failed. Without retention the container has
-# already been destroyed and ``docker exec`` will error.
-#
 # When you're done inspecting:
 #   docker rm -f {container_id}
 set -euo pipefail

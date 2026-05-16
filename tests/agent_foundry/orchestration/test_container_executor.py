@@ -987,7 +987,7 @@ class TestSnapshotContainerArtifacts:
 
 # --- Failed-turn raw-output persistence -------------------------------------
 #
-# When a run_turn implementation raises ClaudeExecFailedError (the typed
+# When a run_turn implementation raises AgentExecFailedError (the typed
 # exception _do_exec emits on exit_code != 0 or no-envelope-captured),
 # the executor must persist the raw output to turns/<N>/stream.jsonl
 # before the exception propagates. Today the raw output is mashed into
@@ -999,13 +999,13 @@ class TestFailedTurnStreamJsonl:
     @pytest.mark.asyncio
     async def test_failed_turn_persists_stream_jsonl(self, tmp_path: Path) -> None:
         from agent_foundry.orchestration.container_executor import (
-            ClaudeExecFailedError,
+            AgentExecFailedError,
         )
 
         raw = b'{"type":"system","subtype":"init","session_id":"s1"}\n'
 
         async def failing_turn(*args: Any, **kwargs: Any) -> Any:
-            raise ClaudeExecFailedError(
+            raise AgentExecFailedError(
                 "claude exec failed (exit=137)",
                 exit_code=137,
                 output=raw,
@@ -1033,14 +1033,14 @@ class TestFailedTurnStreamJsonl:
         # the cap should be truncated, not dropped, with a marker that
         # it was truncated.
         from agent_foundry.orchestration.container_executor import (
-            ClaudeExecFailedError,
+            AgentExecFailedError,
         )
 
         # 110 MiB of "x" — well over the 100 MiB cap.
         raw = b"x" * (110 * 1024 * 1024)
 
         async def failing_turn(*args: Any, **kwargs: Any) -> Any:
-            raise ClaudeExecFailedError(
+            raise AgentExecFailedError(
                 "claude exec failed (exit=1)",
                 exit_code=1,
                 output=raw,
@@ -1083,11 +1083,11 @@ class TestAgentInvocationFailedEventEnrichment:
     @pytest.mark.asyncio
     async def test_event_includes_oom_killed_exit_code_memory_peak(self, tmp_path: Path) -> None:
         from agent_foundry.orchestration.container_executor import (
-            ClaudeExecFailedError,
+            AgentExecFailedError,
         )
 
         async def failing_turn(*args: Any, **kwargs: Any) -> Any:
-            raise ClaudeExecFailedError(
+            raise AgentExecFailedError(
                 "claude exec failed (exit=137)",
                 exit_code=137,
                 output=b"",
@@ -1150,11 +1150,11 @@ class TestAgentInvocationFailedEventEnrichment:
         # still be written. The forensic fields are absent (or None)
         # rather than blocking the event.
         from agent_foundry.orchestration.container_executor import (
-            ClaudeExecFailedError,
+            AgentExecFailedError,
         )
 
         async def failing_turn(*args: Any, **kwargs: Any) -> Any:
-            raise ClaudeExecFailedError(
+            raise AgentExecFailedError(
                 "claude exec failed (exit=1)",
                 exit_code=1,
                 output=b"",
@@ -1209,11 +1209,11 @@ class TestInspectContainerScript:
     @pytest.mark.asyncio
     async def test_script_written_when_failed_and_pause_on_failure(self, tmp_path: Path) -> None:
         from agent_foundry.orchestration.container_executor import (
-            ClaudeExecFailedError,
+            AgentExecFailedError,
         )
 
         async def failing_turn(*args: Any, **kwargs: Any) -> Any:
-            raise ClaudeExecFailedError(
+            raise AgentExecFailedError(
                 "claude exec failed (exit=137)",
                 exit_code=137,
                 output=b"",
@@ -1242,11 +1242,11 @@ class TestInspectContainerScript:
     @pytest.mark.asyncio
     async def test_script_not_written_when_pause_on_failure_false(self, tmp_path: Path) -> None:
         from agent_foundry.orchestration.container_executor import (
-            ClaudeExecFailedError,
+            AgentExecFailedError,
         )
 
         async def failing_turn(*args: Any, **kwargs: Any) -> Any:
-            raise ClaudeExecFailedError(
+            raise AgentExecFailedError(
                 "claude exec failed",
                 exit_code=1,
                 output=b"",

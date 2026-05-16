@@ -100,20 +100,11 @@ class RunContext(BaseModel):
     cancel_event: asyncio.Event = Field(default_factory=asyncio.Event)
     env: dict[str, str]
 
-    pause_on_failure: bool = Field(default_factory=lambda: _read_pause_on_failure_env())
-    """When ``True`` (default), the agent container that produced a
-    failure is retained at run teardown (its destroy in
-    :meth:`AgentContainerRegistry.shutdown_all` is skipped) so a developer
-    can ``docker exec`` into it to inspect state. Successful containers
-    in the same run still destroy normally — retention is narrow.
-
-    Default is ``True``, matching the "retain forensic state, require
-    manual cleanup" stance the codebase already takes for workspace
-    volumes. To opt out (e.g. long-running automated environments where
-    accumulated stopped containers are unwanted), set
-    ``AGENT_FOUNDRY_PAUSE_ON_FAILURE=0`` or pass ``pause_on_failure=False``
-    explicitly. The explicit constructor argument always wins over the
-    env var.
+    pause_on_failure: bool = Field(default_factory=_read_pause_on_failure_env)
+    """If true, the agent container that produced a failure is not torn
+    down at the end of the run. Default sourced from
+    ``AGENT_FOUNDRY_PAUSE_ON_FAILURE`` (0/false/no → False, anything
+    else → True).
     """
 
     on_run_starting: list[Callable[[RunStartingEvent], None]] = Field(default_factory=list)

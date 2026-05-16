@@ -81,21 +81,14 @@ _FAILED_TURN_TRUNCATION_MARKER: bytes = (
 )
 
 
-class ClaudeExecFailedError(RuntimeError):
-    """Raised by ``_do_exec`` when the in-container ``claude`` call fails.
-
-    Subclasses :class:`RuntimeError` so existing ``except RuntimeError``
-    sites still catch it. The additional attributes let the caller
-    persist the raw stream to the failed turn's ``stream.jsonl`` before
-    converting the failure into an :class:`AgentFailedError`.
+class AgentExecFailedError(RuntimeError):
+    """Raised when an in-container agent invocation exits non-zero or
+    fails to produce a parseable envelope.
 
     Attributes:
-      exit_code: claude's exit code. ``137`` is the SIGKILL/OOM case.
-      output: full stdout/stderr bytes returned by the docker exec
-        — same content that previously got mashed into the
-        ``RuntimeError`` message and the lifecycle ``reason`` field.
-      container_logs: last-N container log tail captured at the time
-        of failure (already passes through ``manager.read_logs``).
+      exit_code: the agent process's exit code (137 = SIGKILL/OOM).
+      output: full stdout/stderr bytes from the exec.
+      container_logs: container log tail captured at the time of failure.
     """
 
     def __init__(
@@ -202,7 +195,7 @@ async def _run_claude_turn(
         output = result.output
         if exit_code != 0:
             logs = live.manager.read_logs(live.handle, tail=80).decode(errors="replace")
-            raise ClaudeExecFailedError(
+            raise AgentExecFailedError(
                 f"claude exec failed (exit={exit_code}):\n"
                 f"stdout/stderr: {output.decode(errors='replace')}\n\n"
                 f"container logs: {logs}",
@@ -248,7 +241,7 @@ async def _run_claude_turn(
                         envelope = {"outcome": {"kind": "success", "payload": parsed}}
         if envelope is None:
             logs = live.manager.read_logs(live.handle, tail=40).decode(errors="replace")
-            raise ClaudeExecFailedError(
+            raise AgentExecFailedError(
                 "no StructuredOutput tool use captured\n"
                 f"--- claude stdout ({len(output)} bytes) ---\n"
                 f"{output.decode(errors='replace')}\n"
@@ -303,20 +296,16 @@ def _capture_forensic_fields(
     *,
     exit_code_hint: int | None = None,
 ) -> dict[str, Any]:
-    """Return forensic fields suitable for an AGENT_INVOCATION_FAILED event.
+    """Return structured failure-cause fields for a lifecycle event.
 
     Best-effort: each lookup is independently try/except'd, and a key is
-    only included in the returned dict if the underlying read succeeded.
-    The caller spreads the result into ``lifecycle.append`` kwargs so
-    callers downstream get a structured payload when possible and the
-    bare ``reason`` field when not.
+    only included if the underlying read succeeded.
 
     Fields:
-      * ``exit_code``: from the ``ClaudeExecFailedError`` hint if
-        provided (preferred), else from ``docker inspect``'s
+      * ``exit_code``: ``exit_code_hint`` if supplied, else inspect's
         ``State.ExitCode``.
-      * ``oom_killed``: from ``docker inspect``'s ``State.OOMKilled``.
-      * ``memory_peak_bytes``: from cgroup-v2 ``/sys/fs/cgroup/memory.peak``.
+      * ``oom_killed``: inspect's ``State.OOMKilled``.
+      * ``memory_peak_bytes``: cgroup-v2 ``/sys/fs/cgroup/memory.peak``.
     """
     fields: dict[str, Any] = {}
 
@@ -366,26 +355,17 @@ def _snapshot_container_artifacts(
 ) -> None:
     """Persist container postmortem artifacts to the host.
 
-    Called at the end of every ``run_agent_in_container`` invocation.
-    Each write is independently best-effort — a failure in one must
-    not prevent the others, and none may propagate because this runs
-    in a ``finally`` block that must not shadow the primary exception.
+    Each write is independently best-effort and must not propagate —
+    writes are independent and none should mask the primary exception.
 
     Writes (under ``<run_dir>/<agent>/``):
 
-    - ``container.log`` : full container stdout + stderr captured so
-      far. Overwritten each invocation.
-    - ``CLAUDE.md`` : the merged role-instructions file the agent
-      actually sees (base image + appended role instructions).
-      Overwritten each invocation. The container filesystem is
-      ephemeral, so this is the only durable record.
-    - ``docker-inspect.json`` : the container's full docker-SDK attrs
-      dict at teardown (State.ExitCode, State.OOMKilled, Mounts,
-      HostConfig, …). Lets a postmortem distinguish "claude exited
-      cleanly" from "container OOM-killed" without re-running.
-    - ``cgroup-memory.txt`` : snapshot of cgroup-v2 memory accounting
-      files (memory.events, memory.peak, memory.current, memory.max).
-      Reveals memory.peak and the cumulative OOM event count.
+    - ``container.log`` — full container stdout + stderr to date.
+    - ``CLAUDE.md`` — merged role-instructions seen by the agent.
+    - ``docker-inspect.json`` — container attrs at teardown.
+    - ``cgroup-memory.txt`` — cgroup-v2 memory accounting snapshot.
+    - ``inspect-container.sh`` — only when ``pause_on_failure`` and
+      ``live.failed``; wraps ``docker exec`` for postmortem.
     """
     from agent_foundry.orchestration.artifacts import (
         agent_log_path,
@@ -665,7 +645,7 @@ async def run_agent_in_container(
                     skip_permissions=primitive.skip_permissions,
                     cwd=primitive.cwd,
                 )
-            except ClaudeExecFailedError as exec_err:
+            except AgentExecFailedError as exec_err:
                 # The turn died mid-stream. Persist the raw output to
                 # stream.jsonl before the exception propagates so the
                 # failed turn has the same on-disk artifact a successful
@@ -897,7 +877,7 @@ async def run_agent_in_container(
         # oom_killed, memory_peak_bytes) for the lifecycle event so
         # common dispatch on the cause is a one-line check rather than
         # parsing the reason string. ``reason`` stays for the long tail.
-        exit_code_hint = exc.exit_code if isinstance(exc, ClaudeExecFailedError) else None
+        exit_code_hint = exc.exit_code if isinstance(exc, AgentExecFailedError) else None
         forensic_fields = _capture_forensic_fields(live, exit_code_hint=exit_code_hint)
         lifecycle.append(
             LifecycleEvent.AGENT_INVOCATION_FAILED,
