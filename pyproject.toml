@@ -65,11 +65,13 @@ test-integration.cmd = "pytest {args:tests/} -m 'integration'"
 test-integration.env = {PYTHONPATH = "src"}
 test-all.cmd = "pytest tests/ -m 'not benchmark'"
 test-all.env = {PYTHONPATH = "src"}
+test-evals.cmd = "pytest {args:tests-evals/}"
+test-evals.env = {PYTHONPATH = "src"}
 lint-imports.cmd = "lint-imports"
 lint-imports.env = {PYTHONPATH = "src"}
-lint.cmd = "ruff check --fix src/ tests/"
+lint.cmd = "ruff check --fix src/ tests/ tests-evals/"
 lint.env = {PYTHONPATH = "src"}
-format.cmd = "ruff format src/ tests/"
+format.cmd = "ruff format src/ tests/ tests-evals/"
 format.env = {PYTHONPATH = "src"}
 typecheck.cmd = "pyright"
 typecheck.env = {PYTHONPATH = "src"}
@@ -103,6 +105,7 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E501"]
+"tests-evals/**" = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"
