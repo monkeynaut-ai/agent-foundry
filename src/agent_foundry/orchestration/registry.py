@@ -71,6 +71,11 @@ class LiveContainer:
     # Cumulative turn counter across all invocations of this container.
     # Monotonically increasing so artifact turn dirs are unique per run.
     _turn_count: int = 0
+    # Set to True by container_executor when an invocation against this
+    # container raises. Read by :meth:`AgentContainerRegistry.shutdown_all`
+    # together with ``pause_on_failure`` to decide whether to retain the
+    # container for postmortem.
+    failed: bool = False
 
     def next_invocation(self) -> int:
         """Increment and return this container's invocation counter.
@@ -249,11 +254,19 @@ class AgentContainerRegistry:
         if live is not None:
             live.session_id = session_id
 
-    async def shutdown_all(self) -> None:
-        """Destroy every registered container.
+    async def shutdown_all(self, *, pause_on_failure: bool = False) -> None:
+        """Destroy every registered container, with one opt-in exception.
 
         Idempotent (second call is a no-op). If one destroy raises, the
         exception is logged and the remaining destroys still run.
+
+        ``pause_on_failure``: when True, any container with
+        ``live.failed`` set is retained (its stop+destroy are skipped) so
+        a developer can ``docker exec`` into it for postmortem inspection.
+        The container id and a clean-up hint are logged at WARNING. The
+        rest of the containers — including non-failed ones in the same
+        run — still destroy normally. Default False matches production:
+        no dead containers accumulate.
         """
         async with self._lock:
             if self._shut_down:
@@ -263,6 +276,16 @@ class AgentContainerRegistry:
             self._containers.clear()
 
         for live in targets:
+            if pause_on_failure and live.failed:
+                logger.warning(
+                    "container retained for inspection (agent=%s, id=%s); "
+                    "clean up with: docker rm -f %s",
+                    live.agent_name,
+                    live.handle.container_id,
+                    live.handle.container_id,
+                )
+                continue
+
             # Best-effort stop first; real containers refuse ``destroy``
             # while still running (409 Conflict) even though the handle
             # itself is resolvable. ``stop`` failures (fake manager,

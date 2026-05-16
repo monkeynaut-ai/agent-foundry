@@ -14,6 +14,7 @@ helper expose the active context to compiled nodes and to product code via
 from __future__ import annotations
 
 import asyncio
+import os
 import tempfile
 from collections.abc import Callable
 from contextvars import ContextVar
@@ -40,6 +41,22 @@ __all__ = [
     "current_run_context",
     "require_current_run_context",
 ]
+
+
+def _read_pause_on_failure_env() -> bool:
+    """Read ``AGENT_FOUNDRY_PAUSE_ON_FAILURE`` and parse it as a bool.
+
+    Accepts ``1``, ``true``, ``yes`` (case-insensitive) as truthy;
+    anything else (including unset) is False. Used as
+    :class:`RunContext.pause_on_failure`'s ``default_factory`` so the
+    env var can flip the default for ad-hoc forensic runs without
+    requiring a code change.
+    """
+    return os.environ.get("AGENT_FOUNDRY_PAUSE_ON_FAILURE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 def _default_artifacts_dir() -> Path:
@@ -85,6 +102,20 @@ class RunContext(BaseModel):
     lifecycle_writer: LifecycleWriter
     cancel_event: asyncio.Event = Field(default_factory=asyncio.Event)
     env: dict[str, str]
+
+    pause_on_failure: bool = Field(default_factory=lambda: _read_pause_on_failure_env())
+    """When ``True``, the agent container that produced a failure is
+    retained at run teardown (its destroy in
+    :meth:`AgentContainerRegistry.shutdown_all` is skipped) so a developer
+    can ``docker exec`` into it to inspect state. Successful containers
+    in the same run still destroy normally.
+
+    Default is ``False``: production runs don't accumulate dead
+    containers. The default factory checks
+    ``AGENT_FOUNDRY_PAUSE_ON_FAILURE=1`` so ad-hoc forensic runs can
+    enable retention without changing code; an explicit constructor
+    argument always wins over the env var.
+    """
 
     on_run_starting: list[Callable[[RunStartingEvent], None]] = Field(default_factory=list)
     """Hooks invoked while the run is in the act of starting.

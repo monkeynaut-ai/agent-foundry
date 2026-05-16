@@ -833,9 +833,15 @@ async def run_agent_in_container(
                 invocation=invocation,
             )
     except AgentFailedError:
-        # Already logged above at the point of raise.
+        # Already logged above at the point of raise. Mark the live
+        # container failed so an outer ``shutdown_all(pause_on_failure=True)``
+        # can retain it for postmortem inspection.
+        live.failed = True
         raise
     except Exception as exc:
+        # Mark the container failed (see above) before doing the
+        # best-effort forensic capture.
+        live.failed = True
         # Best-effort: capture structured forensic fields (exit_code,
         # oom_killed, memory_peak_bytes) for the lifecycle event so
         # common dispatch on the cause is a one-line check rather than

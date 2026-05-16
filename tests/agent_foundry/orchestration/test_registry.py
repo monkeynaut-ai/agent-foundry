@@ -176,6 +176,55 @@ async def test_shutdown_all_destroys_every_registered_container(
 
 
 @pytest.mark.asyncio
+async def test_shutdown_all_retains_failed_container_when_pause_on_failure_true(
+    registry: AgentContainerRegistry,
+    writer: LifecycleWriter,
+    fake_docker: FakeDockerClient,
+) -> None:
+    """With pause_on_failure=True, ``shutdown_all`` skips destroy for any
+    LiveContainer marked failed. Successful containers in the same run
+    still destroy — the retention is narrow.
+    """
+    prim_failed = _make_primitive()
+    prim_ok = _make_primitive()
+    live_failed = await registry.get_or_create(
+        prim_failed, lifecycle_writer=writer, agent_name="failed-one"
+    )
+    live_ok = await registry.get_or_create(prim_ok, lifecycle_writer=writer, agent_name="ok-one")
+    live_failed.failed = True
+
+    await registry.shutdown_all(pause_on_failure=True)
+
+    # Both fake-docker containers were created; only the OK one was destroyed.
+    failed_fake = next(
+        c for c in fake_docker.containers.created if c.id == live_failed.handle.container_id
+    )
+    ok_fake = next(c for c in fake_docker.containers.created if c.id == live_ok.handle.container_id)
+    assert failed_fake.destroyed is False, "failed container must be retained"
+    assert ok_fake.destroyed is True, "successful container must still destroy"
+
+
+@pytest.mark.asyncio
+async def test_shutdown_all_destroys_failed_container_when_pause_on_failure_false(
+    registry: AgentContainerRegistry,
+    writer: LifecycleWriter,
+    fake_docker: FakeDockerClient,
+) -> None:
+    """pause_on_failure=False is the default: every container destroys
+    regardless of the failed flag. Production runs don't accumulate
+    dead containers.
+    """
+    primitive = _make_primitive()
+    live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="a")
+    live.failed = True
+
+    await registry.shutdown_all(pause_on_failure=False)
+
+    fake = next(c for c in fake_docker.containers.created if c.id == live.handle.container_id)
+    assert fake.destroyed is True
+
+
+@pytest.mark.asyncio
 async def test_shutdown_all_is_idempotent(
     registry: AgentContainerRegistry,
     writer: LifecycleWriter,
