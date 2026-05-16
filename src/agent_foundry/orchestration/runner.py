@@ -144,9 +144,6 @@ async def run_primitive_plan(
     )
     cancel = asyncio.Event()
 
-    base_env: dict[str, str] = {"CLAUDE_CODE_OAUTH_TOKEN": oauth_token} if oauth_token else {}
-    if extra_env:
-        base_env.update(extra_env)
     run_ctx = RunContext(
         run_id=resolved_run_id,
         artifacts_dir=run_dir,
@@ -154,7 +151,8 @@ async def run_primitive_plan(
         responder_provider=responder_provider,
         lifecycle_writer=lifecycle,
         cancel_event=cancel,
-        env=base_env,
+        env={"CLAUDE_CODE_OAUTH_TOKEN": oauth_token} if oauth_token else {},
+        extra_env=extra_env,
         extra_volumes=extra_volumes,
         on_run_starting=list(on_run_starting or []),
         on_run_ended=list(on_run_ended or []),

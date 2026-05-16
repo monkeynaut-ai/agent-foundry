@@ -290,6 +290,7 @@ async def test_cancel_mid_run_propagates_and_cleans_up(
         lifecycle_writer,
         agent_name,
         instructions=None,
+        extra_env=None,
         extra_volumes=None,
     ):
         live = await real_get(
