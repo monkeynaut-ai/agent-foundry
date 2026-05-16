@@ -111,6 +111,23 @@ async def test_get_or_create_forwards_extra_volumes_to_create_container(
 
 
 @pytest.mark.asyncio
+async def test_get_or_create_merges_extra_env_into_container_env(
+    registry: AgentContainerRegistry,
+    writer: LifecycleWriter,
+    fake_docker: FakeDockerClient,
+) -> None:
+    primitive = _make_primitive()
+    await registry.get_or_create(
+        primitive,
+        lifecycle_writer=writer,
+        agent_name="coder",
+        extra_env={"HTTPS_PROXY": "http://host.docker.internal:8080"},
+    )
+    env = fake_docker.containers.create_calls[0]["kwargs"]["environment"]
+    assert env["HTTPS_PROXY"] == "http://host.docker.internal:8080"
+
+
+@pytest.mark.asyncio
 async def test_get_or_create_is_idempotent_for_same_primitive(
     registry: AgentContainerRegistry,
     writer: LifecycleWriter,

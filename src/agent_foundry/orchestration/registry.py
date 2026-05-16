@@ -140,6 +140,7 @@ class AgentContainerRegistry:
         lifecycle_writer: LifecycleWriter,
         agent_name: str,
         instructions: str | None = None,
+        extra_env: dict[str, str] | None = None,
         extra_volumes: dict[str, dict[str, str]] | None = None,
     ) -> LiveContainer:
         """Return the live container for ``primitive``, creating it if absent.
@@ -162,12 +163,15 @@ class AgentContainerRegistry:
                 return live
 
             manager = self._manager_override or await asyncio.to_thread(self._build_manager)
+            merged_env = self._extra_env_for(primitive)
+            if extra_env:
+                merged_env.update(extra_env)
             handle = await asyncio.to_thread(
                 manager.create_container,
                 self._base_image_tag,
                 self._workspace_volume,
                 primitive.container_config,
-                self._extra_env_for(primitive),
+                merged_env,
                 extra_volumes,
             )
             # If configured to inject role instructions, write them before
