@@ -1,0 +1,11 @@
+docker compose -f docker-compose.mitm.yml up -d
+docker compose -f docker-compose.mitm.yml down
+
+docker compose restart
+
+# obtain the public certificate
+docker cp mitm-sidecar:/home/mitmproxy/.mitmproxy/mitmproxy-ca-cert.pem ./mitmproxy-ca.crt
+
+curl http://localhost:8080/__state__
+curl 'http://localhost:8080/__reset__?n=3'
+curl 'http://localhost:8080/__reset__?n=2&status=503'

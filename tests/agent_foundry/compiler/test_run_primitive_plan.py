@@ -283,7 +283,15 @@ async def test_cancel_mid_run_propagates_and_cleans_up(
     # then sees a set event and raises AgentFailedError("cancelled").
     real_get = registry_mod.AgentContainerRegistry.get_or_create
 
-    async def _cancelling_get(self, primitive, *, lifecycle_writer, agent_name, instructions=None):
+    async def _cancelling_get(
+        self,
+        primitive,
+        *,
+        lifecycle_writer,
+        agent_name,
+        instructions=None,
+        extra_volumes=None,
+    ):
         live = await real_get(
             self,
             primitive,

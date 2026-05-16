@@ -85,6 +85,8 @@ async def run_primitive_plan(
     on_run_starting: list[OnRunStartingHook] | None = None,
     on_run_ended: list[OnRunEndedHook] | None = None,
     telemetry: TelemetryConfig | None = None,
+    extra_env: dict[str, str] | None = None,
+    extra_volumes: dict[str, dict[str, str]] | None = None,
 ) -> BaseModel:
     """Execute a :class:`PrimitivePlan` with full orchestration wiring.
 
@@ -142,6 +144,9 @@ async def run_primitive_plan(
     )
     cancel = asyncio.Event()
 
+    base_env: dict[str, str] = {"CLAUDE_CODE_OAUTH_TOKEN": oauth_token} if oauth_token else {}
+    if extra_env:
+        base_env.update(extra_env)
     run_ctx = RunContext(
         run_id=resolved_run_id,
         artifacts_dir=run_dir,
@@ -149,7 +154,8 @@ async def run_primitive_plan(
         responder_provider=responder_provider,
         lifecycle_writer=lifecycle,
         cancel_event=cancel,
-        env={"CLAUDE_CODE_OAUTH_TOKEN": oauth_token} if oauth_token else {},
+        env=base_env,
+        extra_volumes=extra_volumes,
         on_run_starting=list(on_run_starting or []),
         on_run_ended=list(on_run_ended or []),
         telemetry=telemetry,

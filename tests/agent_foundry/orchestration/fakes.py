@@ -45,6 +45,7 @@ class FakeContainerHandle(ContainerHandleBase):
     files: dict[str, str] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
     exec_log: list[str] = field(default_factory=list)
+    extra_volumes: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 class FakeContainerManager(ContainerManagerBase):
@@ -92,12 +93,14 @@ class FakeContainerManager(ContainerManagerBase):
         workspace_volume: str = "",
         constraints: Any = None,
         extra_env: dict[str, str] | None = None,
+        extra_volumes: dict[str, dict[str, str]] | None = None,
     ) -> FakeContainerHandle:
         self._next_id += 1
         h = FakeContainerHandle(
             container_id=f"fake-{self._next_id}",
             workspace_path="/workspace",
             env=dict(extra_env or {}),
+            extra_volumes=dict(extra_volumes or {}),
         )
         self.handles.append(h)
         return h
@@ -293,10 +296,12 @@ class FakeContainers:
 
     def __init__(self) -> None:
         self.created: list[FakeDockerContainer] = []
+        self.create_calls: list[dict[str, Any]] = []
 
     def create(self, image: str, **kwargs: Any) -> FakeDockerContainer:
         c = FakeDockerContainer(container_id=f"fake-docker-{len(self.created)}")
         self.created.append(c)
+        self.create_calls.append({"image": image, "kwargs": kwargs})
         return c
 
 

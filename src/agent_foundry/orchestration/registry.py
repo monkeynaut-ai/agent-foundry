@@ -140,6 +140,7 @@ class AgentContainerRegistry:
         lifecycle_writer: LifecycleWriter,
         agent_name: str,
         instructions: str | None = None,
+        extra_volumes: dict[str, dict[str, str]] | None = None,
     ) -> LiveContainer:
         """Return the live container for ``primitive``, creating it if absent.
 
@@ -167,6 +168,7 @@ class AgentContainerRegistry:
                 self._workspace_volume,
                 primitive.container_config,
                 self._extra_env_for(primitive),
+                extra_volumes,
             )
             # If configured to inject role instructions, write them before
             # start so the base-image entrypoint's append block sees them

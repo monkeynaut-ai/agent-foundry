@@ -1,0 +1,9 @@
+services:
+  mitm-sidecar:
+    image: mitmproxy/mitmproxy
+    container_name: mitm-sidecar
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./mitm-inject-5xx.py:/addon.py:ro
+    command: ["mitmdump", "-s", "/addon.py"]

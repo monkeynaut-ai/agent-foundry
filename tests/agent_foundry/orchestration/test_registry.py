@@ -93,6 +93,24 @@ async def test_get_or_create_creates_exactly_one_container_on_first_call(
 
 
 @pytest.mark.asyncio
+async def test_get_or_create_forwards_extra_volumes_to_create_container(
+    registry: AgentContainerRegistry,
+    writer: LifecycleWriter,
+    fake_docker: FakeDockerClient,
+) -> None:
+    primitive = _make_primitive()
+    extra = {"/host/ca.crt": {"bind": "/etc/ca.crt", "mode": "ro"}}
+    await registry.get_or_create(
+        primitive,
+        lifecycle_writer=writer,
+        agent_name="coder",
+        extra_volumes=extra,
+    )
+    create_kwargs = fake_docker.containers.create_calls[0]["kwargs"]
+    assert create_kwargs["volumes"]["/host/ca.crt"] == {"bind": "/etc/ca.crt", "mode": "ro"}
+
+
+@pytest.mark.asyncio
 async def test_get_or_create_is_idempotent_for_same_primitive(
     registry: AgentContainerRegistry,
     writer: LifecycleWriter,
