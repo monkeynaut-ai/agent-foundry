@@ -227,8 +227,9 @@ both small.
 - **Disk pressure: acceptable.** A `docker inspect` JSON is ~5–20 KB;
   across all invocations in a run that's MB-scale, not a concern.
 - **Stream-JSONL on failure: persist the full raw_output to
-  `turns/<N>/stream.jsonl`.** Cap the write at 50 MB per turn (anything
-  larger is pathological and indicates a different bug to investigate).
+  `turns/<N>/stream.jsonl`.** Cap the write at 100 MiB per turn
+  (~250× the largest observed real failure; anything larger is
+  pathological and indicates a different bug to investigate).
 - **Cgroup snapshot: point-in-time at teardown.** `memory.peak` is
   cumulative max-since-boot so it already captures the peak; the
   `memory.events` counters are cumulative too. Periodic mid-run sampling

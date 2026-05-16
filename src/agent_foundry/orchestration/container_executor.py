@@ -75,9 +75,9 @@ MAX_RESPONDER_ITERATIONS = 20
 # stream-json for a turn typically lands well under 1 MB; failures that
 # blow past this are pathological and indicate a separate bug to chase.
 # We still want a postmortem trail, so cap-and-mark rather than drop.
-_FAILED_TURN_STREAM_MAX_BYTES: int = 50 * 1024 * 1024
+_FAILED_TURN_STREAM_MAX_BYTES: int = 100 * 1024 * 1024
 _FAILED_TURN_TRUNCATION_MARKER: bytes = (
-    b"\n--- output truncated by container_executor (exceeded 50MB failed-turn cap) ---\n"
+    b"\n--- output truncated by container_executor (exceeded 100MiB failed-turn cap) ---\n"
 )
 
 

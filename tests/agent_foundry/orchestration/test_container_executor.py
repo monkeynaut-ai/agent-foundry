@@ -1029,14 +1029,15 @@ class TestFailedTurnStreamJsonl:
 
     @pytest.mark.asyncio
     async def test_failed_turn_persists_even_when_output_is_large(self, tmp_path: Path) -> None:
-        # Capped at 50 MB per the design doc. A 60 MB raw_output should
-        # be truncated, not dropped, with a marker that it was truncated.
+        # Capped at 100 MiB per the design doc. An output larger than
+        # the cap should be truncated, not dropped, with a marker that
+        # it was truncated.
         from agent_foundry.orchestration.container_executor import (
             ClaudeExecFailedError,
         )
 
-        # 60 MB of "x" — well over the 50 MB cap.
-        raw = b"x" * (60 * 1024 * 1024)
+        # 110 MiB of "x" — well over the 100 MiB cap.
+        raw = b"x" * (110 * 1024 * 1024)
 
         async def failing_turn(*args: Any, **kwargs: Any) -> Any:
             raise ClaudeExecFailedError(
@@ -1059,10 +1060,10 @@ class TestFailedTurnStreamJsonl:
 
         stream_path = ctx.artifacts_dir / "test-agent" / "turns" / "1" / "stream.jsonl"
         assert stream_path.exists()
-        # File is written but capped at the 50 MB limit.
+        # File is written but capped at the 100 MiB limit.
         size = stream_path.stat().st_size
-        assert size <= 50 * 1024 * 1024 + 1024, (
-            f"expected stream.jsonl <= 50 MB (with small marker slack), got {size}"
+        assert size <= 100 * 1024 * 1024 + 1024, (
+            f"expected stream.jsonl <= 100 MiB (with small marker slack), got {size}"
         )
         # Truncation marker present in the file.
         tail = stream_path.read_bytes()[-200:]
