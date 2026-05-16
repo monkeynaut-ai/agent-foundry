@@ -225,28 +225,46 @@ def _agent_name(primitive: AgentAction) -> str:
     return primitive.name
 
 
+_CGROUP_MEMORY_FILES: tuple[str, ...] = (
+    "/sys/fs/cgroup/memory.events",
+    "/sys/fs/cgroup/memory.peak",
+    "/sys/fs/cgroup/memory.current",
+    "/sys/fs/cgroup/memory.max",
+)
+
+
 def _snapshot_container_artifacts(
     live: LiveContainer,
     run_dir: Any,
     agent_name: str,
 ) -> None:
-    """Persist container logs and the rendered CLAUDE.md to the host.
+    """Persist container postmortem artifacts to the host.
 
     Called at the end of every ``run_agent_in_container`` invocation.
-    Both writes are best-effort — failures log a warning and do not
-    propagate, because this runs in a ``finally`` block that must not
-    shadow the primary exception (if any).
+    Each write is independently best-effort — a failure in one must
+    not prevent the others, and none may propagate because this runs
+    in a ``finally`` block that must not shadow the primary exception.
 
-    - ``<run_dir>/<agent>/container.log`` : full container stdout +
-      stderr captured so far. Overwritten each invocation; captures
-      everything from container start through the most recent turn.
-    - ``<run_dir>/<agent>/CLAUDE.md`` : the merged role-instructions
-      file the agent actually sees (base image CLAUDE.md + appended
-      role instructions). Overwritten each invocation. The content is
-      ephemeral inside the container filesystem (which is destroyed at
-      run teardown), so this snapshot is the only postmortem record.
+    Writes (under ``<run_dir>/<agent>/``):
+
+    - ``container.log`` : full container stdout + stderr captured so
+      far. Overwritten each invocation.
+    - ``CLAUDE.md`` : the merged role-instructions file the agent
+      actually sees (base image + appended role instructions).
+      Overwritten each invocation. The container filesystem is
+      ephemeral, so this is the only durable record.
+    - ``docker-inspect.json`` : the container's full docker-SDK attrs
+      dict at teardown (State.ExitCode, State.OOMKilled, Mounts,
+      HostConfig, …). Lets a postmortem distinguish "claude exited
+      cleanly" from "container OOM-killed" without re-running.
+    - ``cgroup-memory.txt`` : snapshot of cgroup-v2 memory accounting
+      files (memory.events, memory.peak, memory.current, memory.max).
+      Reveals memory.peak and the cumulative OOM event count.
     """
     from agent_foundry.orchestration.artifacts import agent_log_path
+
+    agent_dir = run_dir / agent_name
+    agent_dir.mkdir(parents=True, exist_ok=True)
 
     # --- container.log ---
     # Routes through manager.read_logs so the docker-SDK shape stays
@@ -271,12 +289,42 @@ def _snapshot_container_artifacts(
             live.handle, "/home/claude/.claude/CLAUDE.md"
         )
         if isinstance(content, str):
-            agent_dir = run_dir / agent_name
-            agent_dir.mkdir(parents=True, exist_ok=True)
             (agent_dir / "CLAUDE.md").write_text(content, encoding="utf-8")
     except Exception as exc:
         logger.warning(
             "failed to snapshot CLAUDE.md for agent %s: %s",
+            agent_name,
+            exc,
+        )
+
+    # --- docker-inspect.json ---
+    try:
+        attrs = live.manager.inspect(live.handle)
+        (agent_dir / "docker-inspect.json").write_text(
+            json.dumps(attrs, indent=2, default=str),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.warning(
+            "failed to snapshot docker-inspect.json for agent %s: %s",
+            agent_name,
+            exc,
+        )
+
+    # --- cgroup-memory.txt ---
+    # Each section is a path header followed by the file's content (or
+    # "(unavailable)" if the read returned None — happens on cgroup-v1
+    # hosts or in test fakes that don't script these reads).
+    try:
+        sections: list[str] = []
+        for cgroup_path in _CGROUP_MEMORY_FILES:
+            content = live.manager.read_file_from_container(live.handle, cgroup_path)
+            body = content if isinstance(content, str) and content else "(unavailable)"
+            sections.append(f"=== {cgroup_path} ===\n{body}\n")
+        (agent_dir / "cgroup-memory.txt").write_text("\n".join(sections), encoding="utf-8")
+    except Exception as exc:
+        logger.warning(
+            "failed to snapshot cgroup-memory.txt for agent %s: %s",
             agent_name,
             exc,
         )

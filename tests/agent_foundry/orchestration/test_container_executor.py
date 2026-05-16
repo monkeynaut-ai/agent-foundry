@@ -32,6 +32,7 @@ from agent_foundry.orchestration import container_executor
 from agent_foundry.orchestration.artifacts import bootstrap_run_artifacts
 from agent_foundry.orchestration.container_executor import (
     _run_claude_turn,
+    _snapshot_container_artifacts,
     run_agent_in_container,
 )
 from agent_foundry.orchestration.errors import AgentFailedError
@@ -888,3 +889,92 @@ class TestRunAgentInContainerEffortThreading:
         await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
 
         assert driver.calls[0]["effort"] is None
+
+
+# --- Postmortem snapshot tests ----------------------------------------------
+#
+# Tests for ``_snapshot_container_artifacts`` directly. The function runs
+# in the ``finally`` of every ``run_agent_in_container`` invocation and is
+# the only on-disk record once the container is destroyed.
+
+
+class TestSnapshotContainerArtifacts:
+    """Postmortem snapshot of container state for offline forensics.
+
+    Always writes ``container.log`` and ``CLAUDE.md``; with step 2 of the
+    container-failure-postmortem design, also writes ``docker-inspect.json``
+    and ``cgroup-memory.txt``. Each write is best-effort (a failure in one
+    must not prevent the others).
+    """
+
+    def _make_live(self, fake_mgr: FakeContainerManager) -> _LiveContainer:
+        handle = fake_mgr.create_container()
+        return _LiveContainer(
+            handle=handle,
+            manager=fake_mgr,
+            agent_name="test-agent",
+        )
+
+    def test_writes_docker_inspect_json(self, tmp_path: Path) -> None:
+        fake_mgr = FakeContainerManager()
+        live = self._make_live(fake_mgr)
+        fake_mgr.inspect_script = {
+            live.handle.container_id: {
+                "State": {"ExitCode": 137, "OOMKilled": True, "Status": "exited"},
+                "Id": "abc",
+            }
+        }
+
+        _snapshot_container_artifacts(live, tmp_path, "test-agent")
+
+        inspect_path = tmp_path / "test-agent" / "docker-inspect.json"
+        assert inspect_path.exists(), f"expected inspect snapshot at {inspect_path}"
+        data = _json_test.loads(inspect_path.read_text())
+        assert data["State"]["ExitCode"] == 137
+        assert data["State"]["OOMKilled"] is True
+
+    def test_writes_cgroup_memory_txt(self, tmp_path: Path) -> None:
+        fake_mgr = FakeContainerManager()
+        live = self._make_live(fake_mgr)
+        fake_mgr.read_file_script = {
+            "/sys/fs/cgroup/memory.events": [
+                "low 0\nhigh 0\nmax 1167\noom 0\noom_kill 0\noom_group_kill 0\n"
+            ],
+            "/sys/fs/cgroup/memory.peak": ["3221225472\n"],
+            "/sys/fs/cgroup/memory.current": ["9981952\n"],
+            "/sys/fs/cgroup/memory.max": ["3221225472\n"],
+        }
+
+        _snapshot_container_artifacts(live, tmp_path, "test-agent")
+
+        cgroup_path = tmp_path / "test-agent" / "cgroup-memory.txt"
+        assert cgroup_path.exists(), f"expected cgroup snapshot at {cgroup_path}"
+        content = cgroup_path.read_text()
+        # Each scripted file appears, with its path as a header so a reader
+        # can disambiguate.
+        for header in (
+            "/sys/fs/cgroup/memory.events",
+            "/sys/fs/cgroup/memory.peak",
+            "/sys/fs/cgroup/memory.current",
+            "/sys/fs/cgroup/memory.max",
+        ):
+            assert header in content, f"missing section header {header} in {content!r}"
+        assert "oom_kill" in content
+        assert "3221225472" in content
+
+    def test_cgroup_missing_files_handled_gracefully(self, tmp_path: Path) -> None:
+        # On a host without cgroup v2 (or in test environments), the reads
+        # return None. The snapshot must still write the file with a
+        # diagnostic line per missing entry rather than crash.
+        fake_mgr = FakeContainerManager()
+        live = self._make_live(fake_mgr)
+        # No read_file_script entries — every read returns None.
+
+        _snapshot_container_artifacts(live, tmp_path, "test-agent")
+
+        cgroup_path = tmp_path / "test-agent" / "cgroup-memory.txt"
+        assert cgroup_path.exists()
+        content = cgroup_path.read_text()
+        # All four expected paths still appear as section headers, marked
+        # missing rather than absent.
+        assert content.count("(unavailable)") == 4
