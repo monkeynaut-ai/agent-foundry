@@ -279,6 +279,58 @@ _CGROUP_MEMORY_FILES: tuple[str, ...] = (
 )
 
 
+def _capture_forensic_fields(
+    live: LiveContainer,
+    *,
+    exit_code_hint: int | None = None,
+) -> dict[str, Any]:
+    """Return forensic fields suitable for an AGENT_INVOCATION_FAILED event.
+
+    Best-effort: each lookup is independently try/except'd, and a key is
+    only included in the returned dict if the underlying read succeeded.
+    The caller spreads the result into ``lifecycle.append`` kwargs so
+    callers downstream get a structured payload when possible and the
+    bare ``reason`` field when not.
+
+    Fields:
+      * ``exit_code``: from the ``ClaudeExecFailedError`` hint if
+        provided (preferred), else from ``docker inspect``'s
+        ``State.ExitCode``.
+      * ``oom_killed``: from ``docker inspect``'s ``State.OOMKilled``.
+      * ``memory_peak_bytes``: from cgroup-v2 ``/sys/fs/cgroup/memory.peak``.
+    """
+    fields: dict[str, Any] = {}
+
+    # exit_code (from the typed exception when available, else inspect).
+    inspect_attrs: dict[str, Any] | None = None
+    try:
+        inspect_attrs = live.manager.inspect(live.handle)
+    except Exception as exc:
+        logger.warning("forensic: inspect failed for %s: %s", live.agent_name, exc)
+
+    if exit_code_hint is not None:
+        fields["exit_code"] = exit_code_hint
+    elif isinstance(inspect_attrs, dict):
+        state = inspect_attrs.get("State", {}) or {}
+        if "ExitCode" in state:
+            fields["exit_code"] = state["ExitCode"]
+
+    if isinstance(inspect_attrs, dict):
+        state = inspect_attrs.get("State", {}) or {}
+        if "OOMKilled" in state:
+            fields["oom_killed"] = state["OOMKilled"]
+
+    # memory.peak (cgroup-v2). Strip whitespace, parse as int.
+    try:
+        peak_raw = live.manager.read_file_from_container(live.handle, "/sys/fs/cgroup/memory.peak")
+        if isinstance(peak_raw, str) and peak_raw.strip():
+            fields["memory_peak_bytes"] = int(peak_raw.strip())
+    except Exception as exc:
+        logger.warning("forensic: memory.peak read failed for %s: %s", live.agent_name, exc)
+
+    return fields
+
+
 def _snapshot_container_artifacts(
     live: LiveContainer,
     run_dir: Any,
@@ -784,11 +836,18 @@ async def run_agent_in_container(
         # Already logged above at the point of raise.
         raise
     except Exception as exc:
+        # Best-effort: capture structured forensic fields (exit_code,
+        # oom_killed, memory_peak_bytes) for the lifecycle event so
+        # common dispatch on the cause is a one-line check rather than
+        # parsing the reason string. ``reason`` stays for the long tail.
+        exit_code_hint = exc.exit_code if isinstance(exc, ClaudeExecFailedError) else None
+        forensic_fields = _capture_forensic_fields(live, exit_code_hint=exit_code_hint)
         lifecycle.append(
             LifecycleEvent.AGENT_INVOCATION_FAILED,
             agent_name=agent_name,
             invocation=invocation,
             reason=str(exc),
+            **forensic_fields,
         )
         raise AgentFailedError(
             reason=str(exc),

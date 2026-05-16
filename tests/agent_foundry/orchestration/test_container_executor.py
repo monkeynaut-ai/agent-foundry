@@ -1062,3 +1062,129 @@ class TestFailedTurnStreamJsonl:
         # Truncation marker present in the file.
         tail = stream_path.read_bytes()[-200:]
         assert b"truncated" in tail.lower()
+
+
+# --- Enriched agent_invocation_failed event ---------------------------------
+#
+# On unexpected container/exec failures, the AGENT_INVOCATION_FAILED
+# lifecycle event payload now carries structured forensic fields
+# (exit_code, oom_killed, memory_peak_bytes) alongside the existing
+# `reason` string. Common dispatch becomes a one-line check instead
+# of parsing the 215 KB reason blob.
+
+
+class TestAgentInvocationFailedEventEnrichment:
+    @pytest.mark.asyncio
+    async def test_event_includes_oom_killed_exit_code_memory_peak(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            ClaudeExecFailedError,
+        )
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise ClaudeExecFailedError(
+                "claude exec failed (exit=137)",
+                exit_code=137,
+                output=b"",
+                container_logs="",
+            )
+
+        ctx, registry, writer = _make_ctx(tmp_path=tmp_path)
+        # Pre-script the manager so the forensic capture finds usable data.
+        fake_mgr: FakeContainerManager = registry._manager_override  # type: ignore[assignment]
+        # inspect returns OOMKilled=True; container_id is assigned when the
+        # registry calls create_container, so script the *path-agnostic*
+        # default — see fake's inspect_script behavior — by populating
+        # it with the actual id once the container is created. The test
+        # here uses a special pre-script approach via create_container.
+
+        # Pre-create the container by registering primitive — done inside
+        # run_agent_in_container, after our setup runs. To set the inspect
+        # script for the right container_id, hook create_container.
+        orig_create = fake_mgr.create_container
+
+        def _create_and_script(*a: Any, **kw: Any) -> Any:
+            h = orig_create(*a, **kw)
+            fake_mgr.inspect_script[h.container_id] = {
+                "State": {"ExitCode": 137, "OOMKilled": True, "Status": "exited"}
+            }
+            return h
+
+        fake_mgr.inspect_script = {}
+        fake_mgr.create_container = _create_and_script  # type: ignore[method-assign]
+        fake_mgr.read_file_script = {
+            "/sys/fs/cgroup/memory.peak": ["3221229568\n"],
+        }
+
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        failed_events = [
+            e for e in writer.events if e["type"] is LifecycleEvent.AGENT_INVOCATION_FAILED
+        ]
+        assert len(failed_events) == 1, f"expected exactly one failure event, got {writer.events}"
+        evt = failed_events[0]
+        assert evt["exit_code"] == 137
+        assert evt["oom_killed"] is True
+        assert evt["memory_peak_bytes"] == 3221229568
+        # The unstructured reason stays available for the long tail of
+        # "something weird happened, read the blob".
+        assert "exit=137" in evt["reason"]
+
+    @pytest.mark.asyncio
+    async def test_event_still_writes_when_forensic_capture_fails(self, tmp_path: Path) -> None:
+        # If the inspect/cgroup reads raise, the lifecycle event must
+        # still be written. The forensic fields are absent (or None)
+        # rather than blocking the event.
+        from agent_foundry.orchestration.container_executor import (
+            ClaudeExecFailedError,
+        )
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise ClaudeExecFailedError(
+                "claude exec failed (exit=1)",
+                exit_code=1,
+                output=b"",
+                container_logs="",
+            )
+
+        ctx, registry, writer = _make_ctx(tmp_path=tmp_path)
+        fake_mgr: FakeContainerManager = registry._manager_override  # type: ignore[assignment]
+
+        # Make every inspect call raise. The lifecycle event must still
+        # be appended.
+        def _raise_inspect(*a: Any, **kw: Any) -> Any:
+            raise RuntimeError("inspect broke")
+
+        fake_mgr.inspect = _raise_inspect  # type: ignore[method-assign]
+
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        failed_events = [
+            e for e in writer.events if e["type"] is LifecycleEvent.AGENT_INVOCATION_FAILED
+        ]
+        assert len(failed_events) == 1
+        evt = failed_events[0]
+        # reason is the load-bearing field that must always be present.
+        assert "exit=1" in evt["reason"]
+        # exit_code is taken from the typed exception, not from inspect,
+        # so it's still available even if inspect raises.
+        assert evt["exit_code"] == 1
+        # oom_killed and memory_peak_bytes come from inspect/cgroup and
+        # are unavailable. Either absent or None.
+        assert evt.get("oom_killed") in (None, False) or "oom_killed" not in evt
+        assert evt.get("memory_peak_bytes") is None or "memory_peak_bytes" not in evt
