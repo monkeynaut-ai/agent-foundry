@@ -1188,3 +1188,86 @@ class TestAgentInvocationFailedEventEnrichment:
         # are unavailable. Either absent or None.
         assert evt.get("oom_killed") in (None, False) or "oom_killed" not in evt
         assert evt.get("memory_peak_bytes") is None or "memory_peak_bytes" not in evt
+
+
+# --- inspect-container.sh auto-generation -----------------------------------
+#
+# When a container is retained for postmortem (pause_on_failure=True AND
+# the container's invocation failed), the executor's snapshot path writes
+# an inspect-container.sh helper to <run>/<agent>/ so the operator can
+# `docker exec -it <id> bash` without re-deriving the user/group/cwd.
+
+
+class TestInspectContainerScript:
+    @pytest.mark.asyncio
+    async def test_script_written_when_failed_and_pause_on_failure(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            ClaudeExecFailedError,
+        )
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise ClaudeExecFailedError(
+                "claude exec failed (exit=137)",
+                exit_code=137,
+                output=b"",
+                container_logs="",
+            )
+
+        ctx_default, _, _ = _make_ctx(tmp_path=tmp_path)
+        ctx = ctx_default.model_copy(update={"pause_on_failure": True})
+
+        primitive = _make_primitive()
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        script_path = ctx.artifacts_dir / "test-agent" / "inspect-container.sh"
+        assert script_path.exists(), f"expected inspect-container.sh at {script_path}"
+        body = script_path.read_text()
+        assert "docker exec" in body
+        assert "fake-1" in body
+        assert script_path.stat().st_mode & 0o111
+
+    @pytest.mark.asyncio
+    async def test_script_not_written_when_pause_on_failure_false(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            ClaudeExecFailedError,
+        )
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            raise ClaudeExecFailedError(
+                "claude exec failed",
+                exit_code=1,
+                output=b"",
+                container_logs="",
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive,
+                prompt="go",
+                run_ctx=ctx,
+                run_turn=failing_turn,
+            )
+
+        script_path = ctx.artifacts_dir / "test-agent" / "inspect-container.sh"
+        assert not script_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_script_not_written_on_success(self, tmp_path: Path) -> None:
+        driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
+        ctx_default, _, _ = _make_ctx(tmp_path=tmp_path)
+        ctx = ctx_default.model_copy(update={"pause_on_failure": True})
+
+        primitive = _make_primitive()
+        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+
+        script_path = ctx.artifacts_dir / "test-agent" / "inspect-container.sh"
+        assert not script_path.exists()

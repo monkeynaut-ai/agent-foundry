@@ -335,6 +335,9 @@ def _snapshot_container_artifacts(
     live: LiveContainer,
     run_dir: Any,
     agent_name: str,
+    *,
+    pause_on_failure: bool = False,
+    run_id: str = "",
 ) -> None:
     """Persist container postmortem artifacts to the host.
 
@@ -359,10 +362,32 @@ def _snapshot_container_artifacts(
       files (memory.events, memory.peak, memory.current, memory.max).
       Reveals memory.peak and the cumulative OOM event count.
     """
-    from agent_foundry.orchestration.artifacts import agent_log_path
+    from agent_foundry.orchestration.artifacts import (
+        agent_log_path,
+        write_inspect_container_script,
+    )
 
     agent_dir = run_dir / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- inspect-container.sh (only when the container will be retained) ---
+    # Written only when both conditions hold: pause_on_failure was enabled
+    # AND this container's invocation failed. Otherwise the container will
+    # be destroyed at teardown and the script would point at nothing.
+    if pause_on_failure and live.failed:
+        try:
+            write_inspect_container_script(
+                run_dir=run_dir,
+                agent_name=agent_name,
+                container_id=live.handle.container_id,
+                run_id=run_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "failed to write inspect-container.sh for agent %s: %s",
+                agent_name,
+                exc,
+            )
 
     # --- container.log ---
     # Routes through manager.read_logs so the docker-SDK shape stays
@@ -867,4 +892,10 @@ async def run_agent_in_container(
         # postmortem always has both artifacts available even if the
         # agent crashed. The container filesystem is ephemeral; this
         # is the only durable record.
-        _snapshot_container_artifacts(live, run_ctx.artifacts_dir, agent_name)
+        _snapshot_container_artifacts(
+            live,
+            run_ctx.artifacts_dir,
+            agent_name,
+            pause_on_failure=run_ctx.pause_on_failure,
+            run_id=run_ctx.run_id,
+        )

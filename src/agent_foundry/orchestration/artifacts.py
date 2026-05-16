@@ -14,6 +14,7 @@ __all__ = [
     "agent_log_path",
     "agent_turn_dir",
     "bootstrap_run_artifacts",
+    "write_inspect_container_script",
 ]
 
 
@@ -73,6 +74,54 @@ def bootstrap_run_artifacts(
     )
     script_path.chmod(0o755)
     return run_dir
+
+
+_INSPECT_CONTAINER_SCRIPT_TEMPLATE = """\
+#!/bin/bash
+# Auto-generated on {iso_timestamp}
+# Drop a shell into the retained container for run {run_id}, agent {agent_name}.
+#
+# This script is written only when the run set ``pause_on_failure=True``
+# AND this agent's container failed. Without retention the container has
+# already been destroyed and ``docker exec`` will error.
+#
+# When you're done inspecting:
+#   docker rm -f {container_id}
+set -euo pipefail
+docker exec -it {container_id} bash
+"""
+
+
+def write_inspect_container_script(
+    *,
+    run_dir: Path,
+    agent_name: str,
+    container_id: str,
+    run_id: str = "",
+) -> Path:
+    """Write ``<run_dir>/<agent_name>/inspect-container.sh``.
+
+    Generated when a retained container leaves a postmortem trail. The
+    script wraps ``docker exec -it <container_id> bash`` so a developer
+    doesn't have to re-derive the container id or the docker command.
+
+    The agent directory is created on demand (parents=True, exist_ok).
+    Returns the path to the script.
+    """
+    agent_dir = run_dir / agent_name
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    script_path = agent_dir / "inspect-container.sh"
+    script_path.write_text(
+        _INSPECT_CONTAINER_SCRIPT_TEMPLATE.format(
+            iso_timestamp=datetime.now(UTC).isoformat(),
+            run_id=run_id,
+            agent_name=agent_name,
+            container_id=container_id,
+        ),
+        encoding="utf-8",
+    )
+    script_path.chmod(0o755)
+    return script_path
 
 
 def agent_turn_dir(run_dir: Path, agent_name: str, turn: int) -> Path:
