@@ -1433,3 +1433,89 @@ class TestApiRetry:
             )
 
         assert calls["n"] == 2  # one retry, then give up
+
+
+class TestApiRetryArtifacts:
+    @pytest.mark.asyncio
+    async def test_retry_emits_lifecycle_event(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+            TurnResult,
+        )
+
+        calls = {"n": 0}
+
+        async def flaky_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise AgentExecFailedError(
+                    "claude exec failed (exit=1)",
+                    exit_code=1,
+                    output=b'{"type":"system"}\n',
+                    container_logs="",
+                    api_error_status=500,
+                    num_turns=2,
+                )
+            return TurnResult(
+                envelope={"outcome": {"kind": "success", "payload": {"answer": "ok"}}},
+                session_id="s1",
+                raw_output=b"",
+            )
+
+        ctx, _, writer = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        await run_agent_in_container(
+            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+        )
+
+        retry_events = [e for e in writer.events if e["type"] is LifecycleEvent.TURN_API_RETRIED]
+        assert len(retry_events) == 1
+        evt = retry_events[0]
+        assert evt["agent_name"] == "test-agent"
+        assert evt["invocation"] == 1
+        assert evt["turn"] == 1
+        assert evt["attempt"] == 1
+        assert evt["api_error_status"] == 500
+        assert evt["num_turns"] == 2
+
+    @pytest.mark.asyncio
+    async def test_retry_persists_pre_retry_stream(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+            TurnResult,
+        )
+
+        pre_retry_bytes = (
+            b'{"type":"system","subtype":"init"}\n{"type":"result","api_error_status":500}\n'
+        )
+        calls = {"n": 0}
+
+        async def flaky_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise AgentExecFailedError(
+                    "claude exec failed (exit=1)",
+                    exit_code=1,
+                    output=pre_retry_bytes,
+                    container_logs="",
+                    api_error_status=500,
+                    num_turns=2,
+                )
+            return TurnResult(
+                envelope={"outcome": {"kind": "success", "payload": {"answer": "ok"}}},
+                session_id="s1",
+                raw_output=b'{"type":"result","is_error":false}\n',
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        await run_agent_in_container(
+            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+        )
+
+        turn_dir = ctx.artifacts_dir / "test-agent" / "turns" / "1"
+        pre_retry = turn_dir / "stream.before-api-retry.1.jsonl"
+        assert pre_retry.exists(), f"expected pre-retry stream at {pre_retry}"
+        assert pre_retry.read_bytes() == pre_retry_bytes
+        # successful attempt's stream still lands at the canonical path
+        assert (turn_dir / "stream.jsonl").exists()

@@ -700,6 +700,34 @@ async def run_agent_in_container(
                     )
                     if retryable and api_retry_attempt < _MAX_TURN_API_RETRIES:
                         api_retry_attempt += 1
+                        # Persist the pre-retry stream so the postmortem
+                        # trail isn't lost when the next attempt succeeds.
+                        try:
+                            body = exec_err.output
+                            if len(body) > _FAILED_TURN_STREAM_MAX_BYTES:
+                                body = (
+                                    body[:_FAILED_TURN_STREAM_MAX_BYTES]
+                                    + _FAILED_TURN_TRUNCATION_MARKER
+                                )
+                            pre_retry_path = (
+                                turn_dir / f"stream.before-api-retry.{api_retry_attempt}.jsonl"
+                            )
+                            pre_retry_path.write_bytes(body)
+                        except Exception:
+                            logger.warning(
+                                "failed to persist stream.before-api-retry.%d.jsonl for turn %s",
+                                api_retry_attempt,
+                                turn_number,
+                            )
+                        lifecycle.append(
+                            LifecycleEvent.TURN_API_RETRIED,
+                            agent_name=agent_name,
+                            invocation=invocation,
+                            turn=turn_number,
+                            attempt=api_retry_attempt,
+                            api_error_status=exec_err.api_error_status,
+                            num_turns=exec_err.num_turns,
+                        )
                         logger.warning(
                             "retrying turn after api_error_status=%s (attempt %d/%d)",
                             exec_err.api_error_status,
