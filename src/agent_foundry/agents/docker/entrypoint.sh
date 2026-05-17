@@ -26,12 +26,14 @@ if [ -n "$GITHUB_TOKEN" ]; then
 fi
 
 # ── Git identity ──
-if [ -n "$GIT_USER_NAME" ]; then
-  gosu claude git config --global user.name "$GIT_USER_NAME"
-fi
-if [ -n "$GIT_USER_EMAIL" ]; then
-  gosu claude git config --global user.email "$GIT_USER_EMAIL"
-fi
+# Defaults apply when env vars are unset; override via GIT_USER_NAME /
+# GIT_USER_EMAIL passed through the container env.
+gosu claude git config --global user.name "${GIT_USER_NAME:-Agent Foundry}"
+gosu claude git config --global user.email "${GIT_USER_EMAIL:-agent-foundry@730alchemy.com}"
+# Trust any workspace mount the agent encounters. Containers are
+# short-lived and scoped; `*` saves the agent from a "dubious ownership"
+# error wherever the workspace volume happens to be mounted.
+gosu claude git config --global --add safe.directory '*'
 
 # ── Repo clone ──
 # Ensure workspace is writable by claude before cloning
