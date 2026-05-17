@@ -21,6 +21,8 @@ Convictions strong enough to build on. Each is stated with its rationale. All ar
 To Add:
 
 - bring the singularity into existence and play in its tides
+- high-quality foundation to build on
+  - resilient, easy to troubleshoot (full audit trail, tools for investigating), stable, self-healing
 - prepare for inevitable increase in llm-related costs. Build mitigation into agent foundry
   - mitigate outages with model/provider switch logic option ... may duplicate existing offering
 - complete control over agent execution environment

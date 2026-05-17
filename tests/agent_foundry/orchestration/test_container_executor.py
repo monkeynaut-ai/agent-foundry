@@ -1661,3 +1661,37 @@ class TestTransportErrorRetry:
                 primitive=primitive, prompt="go", run_ctx=ctx, run_turn=killed_turn
             )
         assert calls["n"] == 1  # no retry
+
+    @pytest.mark.asyncio
+    async def test_no_retry_when_result_text_is_empty(self, tmp_path: Path) -> None:
+        # A successful claude result event carries result="" when the agent
+        # replied only via the StructuredOutput tool. If exec_run later
+        # returns non-zero for an unrelated reason (e.g. SIGKILL after the
+        # turn finished), the trailing result event still parses cleanly
+        # and api_error_message lands as "". Treat empty string as "no
+        # error message" — do not retry.
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        calls = {"n": 0}
+
+        async def killed_after_success(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            raise AgentExecFailedError(
+                "claude exec failed (exit=137)",
+                exit_code=137,
+                output=b"",
+                container_logs="",
+                api_error_status=None,
+                num_turns=26,
+                api_error_message="",
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=killed_after_success
+            )
+        assert calls["n"] == 1  # no retry

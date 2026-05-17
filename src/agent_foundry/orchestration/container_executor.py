@@ -711,8 +711,8 @@ async def run_agent_in_container(
                     # HTTP response (api_error_status is None but the
                     # process produced an error message — TLS handshake,
                     # DNS, connection-refused, etc).
-                    transport_error = (
-                        exec_err.api_error_status is None and exec_err.api_error_message is not None
+                    transport_error = exec_err.api_error_status is None and bool(
+                        exec_err.api_error_message
                     )
                     retryable = (
                         exec_err.api_error_status is not None
