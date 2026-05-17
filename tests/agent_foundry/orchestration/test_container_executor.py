@@ -1587,3 +1587,77 @@ class TestApiErrorFieldsOnLifecycleEvents:
         assert evt["api_error_status"] == 503
         assert evt["num_turns"] == 5
         assert evt["api_error_message"] == "API Error: 503 Service Unavailable"
+
+
+class TestTransportErrorRetry:
+    """Connection-class failures (TLS handshake, DNS, refused, etc.) come
+    back from claude with api_error_status=None but a populated
+    api_error_message. Retry those alongside the explicit 5xx/429 set.
+    """
+
+    @pytest.mark.asyncio
+    async def test_retries_on_tls_handshake_failure(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+            TurnResult,
+        )
+
+        calls = {"n": 0}
+
+        async def flaky_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise AgentExecFailedError(
+                    "claude exec failed (exit=1)",
+                    exit_code=1,
+                    output=b"",
+                    container_logs="",
+                    api_error_status=None,  # no HTTP exchange happened
+                    num_turns=1,
+                    api_error_message="API Error: Unable to connect: SSL certificate verification failed",
+                )
+            return TurnResult(
+                envelope={"outcome": {"kind": "success", "payload": {"answer": "ok"}}},
+                session_id="s1",
+                raw_output=b"",
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        result = await run_agent_in_container(
+            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+        )
+
+        assert isinstance(result, OutputModel)
+        assert calls["n"] == 2  # one retry happened
+
+    @pytest.mark.asyncio
+    async def test_no_retry_when_no_result_event(self, tmp_path: Path) -> None:
+        # Container-died case: exit non-zero, no result event parsed, so
+        # api_error_message is None. Don't retry — this isn't a transport
+        # error, it's a process death (OOM, SIGKILL).
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        calls = {"n": 0}
+
+        async def killed_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            raise AgentExecFailedError(
+                "claude exec failed (exit=137)",
+                exit_code=137,
+                output=b"",
+                container_logs="",
+                api_error_status=None,
+                num_turns=None,
+                api_error_message=None,
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=killed_turn
+            )
+        assert calls["n"] == 1  # no retry

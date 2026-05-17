@@ -705,10 +705,19 @@ async def run_agent_in_container(
                     )
                     break
                 except AgentExecFailedError as exec_err:
+                    # Retry on (a) explicit transient HTTP statuses from
+                    # the upstream API, or (b) transport-class failures
+                    # where claude reported an error but never got an
+                    # HTTP response (api_error_status is None but the
+                    # process produced an error message — TLS handshake,
+                    # DNS, connection-refused, etc).
+                    transport_error = (
+                        exec_err.api_error_status is None and exec_err.api_error_message is not None
+                    )
                     retryable = (
                         exec_err.api_error_status is not None
                         and exec_err.api_error_status in _RETRYABLE_API_STATUSES
-                    )
+                    ) or transport_error
                     if retryable and api_retry_attempt < _MAX_TURN_API_RETRIES:
                         api_retry_attempt += 1
                         # Persist the pre-retry stream so the postmortem
