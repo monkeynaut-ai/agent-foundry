@@ -1519,3 +1519,71 @@ class TestApiRetryArtifacts:
         assert pre_retry.read_bytes() == pre_retry_bytes
         # successful attempt's stream still lands at the canonical path
         assert (turn_dir / "stream.jsonl").exists()
+
+
+class TestApiErrorFieldsOnLifecycleEvents:
+    @pytest.mark.asyncio
+    async def test_turn_api_retried_event_includes_message(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+            TurnResult,
+        )
+
+        calls = {"n": 0}
+
+        async def flaky_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise AgentExecFailedError(
+                    "boom",
+                    exit_code=1,
+                    output=b"",
+                    container_logs="",
+                    api_error_status=500,
+                    num_turns=2,
+                    api_error_message="API Error: 500 Internal server error",
+                )
+            return TurnResult(
+                envelope={"outcome": {"kind": "success", "payload": {"answer": "ok"}}},
+                session_id="s1",
+                raw_output=b"",
+            )
+
+        ctx, _, writer = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        await run_agent_in_container(
+            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+        )
+
+        retry_events = [e for e in writer.events if e["type"] is LifecycleEvent.TURN_API_RETRIED]
+        assert len(retry_events) == 1
+        assert retry_events[0]["api_error_message"] == "API Error: 500 Internal server error"
+
+    @pytest.mark.asyncio
+    async def test_agent_invocation_failed_event_includes_api_fields(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import AgentExecFailedError
+
+        async def always_fails(*args: Any, **kwargs: Any) -> Any:
+            raise AgentExecFailedError(
+                "boom",
+                exit_code=1,
+                output=b"",
+                container_logs="",
+                api_error_status=503,
+                num_turns=5,
+                api_error_message="API Error: 503 Service Unavailable",
+            )
+
+        ctx, _, writer = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=always_fails
+            )
+
+        failed = [e for e in writer.events if e["type"] is LifecycleEvent.AGENT_INVOCATION_FAILED]
+        assert len(failed) == 1
+        evt = failed[0]
+        assert evt["api_error_status"] == 503
+        assert evt["num_turns"] == 5
+        assert evt["api_error_message"] == "API Error: 503 Service Unavailable"

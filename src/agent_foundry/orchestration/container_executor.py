@@ -338,6 +338,9 @@ def _capture_forensic_fields(
     live: LiveContainer,
     *,
     exit_code_hint: int | None = None,
+    api_error_status: int | None = None,
+    num_turns: int | None = None,
+    api_error_message: str | None = None,
 ) -> dict[str, Any]:
     """Return structured failure-cause fields for a lifecycle event.
 
@@ -349,8 +352,16 @@ def _capture_forensic_fields(
         ``State.ExitCode``.
       * ``oom_killed``: inspect's ``State.OOMKilled``.
       * ``memory_peak_bytes``: cgroup-v2 ``/sys/fs/cgroup/memory.peak``.
+      * ``api_error_status`` / ``num_turns`` / ``api_error_message``:
+        from the failed-turn result event, when the caller supplies them.
     """
     fields: dict[str, Any] = {}
+    if api_error_status is not None:
+        fields["api_error_status"] = api_error_status
+    if num_turns is not None:
+        fields["num_turns"] = num_turns
+    if api_error_message is not None:
+        fields["api_error_message"] = api_error_message
 
     # exit_code (from the typed exception when available, else inspect).
     inspect_attrs: dict[str, Any] | None = None
@@ -727,6 +738,7 @@ async def run_agent_in_container(
                             attempt=api_retry_attempt,
                             api_error_status=exec_err.api_error_status,
                             num_turns=exec_err.num_turns,
+                            api_error_message=exec_err.api_error_message,
                         )
                         logger.warning(
                             "retrying turn after api_error_status=%s (attempt %d/%d)",
@@ -967,11 +979,20 @@ async def run_agent_in_container(
         # best-effort forensic capture.
         live.failed = True
         # Best-effort: capture structured forensic fields (exit_code,
-        # oom_killed, memory_peak_bytes) for the lifecycle event so
-        # common dispatch on the cause is a one-line check rather than
-        # parsing the reason string. ``reason`` stays for the long tail.
-        exit_code_hint = exc.exit_code if isinstance(exc, AgentExecFailedError) else None
-        forensic_fields = _capture_forensic_fields(live, exit_code_hint=exit_code_hint)
+        # oom_killed, memory_peak_bytes, plus api_error_* when claude
+        # itself reported the failure) for the lifecycle event so common
+        # dispatch on the cause is a one-line check rather than parsing
+        # the reason string. ``reason`` stays for the long tail.
+        if isinstance(exc, AgentExecFailedError):
+            forensic_fields = _capture_forensic_fields(
+                live,
+                exit_code_hint=exc.exit_code,
+                api_error_status=exc.api_error_status,
+                num_turns=exc.num_turns,
+                api_error_message=exc.api_error_message,
+            )
+        else:
+            forensic_fields = _capture_forensic_fields(live)
         lifecycle.append(
             LifecycleEvent.AGENT_INVOCATION_FAILED,
             agent_name=agent_name,
