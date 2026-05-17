@@ -1280,3 +1280,384 @@ class TestInspectContainerScript:
 
         script_path = ctx.artifacts_dir / "test-agent" / "inspect-container.sh"
         assert not script_path.exists()
+
+
+# --- API-error-status extraction + retry -------------------------------------
+#
+# When claude exits with an API error (its internal retries exhausted),
+# the trailing `result` stream event carries api_error_status / num_turns
+# / result text. We extract them onto AgentExecFailedError, and the
+# turn loop retries once on 5xx / 429 codes before propagating.
+
+
+class TestApiErrorExtraction:
+    @pytest.mark.asyncio
+    async def test_do_exec_attaches_api_error_status_to_exception(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+            _run_claude_turn,
+        )
+
+        # Build a fake claude stream that ends with a result event
+        # carrying is_error + api_error_status.
+        stream = (
+            b'{"type":"system","subtype":"init","session_id":"s1"}\n'
+            b'{"type":"result","subtype":"success","is_error":true,'
+            b'"api_error_status":500,"num_turns":2,'
+            b'"result":"API Error: 500 Internal server error"}\n'
+        )
+        # Make exec_run return non-zero so _do_exec hits the failure path.
+        fake_mgr = FakeContainerManager()
+        fake_mgr.exec_script = {}
+        # Need a custom exec_run that returns scripted (exit_code, output).
+        from agent_foundry.agents.lifecycle import ExecResult
+
+        def _exec(handle, cmd, *, user="claude", workdir=None):
+            return ExecResult(exit_code=1, output=stream)
+
+        fake_mgr.exec_run = _exec  # type: ignore[method-assign]
+        handle = fake_mgr.create_container()
+        live = _LiveContainer(handle=handle, manager=fake_mgr, agent_name="t")
+
+        with pytest.raises(AgentExecFailedError) as excinfo:
+            await _run_claude_turn(
+                live,
+                prompt="hi",
+                resume_session_id=None,
+                schema={},
+                model="claude-sonnet-4-6",
+            )
+
+        assert excinfo.value.exit_code == 1
+        assert excinfo.value.api_error_status == 500
+        assert excinfo.value.num_turns == 2
+        assert "Internal server error" in (excinfo.value.api_error_message or "")
+
+
+class TestApiRetry:
+    @pytest.mark.asyncio
+    async def test_retries_once_on_500(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        calls = {"n": 0}
+
+        async def flaky_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise AgentExecFailedError(
+                    "claude exec failed (exit=1)",
+                    exit_code=1,
+                    output=b"",
+                    container_logs="",
+                    api_error_status=500,
+                    num_turns=2,
+                )
+            # 2nd call succeeds
+            from agent_foundry.orchestration.container_executor import TurnResult
+
+            return TurnResult(
+                envelope={"outcome": {"kind": "success", "payload": {"answer": "ok"}}},
+                session_id="s1",
+                raw_output=b"",
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+
+        result = await run_agent_in_container(
+            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+        )
+
+        assert isinstance(result, OutputModel)
+        assert result.answer == "ok"
+        assert calls["n"] == 2  # one retry happened
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_non_retryable_status(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        calls = {"n": 0}
+
+        async def failing_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            raise AgentExecFailedError(
+                "claude exec failed (exit=1)",
+                exit_code=1,
+                output=b"",
+                container_logs="",
+                api_error_status=400,  # client error, NOT retryable
+                num_turns=1,
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=failing_turn
+            )
+
+        assert calls["n"] == 1  # no retry
+
+    @pytest.mark.asyncio
+    async def test_propagates_after_one_retry_still_fails(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        calls = {"n": 0}
+
+        async def always_fails(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            raise AgentExecFailedError(
+                "claude exec failed (exit=1)",
+                exit_code=1,
+                output=b"",
+                container_logs="",
+                api_error_status=503,
+                num_turns=1,
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=always_fails
+            )
+
+        assert calls["n"] == 2  # one retry, then give up
+
+
+class TestApiRetryArtifacts:
+    @pytest.mark.asyncio
+    async def test_retry_emits_lifecycle_event(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+            TurnResult,
+        )
+
+        calls = {"n": 0}
+
+        async def flaky_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise AgentExecFailedError(
+                    "claude exec failed (exit=1)",
+                    exit_code=1,
+                    output=b'{"type":"system"}\n',
+                    container_logs="",
+                    api_error_status=500,
+                    num_turns=2,
+                )
+            return TurnResult(
+                envelope={"outcome": {"kind": "success", "payload": {"answer": "ok"}}},
+                session_id="s1",
+                raw_output=b"",
+            )
+
+        ctx, _, writer = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        await run_agent_in_container(
+            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+        )
+
+        retry_events = [e for e in writer.events if e["type"] is LifecycleEvent.TURN_API_RETRIED]
+        assert len(retry_events) == 1
+        evt = retry_events[0]
+        assert evt["agent_name"] == "test-agent"
+        assert evt["invocation"] == 1
+        assert evt["turn"] == 1
+        assert evt["attempt"] == 1
+        assert evt["api_error_status"] == 500
+        assert evt["num_turns"] == 2
+
+    @pytest.mark.asyncio
+    async def test_retry_persists_pre_retry_stream(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+            TurnResult,
+        )
+
+        pre_retry_bytes = (
+            b'{"type":"system","subtype":"init"}\n{"type":"result","api_error_status":500}\n'
+        )
+        calls = {"n": 0}
+
+        async def flaky_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise AgentExecFailedError(
+                    "claude exec failed (exit=1)",
+                    exit_code=1,
+                    output=pre_retry_bytes,
+                    container_logs="",
+                    api_error_status=500,
+                    num_turns=2,
+                )
+            return TurnResult(
+                envelope={"outcome": {"kind": "success", "payload": {"answer": "ok"}}},
+                session_id="s1",
+                raw_output=b'{"type":"result","is_error":false}\n',
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        await run_agent_in_container(
+            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+        )
+
+        turn_dir = ctx.artifacts_dir / "test-agent" / "turns" / "1"
+        pre_retry = turn_dir / "stream.before-api-retry.1.jsonl"
+        assert pre_retry.exists(), f"expected pre-retry stream at {pre_retry}"
+        assert pre_retry.read_bytes() == pre_retry_bytes
+        # successful attempt's stream still lands at the canonical path
+        assert (turn_dir / "stream.jsonl").exists()
+
+
+class TestApiErrorFieldsOnLifecycleEvents:
+    @pytest.mark.asyncio
+    async def test_turn_api_retried_event_includes_message(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+            TurnResult,
+        )
+
+        calls = {"n": 0}
+
+        async def flaky_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise AgentExecFailedError(
+                    "boom",
+                    exit_code=1,
+                    output=b"",
+                    container_logs="",
+                    api_error_status=500,
+                    num_turns=2,
+                    api_error_message="API Error: 500 Internal server error",
+                )
+            return TurnResult(
+                envelope={"outcome": {"kind": "success", "payload": {"answer": "ok"}}},
+                session_id="s1",
+                raw_output=b"",
+            )
+
+        ctx, _, writer = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        await run_agent_in_container(
+            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+        )
+
+        retry_events = [e for e in writer.events if e["type"] is LifecycleEvent.TURN_API_RETRIED]
+        assert len(retry_events) == 1
+        assert retry_events[0]["api_error_message"] == "API Error: 500 Internal server error"
+
+    @pytest.mark.asyncio
+    async def test_agent_invocation_failed_event_includes_api_fields(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import AgentExecFailedError
+
+        async def always_fails(*args: Any, **kwargs: Any) -> Any:
+            raise AgentExecFailedError(
+                "boom",
+                exit_code=1,
+                output=b"",
+                container_logs="",
+                api_error_status=503,
+                num_turns=5,
+                api_error_message="API Error: 503 Service Unavailable",
+            )
+
+        ctx, _, writer = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=always_fails
+            )
+
+        failed = [e for e in writer.events if e["type"] is LifecycleEvent.AGENT_INVOCATION_FAILED]
+        assert len(failed) == 1
+        evt = failed[0]
+        assert evt["api_error_status"] == 503
+        assert evt["num_turns"] == 5
+        assert evt["api_error_message"] == "API Error: 503 Service Unavailable"
+
+
+class TestTransportErrorRetry:
+    """Connection-class failures (TLS handshake, DNS, refused, etc.) come
+    back from claude with api_error_status=None but a populated
+    api_error_message. Retry those alongside the explicit 5xx/429 set.
+    """
+
+    @pytest.mark.asyncio
+    async def test_retries_on_tls_handshake_failure(self, tmp_path: Path) -> None:
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+            TurnResult,
+        )
+
+        calls = {"n": 0}
+
+        async def flaky_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise AgentExecFailedError(
+                    "claude exec failed (exit=1)",
+                    exit_code=1,
+                    output=b"",
+                    container_logs="",
+                    api_error_status=None,  # no HTTP exchange happened
+                    num_turns=1,
+                    api_error_message="API Error: Unable to connect: SSL certificate verification failed",
+                )
+            return TurnResult(
+                envelope={"outcome": {"kind": "success", "payload": {"answer": "ok"}}},
+                session_id="s1",
+                raw_output=b"",
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        result = await run_agent_in_container(
+            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+        )
+
+        assert isinstance(result, OutputModel)
+        assert calls["n"] == 2  # one retry happened
+
+    @pytest.mark.asyncio
+    async def test_no_retry_when_no_result_event(self, tmp_path: Path) -> None:
+        # Container-died case: exit non-zero, no result event parsed, so
+        # api_error_message is None. Don't retry — this isn't a transport
+        # error, it's a process death (OOM, SIGKILL).
+        from agent_foundry.orchestration.container_executor import (
+            AgentExecFailedError,
+        )
+
+        calls = {"n": 0}
+
+        async def killed_turn(*args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            raise AgentExecFailedError(
+                "claude exec failed (exit=137)",
+                exit_code=137,
+                output=b"",
+                container_logs="",
+                api_error_status=None,
+                num_turns=None,
+                api_error_message=None,
+            )
+
+        ctx, _, _ = _make_ctx(tmp_path=tmp_path)
+        primitive = _make_primitive()
+        with pytest.raises(AgentFailedError):
+            await run_agent_in_container(
+                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=killed_turn
+            )
+        assert calls["n"] == 1  # no retry

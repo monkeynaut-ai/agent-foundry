@@ -24,6 +24,7 @@ class LifecycleEvent(StrEnum):
     AGENT_INVOCATION_FAILED = "agent_invocation_failed"
     TURN_STARTED = "turn_started"
     TURN_COMPLETED = "turn_completed"
+    TURN_API_RETRIED = "turn_api_retried"
     RESPONDER_REQUESTED = "responder_requested"
     RESPONDER_ANSWERED = "responder_answered"
     FUNCTION_ACTION_STARTED = "function_action_started"

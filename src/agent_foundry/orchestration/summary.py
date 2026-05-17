@@ -79,6 +79,7 @@ def render_summary(run_dir: Path) -> None:
     run_failed = False
 
     stats: dict[str, _AgentStats] = {}
+    failure_records: list[dict] = []
 
     if jsonl_path.exists():
         with jsonl_path.open("r", encoding="utf-8") as fh:
@@ -117,6 +118,8 @@ def render_summary(run_dir: Path) -> None:
                     LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
                     LifecycleEvent.AGENT_INVOCATION_FAILED.value,
                 ):
+                    if event_type == LifecycleEvent.AGENT_INVOCATION_FAILED.value:
+                        failure_records.append(record)
                     agent = record.get("agent")
                     if not isinstance(agent, str):
                         continue
@@ -167,6 +170,26 @@ def render_summary(run_dir: Path) -> None:
 
     lines.append(header)
     lines.append("")
+
+    if failure_records:
+        lines.append("Failures:")
+        for rec in failure_records:
+            agent = rec.get("agent_name") or rec.get("agent") or "unknown"
+            invocation = rec.get("invocation", "?")
+            fields = []
+            for key in (
+                "exit_code",
+                "oom_killed",
+                "memory_peak_bytes",
+                "api_error_status",
+                "num_turns",
+                "api_error_message",
+            ):
+                if key in rec and rec[key] is not None:
+                    fields.append(f"{key}={rec[key]}")
+            tail = ", ".join(fields) if fields else "no structured fields"
+            lines.append(f"  {agent}/{invocation} — {tail}")
+        lines.append("")
 
     lines.append("Artifacts:")
     lines.append("  - container logs: agents/<agent>/container.log")

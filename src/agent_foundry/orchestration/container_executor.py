@@ -71,6 +71,13 @@ logger = logging.getLogger(__name__)
 
 MAX_RESPONDER_ITERATIONS = 20
 
+# Bounded retry for transient upstream API errors (5xx, 429). claude's CLI
+# already retries 5xx internally; this is a one-shot safety net for the
+# rare case its budget is exhausted before the run completes.
+_RETRYABLE_API_STATUSES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+_MAX_TURN_API_RETRIES: int = 1
+_TURN_API_RETRY_SLEEP_SECONDS: float = 2.0
+
 # Per-turn cap on stream.jsonl writes for failed turns. The full claude
 # stream-json for a turn typically lands well under 1 MB; failures that
 # blow past this are pathological and indicate a separate bug to chase.
@@ -89,6 +96,11 @@ class AgentExecFailedError(RuntimeError):
       exit_code: the agent process's exit code (137 = SIGKILL/OOM).
       output: full stdout/stderr bytes from the exec.
       container_logs: container log tail captured at the time of failure.
+      api_error_status: HTTP status from the trailing result event when
+        the agent process gave up after its own retries (None when not
+        reported, e.g. SIGKILL).
+      num_turns: model turns the process completed before exiting.
+      api_error_message: short error text from the trailing result event.
     """
 
     def __init__(
@@ -98,11 +110,38 @@ class AgentExecFailedError(RuntimeError):
         exit_code: int,
         output: bytes,
         container_logs: str,
+        api_error_status: int | None = None,
+        num_turns: int | None = None,
+        api_error_message: str | None = None,
     ) -> None:
         super().__init__(message)
         self.exit_code = exit_code
         self.output = output
         self.container_logs = container_logs
+        self.api_error_status = api_error_status
+        self.num_turns = num_turns
+        self.api_error_message = api_error_message
+
+
+def _parse_result_event(output: bytes) -> tuple[int | None, int | None, str | None]:
+    """Scan a claude stream for the trailing `result` event and pull out
+    (api_error_status, num_turns, result_text). All-None if not present.
+    """
+    for raw_line in output.decode(errors="replace").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            evt = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if evt.get("type") == "result":
+            return (
+                evt.get("api_error_status"),
+                evt.get("num_turns"),
+                evt.get("result"),
+            )
+    return None, None, None
 
 
 class TurnResult(BaseModel):
@@ -195,6 +234,7 @@ async def _run_claude_turn(
         output = result.output
         if exit_code != 0:
             logs = live.manager.read_logs(live.handle, tail=80).decode(errors="replace")
+            api_status, num_turns, api_msg = _parse_result_event(output)
             raise AgentExecFailedError(
                 f"claude exec failed (exit={exit_code}):\n"
                 f"stdout/stderr: {output.decode(errors='replace')}\n\n"
@@ -202,6 +242,9 @@ async def _run_claude_turn(
                 exit_code=exit_code,
                 output=output,
                 container_logs=logs,
+                api_error_status=api_status,
+                num_turns=num_turns,
+                api_error_message=api_msg,
             )
         envelope: dict[str, Any] | None = None
         session_id: str | None = None
@@ -295,6 +338,9 @@ def _capture_forensic_fields(
     live: LiveContainer,
     *,
     exit_code_hint: int | None = None,
+    api_error_status: int | None = None,
+    num_turns: int | None = None,
+    api_error_message: str | None = None,
 ) -> dict[str, Any]:
     """Return structured failure-cause fields for a lifecycle event.
 
@@ -306,8 +352,16 @@ def _capture_forensic_fields(
         ``State.ExitCode``.
       * ``oom_killed``: inspect's ``State.OOMKilled``.
       * ``memory_peak_bytes``: cgroup-v2 ``/sys/fs/cgroup/memory.peak``.
+      * ``api_error_status`` / ``num_turns`` / ``api_error_message``:
+        from the failed-turn result event, when the caller supplies them.
     """
     fields: dict[str, Any] = {}
+    if api_error_status is not None:
+        fields["api_error_status"] = api_error_status
+    if num_turns is not None:
+        fields["num_turns"] = num_turns
+    if api_error_message is not None:
+        fields["api_error_message"] = api_error_message
 
     # exit_code (from the typed exception when available, else inspect).
     inspect_attrs: dict[str, Any] | None = None
@@ -636,34 +690,92 @@ async def run_agent_in_container(
             except Exception:
                 logger.warning("failed to persist prompt.txt for turn %s", turn_number)
 
-            try:
-                result = await run_turn(
-                    live,
-                    prompt=current_prompt,
-                    resume_session_id=current_resume,
-                    schema=schema,
-                    model=primitive.model,
-                    effort=primitive.effort,
-                    skip_permissions=primitive.skip_permissions,
-                    cwd=primitive.cwd,
-                )
-            except AgentExecFailedError as exec_err:
-                # The turn died mid-stream. Persist the raw output to
-                # stream.jsonl before the exception propagates so the
-                # failed turn has the same on-disk artifact a successful
-                # turn would (capped at _FAILED_TURN_STREAM_MAX_BYTES;
-                # pathological outputs get marked, not dropped).
+            api_retry_attempt = 0
+            while True:
                 try:
-                    body = exec_err.output
-                    if len(body) > _FAILED_TURN_STREAM_MAX_BYTES:
-                        body = body[:_FAILED_TURN_STREAM_MAX_BYTES] + _FAILED_TURN_TRUNCATION_MARKER
-                    (turn_dir / "stream.jsonl").write_bytes(body)
-                except Exception:
-                    logger.warning(
-                        "failed to persist stream.jsonl for failed turn %s",
-                        turn_number,
+                    result = await run_turn(
+                        live,
+                        prompt=current_prompt,
+                        resume_session_id=current_resume,
+                        schema=schema,
+                        model=primitive.model,
+                        effort=primitive.effort,
+                        skip_permissions=primitive.skip_permissions,
+                        cwd=primitive.cwd,
                     )
-                raise
+                    break
+                except AgentExecFailedError as exec_err:
+                    # Retry on (a) explicit transient HTTP statuses from
+                    # the upstream API, or (b) transport-class failures
+                    # where claude reported an error but never got an
+                    # HTTP response (api_error_status is None but the
+                    # process produced an error message — TLS handshake,
+                    # DNS, connection-refused, etc).
+                    transport_error = (
+                        exec_err.api_error_status is None and exec_err.api_error_message is not None
+                    )
+                    retryable = (
+                        exec_err.api_error_status is not None
+                        and exec_err.api_error_status in _RETRYABLE_API_STATUSES
+                    ) or transport_error
+                    if retryable and api_retry_attempt < _MAX_TURN_API_RETRIES:
+                        api_retry_attempt += 1
+                        # Persist the pre-retry stream so the postmortem
+                        # trail isn't lost when the next attempt succeeds.
+                        try:
+                            body = exec_err.output
+                            if len(body) > _FAILED_TURN_STREAM_MAX_BYTES:
+                                body = (
+                                    body[:_FAILED_TURN_STREAM_MAX_BYTES]
+                                    + _FAILED_TURN_TRUNCATION_MARKER
+                                )
+                            pre_retry_path = (
+                                turn_dir / f"stream.before-api-retry.{api_retry_attempt}.jsonl"
+                            )
+                            pre_retry_path.write_bytes(body)
+                        except Exception:
+                            logger.warning(
+                                "failed to persist stream.before-api-retry.%d.jsonl for turn %s",
+                                api_retry_attempt,
+                                turn_number,
+                            )
+                        lifecycle.append(
+                            LifecycleEvent.TURN_API_RETRIED,
+                            agent_name=agent_name,
+                            invocation=invocation,
+                            turn=turn_number,
+                            attempt=api_retry_attempt,
+                            api_error_status=exec_err.api_error_status,
+                            num_turns=exec_err.num_turns,
+                            api_error_message=exec_err.api_error_message,
+                        )
+                        logger.warning(
+                            "retrying turn after api_error_status=%s (attempt %d/%d)",
+                            exec_err.api_error_status,
+                            api_retry_attempt,
+                            _MAX_TURN_API_RETRIES,
+                        )
+                        await asyncio.sleep(_TURN_API_RETRY_SLEEP_SECONDS)
+                        continue
+                    # Final failure: persist the raw output to stream.jsonl
+                    # before the exception propagates so the failed turn has
+                    # the same on-disk artifact a successful turn would
+                    # (capped at _FAILED_TURN_STREAM_MAX_BYTES; pathological
+                    # outputs get marked, not dropped).
+                    try:
+                        body = exec_err.output
+                        if len(body) > _FAILED_TURN_STREAM_MAX_BYTES:
+                            body = (
+                                body[:_FAILED_TURN_STREAM_MAX_BYTES]
+                                + _FAILED_TURN_TRUNCATION_MARKER
+                            )
+                        (turn_dir / "stream.jsonl").write_bytes(body)
+                    except Exception:
+                        logger.warning(
+                            "failed to persist stream.jsonl for failed turn %s",
+                            turn_number,
+                        )
+                    raise
 
             # Tee the raw stream regardless of outcome so every RunTurn
             # implementation gets stderr + stream.jsonl persistence for
@@ -876,11 +988,20 @@ async def run_agent_in_container(
         # best-effort forensic capture.
         live.failed = True
         # Best-effort: capture structured forensic fields (exit_code,
-        # oom_killed, memory_peak_bytes) for the lifecycle event so
-        # common dispatch on the cause is a one-line check rather than
-        # parsing the reason string. ``reason`` stays for the long tail.
-        exit_code_hint = exc.exit_code if isinstance(exc, AgentExecFailedError) else None
-        forensic_fields = _capture_forensic_fields(live, exit_code_hint=exit_code_hint)
+        # oom_killed, memory_peak_bytes, plus api_error_* when claude
+        # itself reported the failure) for the lifecycle event so common
+        # dispatch on the cause is a one-line check rather than parsing
+        # the reason string. ``reason`` stays for the long tail.
+        if isinstance(exc, AgentExecFailedError):
+            forensic_fields = _capture_forensic_fields(
+                live,
+                exit_code_hint=exc.exit_code,
+                api_error_status=exc.api_error_status,
+                num_turns=exc.num_turns,
+                api_error_message=exc.api_error_message,
+            )
+        else:
+            forensic_fields = _capture_forensic_fields(live)
         lifecycle.append(
             LifecycleEvent.AGENT_INVOCATION_FAILED,
             agent_name=agent_name,

@@ -296,3 +296,35 @@ def test_render_summary_returns_none(tmp_path: Path) -> None:
     result = render_summary(run_dir)
 
     assert result is None
+
+
+def test_render_summary_includes_failure_cause(tmp_path: Path) -> None:
+    run_id = "run-fail"
+    run_dir = tmp_path / run_id
+    _write_jsonl(
+        run_dir / "lifecycle.jsonl",
+        [
+            _run_started(run_id, "2026-04-15T10:00:00+00:00"),
+            {
+                "type": LifecycleEvent.AGENT_INVOCATION_FAILED.value,
+                "ts": "2026-04-15T10:01:00+00:00",
+                "run_id": run_id,
+                "agent_name": "implementer",
+                "invocation": 1,
+                "exit_code": 1,
+                "oom_killed": False,
+                "api_error_status": 500,
+                "num_turns": 2,
+                "reason": "claude exec failed (exit=1): ...",
+            },
+            _run_failed(run_id, "2026-04-15T10:01:01+00:00"),
+        ],
+    )
+
+    render_summary(run_dir)
+
+    text = (run_dir / "summary.txt").read_text()
+    assert "Failures:" in text
+    assert "implementer/1" in text
+    assert "api_error_status=500" in text
+    assert "exit_code=1" in text
