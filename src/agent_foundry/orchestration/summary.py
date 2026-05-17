@@ -183,6 +183,7 @@ def render_summary(run_dir: Path) -> None:
                 "memory_peak_bytes",
                 "api_error_status",
                 "num_turns",
+                "api_error_message",
             ):
                 if key in rec and rec[key] is not None:
                     fields.append(f"{key}={rec[key]}")
