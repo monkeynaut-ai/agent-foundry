@@ -108,7 +108,7 @@ def render_summary(run_dir: Path) -> None:
                     run_ended_at = ts
                     run_failed = True
                 elif event_type == LifecycleEvent.AGENT_INVOCATION_STARTED.value:
-                    agent = record.get("agent")
+                    agent = record.get("agent_name")
                     if not isinstance(agent, str):
                         continue
                     bucket = stats.setdefault(agent, _AgentStats())
@@ -120,7 +120,7 @@ def render_summary(run_dir: Path) -> None:
                 ):
                     if event_type == LifecycleEvent.AGENT_INVOCATION_FAILED.value:
                         failure_records.append(record)
-                    agent = record.get("agent")
+                    agent = record.get("agent_name")
                     if not isinstance(agent, str):
                         continue
                     bucket = stats.setdefault(agent, _AgentStats())
