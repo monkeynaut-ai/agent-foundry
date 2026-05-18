@@ -137,6 +137,71 @@ adopting case-by-case as agents are touched, not as a sweep.
   `AGENT_INVOCATION_RESUMED` so the lifecycle stream of a resumed
   run is self-describing.
 
+## Stuck-shell detection inside running agents
+
+The implementer agent has gotten stuck multiple times because claude
+spawned a bash with a polling loop (`until grep …; sleep N; done`,
+`tail -f`, etc.) whose exit condition never fires. The bash never
+returns, so `docker exec` never returns, so the orchestration's turn
+loop waits indefinitely. The 2026-05-17 runs cost hours each before
+manual kill. Two complementary detection paths:
+
+### Host-side `/proc` scanner
+
+A standalone diagnostic that walks the host's process table looking
+for shells matching the danger pattern — `until grep … sleep`,
+`tail -f /tmp/.../tasks/<id>.output`, long-etime polling chains.
+Reports PID, etime, and the offending cmdline. Catches stuck shells
+in BOTH the host's own claude-code session AND in any agent worker
+container (worker shells appear in the host PID namespace via
+docker's default sharing).
+
+Cheap to write (a ~10-line bash or python script) and run on demand.
+Doesn't require any agent-foundry integration. Useful as a
+"something feels stuck" command an operator can run while a long
+run is in progress.
+
+Limitation: no automatic action. Reports the symptom; the operator
+decides whether to kill the offending PID and accept the run's
+death, or keep waiting.
+
+### In-orchestrator watchdog
+
+Inside the per-turn loop in
+`agent_foundry/orchestration/container_executor.py`, track wall-clock
+time since the last event (`stream-json` line) read from the running
+`docker exec`. If that exceeds a configurable threshold (e.g. 5–10
+minutes of total silence from claude), open a side `docker exec` into
+the same container, sample its process tree, and grep for the danger
+pattern. On a match:
+
+- Emit a new lifecycle event (`TURN_STUCK_SHELL_DETECTED`) carrying
+  the offending PID, etime, and the matched cmdline.
+- Persist the snapshot to `<run>/<agent>/turns/<n>/stuck-shell.txt`.
+- Optionally (configurable, default off) `docker exec ... kill <pid>`
+  the offending bash to unblock the parent `claude` exec. Claude
+  then receives the bash's exit and can decide its next action —
+  in practice it will surface the error through `StructuredOutput`,
+  letting the orchestrator handle it as a turn failure rather than
+  an indefinite hang.
+
+This is the right long-term answer for agent-foundry: it makes the
+orchestration self-healing instead of relying on operator vigilance.
+Pairs naturally with Tier 1 resume — a stuck-and-killed agent
+becomes a resumable failure rather than a wedged run.
+
+Open questions:
+- Threshold value. Too short → false positives on legitimate
+  long-running tests; too long → wasted hours before detection.
+  A per-agent override (implementer's commit stage needs more
+  patience than designer's reads) may be necessary.
+- Pattern catalogue. Start with the two patterns observed
+  (`until.*sleep`, `tail -f /tmp/claude-1000/.*/tasks/`); accept
+  that this is a living list.
+- Whether to act (kill) or just report. Reporting-only is the
+  safer default; killing is a foot-gun if the pattern matches a
+  legitimate command. Make killing opt-in per run.
+
 ## Recommended sequencing
 
 1. Ship Tier 1 first. Lowest risk, biggest single win for the

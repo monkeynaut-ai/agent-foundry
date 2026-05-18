@@ -59,6 +59,7 @@ demo.cmd = "python -m agent_foundry.demo.cli"
 demo.env = {PYTHONPATH = "src"}
 docker-base.cmd = "docker build -t agent-worker:latest -f src/agent_foundry/agents/docker/Dockerfile.base ."
 docker-foundry-dev.cmd = "docker build -t agent-worker-foundry-dev:latest -f src/agent_foundry/agents/docker/Dockerfile.foundry-dev ."
+docker-rebuild.shell = "docker build --no-cache -t agent-worker:latest -f src/agent_foundry/agents/docker/Dockerfile.base . && docker build --no-cache -t agent-worker-foundry-dev:latest -f src/agent_foundry/agents/docker/Dockerfile.foundry-dev ."
 test-unit.cmd = "pytest {args:tests/} -m 'not integration and not benchmark'"
 test-unit.env = {PYTHONPATH = "src"}
 test-integration.cmd = "pytest {args:tests/} -m 'integration'"
