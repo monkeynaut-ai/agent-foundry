@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, TypedDict, cast
+from dataclasses import dataclass, field
+from typing import Any, NamedTuple, TypedDict, cast
 
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ValidationError
 
+from agent_foundry.primitives.ai_request import AIRequest, InferenceProvider
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     AgentAction,
@@ -23,16 +25,42 @@ from agent_foundry.primitives.models import (
 from agent_foundry.primitives.plan import PrimitivePlan
 from agent_foundry.telemetry.spans import emit_span
 
+# -- Compile context and result --
+
+
+@dataclass
+class CompileContext:
+    """Mutable state threaded through the compile pass.
+
+    ``prefix`` names the current node scope. ``gate_ids`` is a shared
+    accumulator — child contexts must carry the same list instance so
+    that gate node ids collected deep in the tree are visible to
+    ``compile_runtime_plan`` at the top.
+    """
+
+    prefix: str
+    gate_ids: list[str] = field(default_factory=list)
+
+    def child(self, prefix: str) -> CompileContext:
+        """Return a child context with a new prefix and the same gate_ids list."""
+        return CompileContext(prefix=prefix, gate_ids=self.gate_ids)
+
+
+class CompileResult(NamedTuple):
+    entry_id: str
+    exit_id: str
+
+
 # -- Compiler registry --
 
-type _CompilerStorage = Callable[[StateGraph, Any, str, list[str]], tuple[str, str]]
+type _CompilerStorage = Callable[[StateGraph, Any, CompileContext], CompileResult]
 
 _compiler_registry: dict[type[Primitive], _CompilerStorage] = {}
 
 
 def register_compiler[P: Primitive](
     prim_type: type[P],
-    compiler_fn: Callable[[StateGraph, P, str, list[str]], tuple[str, str]],
+    compiler_fn: Callable[[StateGraph, P, CompileContext], CompileResult],
 ) -> None:
     """Register a compiler function for a primitive type.
 
@@ -107,28 +135,26 @@ def _validate_scoped_input(
         ) from e
 
 
-def _compile_node(
-    graph: StateGraph, prim: Primitive, prefix: str, gate_ids: list[str]
-) -> tuple[str, str]:
-    """Compile a primitive into graph nodes/edges. Returns (entry_id, exit_id)."""
+def _compile_node(graph: StateGraph, prim: Primitive, ctx: CompileContext) -> CompileResult:
+    """Compile a primitive into graph nodes/edges."""
     # Parameterized generics (e.g., FunctionAction[A, B]) create new classes.
     # Walk MRO to find the registered base type.
     prim_type = type(prim)
     for cls in prim_type.__mro__:
         compiler = _compiler_registry.get(cls)
         if compiler is not None:
-            return compiler(graph, prim, prefix, gate_ids)
+            return compiler(graph, prim, ctx)
     raise PrimitiveCompilationError(
         f"No compiler registered for {prim_type.__name__}",
         primitive_type=prim_type.__name__,
     )
 
 
-# -- Entry points --
+# -- Entry point --
 
 
-def _compile_primitive(plan: PrimitivePlan) -> Any:
-    """Internal: build the executable graph for a plan.
+def compile_runtime_plan(plan: PrimitivePlan) -> Any:
+    """Build the executable graph for a plan.
 
     Not part of the public API — products use :func:`run_primitive_plan`.
     The returned object is opaque; calling methods on it directly is
@@ -140,17 +166,17 @@ def _compile_primitive(plan: PrimitivePlan) -> Any:
     state_type = _derive_state_type(root_in, root_out)
     graph = StateGraph(state_type)
 
-    gate_ids: list[str] = []
-    entry_id, exit_id = _compile_node(graph, root, "root", gate_ids)
+    ctx = CompileContext(prefix="root")
+    entry_id, exit_id = _compile_node(graph, root, ctx)
     graph.set_entry_point(entry_id)
     graph.add_edge(exit_id, END)
 
     compile_kwargs: dict[str, Any] = {}
-    if gate_ids:
+    if ctx.gate_ids:
         from langgraph.checkpoint.memory import MemorySaver
 
         compile_kwargs["checkpointer"] = MemorySaver()
-        compile_kwargs["interrupt_before"] = gate_ids
+        compile_kwargs["interrupt_before"] = ctx.gate_ids
 
     return graph.compile(**compile_kwargs)
 
@@ -159,11 +185,11 @@ def _compile_primitive(plan: PrimitivePlan) -> Any:
 
 
 def _compile_function_action(
-    graph: StateGraph, action: FunctionAction, prefix: str, gate_ids: list[str]
-) -> tuple[str, str]:
+    graph: StateGraph, action: FunctionAction, ctx: CompileContext
+) -> CompileResult:
     import inspect
 
-    node_id = prefix
+    node_id = ctx.prefix
     input_type, _ = get_type_args(action)
     # ``FunctionAction.function`` is annotated ``(state) -> O``. Product
     # code that needs run-scoped state (emit domain events, read
@@ -180,9 +206,7 @@ def _compile_function_action(
         # in progress (e.g. unit tests that compile nodes without a run
         # context), skip event emission.
         from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
-        from agent_foundry.orchestration.run_context import (
-            current_run_context,
-        )
+        from agent_foundry.orchestration.run_context import current_run_context
 
         ctx_opt = current_run_context.get()
         if ctx_opt is not None:
@@ -212,7 +236,7 @@ def _compile_function_action(
         return result.model_dump()
 
     graph.add_node(node_id, node_fn)  # type: ignore[arg-type]
-    return (node_id, node_id)
+    return CompileResult(node_id, node_id)
 
 
 register_compiler(FunctionAction, _compile_function_action)
@@ -221,9 +245,8 @@ register_compiler(FunctionAction, _compile_function_action)
 def _compile_sequence(
     graph: StateGraph,
     seq: Sequence,
-    prefix: str,
-    gate_ids: list[str],
-) -> tuple[str, str]:
+    ctx: CompileContext,
+) -> CompileResult:
     seq_in, seq_out = get_type_args(seq)
 
     # Build subgraph state type from ALL step I/O types (not just Sequence I/O).
@@ -244,8 +267,7 @@ def _compile_sequence(
     first_entry = None
     prev_exit = None
     for i, step in enumerate(seq.steps):
-        child_prefix = f"{prefix}_step_{i}"
-        entry, exit_ = _compile_node(sub_graph, step, child_prefix, gate_ids)
+        entry, exit_ = _compile_node(sub_graph, step, ctx.child(f"{ctx.prefix}_step_{i}"))
         if first_entry is None:
             first_entry = entry
         if prev_exit is not None:
@@ -259,7 +281,7 @@ def _compile_sequence(
     compiled_sub = sub_graph.compile()
 
     # Wrapper node: scope-in → execute subgraph → scope-out
-    node_id = f"{prefix}_seq"
+    node_id = f"{ctx.prefix}_seq"
 
     async def seq_node(state: dict[str, Any]) -> dict[str, Any]:
         scoped_input = _scope_in(state, seq_in)
@@ -267,7 +289,7 @@ def _compile_sequence(
         return _scope_out(result, seq_out)
 
     graph.add_node(node_id, seq_node)  # type: ignore[arg-type]
-    return (node_id, node_id)
+    return CompileResult(node_id, node_id)
 
 
 register_compiler(Sequence, _compile_sequence)
@@ -276,9 +298,8 @@ register_compiler(Sequence, _compile_sequence)
 def _compile_conditional(
     graph: StateGraph,
     cond: Conditional,
-    prefix: str,
-    gate_ids: list[str],
-) -> tuple[str, str]:
+    ctx: CompileContext,
+) -> CompileResult:
     cond_in, cond_out = get_type_args(cond)
 
     # Build subgraph state from all branch I/O types
@@ -296,14 +317,16 @@ def _compile_conditional(
     sub_state_type = TypedDict("CondState", fields, total=False)  # type: ignore[call-overload]
     sub_graph = StateGraph(sub_state_type)
 
-    router_id = f"{prefix}_router"
-    merge_id = f"{prefix}_merge"
+    router_id = f"{ctx.prefix}_router"
+    merge_id = f"{ctx.prefix}_merge"
 
-    then_entry, then_exit = _compile_node(sub_graph, cond.then_branch, f"{prefix}_then", gate_ids)
+    then_entry, then_exit = _compile_node(
+        sub_graph, cond.then_branch, ctx.child(f"{ctx.prefix}_then")
+    )
 
     if cond.else_branch is not None:
         else_entry, else_exit = _compile_node(
-            sub_graph, cond.else_branch, f"{prefix}_else", gate_ids
+            sub_graph, cond.else_branch, ctx.child(f"{ctx.prefix}_else")
         )
         targets = [then_entry, else_entry]
     else:
@@ -336,14 +359,14 @@ def _compile_conditional(
     compiled_sub = sub_graph.compile()
 
     # Wrapper node: scope-in → execute subgraph → scope-out
-    node_id = f"{prefix}_cond"
+    node_id = f"{ctx.prefix}_cond"
 
     async def cond_node(state: dict[str, Any]) -> dict[str, Any]:
         result = await compiled_sub.ainvoke(dict(state))  # type: ignore[arg-type]
         return _scope_out(result, cond_out)
 
     graph.add_node(node_id, cond_node)  # type: ignore[arg-type]
-    return (node_id, node_id)
+    return CompileResult(node_id, node_id)
 
 
 register_compiler(Conditional, _compile_conditional)
@@ -352,9 +375,8 @@ register_compiler(Conditional, _compile_conditional)
 def _compile_loop(
     graph: StateGraph,
     loop: Loop,
-    prefix: str,
-    gate_ids: list[str],
-) -> tuple[str, str]:
+    ctx: CompileContext,
+) -> CompileResult:
     loop_in, loop_out = get_type_args(loop)
     body_in, body_out = get_type_args(loop.body)
 
@@ -366,7 +388,7 @@ def _compile_loop(
             fields[name] = Any
     body_state_type = TypedDict("LoopBodyState", fields, total=False)  # type: ignore[call-overload]
     body_graph = StateGraph(body_state_type)
-    body_entry, body_exit = _compile_node(body_graph, loop.body, f"{prefix}_body", gate_ids)
+    body_entry, body_exit = _compile_node(body_graph, loop.body, ctx.child(f"{ctx.prefix}_body"))
     body_graph.set_entry_point(body_entry)
     body_graph.add_edge(body_exit, END)
     compiled_body = body_graph.compile()
@@ -376,7 +398,7 @@ def _compile_loop(
     max_iter = loop.max_iterations
 
     # Wrapper node: iterates, scoping in/out per iteration
-    node_id = f"{prefix}_loop"
+    node_id = f"{ctx.prefix}_loop"
 
     async def loop_node(state: dict[str, Any]) -> dict[str, Any]:
         model = _validate_scoped_input(state, loop_in, node_id)
@@ -397,7 +419,7 @@ def _compile_loop(
         return _scope_out(current_state, loop_out)
 
     graph.add_node(node_id, loop_node)  # type: ignore[arg-type]
-    return (node_id, node_id)
+    return CompileResult(node_id, node_id)
 
 
 register_compiler(Loop, _compile_loop)
@@ -406,9 +428,8 @@ register_compiler(Loop, _compile_loop)
 def _compile_retry(
     graph: StateGraph,
     retry: Retry,
-    prefix: str,
-    gate_ids: list[str],
-) -> tuple[str, str]:
+    ctx: CompileContext,
+) -> CompileResult:
     retry_in, retry_out = get_type_args(retry)
     body_in, body_out = get_type_args(retry.body)
 
@@ -420,7 +441,7 @@ def _compile_retry(
             fields[name] = Any
     body_state_type = TypedDict("RetryBodyState", fields, total=False)  # type: ignore[call-overload]
     body_graph = StateGraph(body_state_type)
-    body_entry, body_exit = _compile_node(body_graph, retry.body, f"{prefix}_body", gate_ids)
+    body_entry, body_exit = _compile_node(body_graph, retry.body, ctx.child(f"{ctx.prefix}_body"))
     body_graph.set_entry_point(body_entry)
     body_graph.add_edge(body_exit, END)
     compiled_body = body_graph.compile()
@@ -429,7 +450,7 @@ def _compile_retry(
     max_attempts = retry.max_attempts
 
     # Wrapper node: retry loop with scoped body execution
-    node_id = f"{prefix}_retry"
+    node_id = f"{ctx.prefix}_retry"
 
     async def retry_node(state: dict[str, Any]) -> dict[str, Any]:
         current_state = dict(state)
@@ -442,7 +463,7 @@ def _compile_retry(
         return _scope_out(current_state, retry_out)
 
     graph.add_node(node_id, retry_node)  # type: ignore[arg-type]
-    return (node_id, node_id)
+    return CompileResult(node_id, node_id)
 
 
 register_compiler(Retry, _compile_retry)
@@ -451,17 +472,16 @@ register_compiler(Retry, _compile_retry)
 def _compile_gate_action(
     graph: StateGraph,
     gate: GateAction,
-    prefix: str,
-    gate_ids: list[str],
-) -> tuple[str, str]:
-    gate_id = prefix
+    ctx: CompileContext,
+) -> CompileResult:
+    gate_id = ctx.prefix
 
     def gate_node(state: dict[str, Any]) -> dict[str, Any]:
         return state  # interrupt_before pauses BEFORE this node
 
     graph.add_node(gate_id, gate_node)  # type: ignore[arg-type]
-    gate_ids.append(gate_id)
-    return (gate_id, gate_id)
+    ctx.gate_ids.append(gate_id)
+    return CompileResult(gate_id, gate_id)
 
 
 register_compiler(GateAction, _compile_gate_action)
@@ -470,10 +490,9 @@ register_compiler(GateAction, _compile_gate_action)
 def _compile_agent_action(
     graph: StateGraph,
     action: AgentAction,
-    prefix: str,
-    gate_ids: list[str],
-) -> tuple[str, str]:
-    node_id = prefix
+    ctx: CompileContext,
+) -> CompileResult:
+    node_id = ctx.prefix
     input_type, output_type = get_type_args(action)
     prompt_builder = action.prompt_builder
     instructions_provider = action.instructions_provider
@@ -504,9 +523,7 @@ def _compile_agent_action(
 
         # Resolve ContextVar at invocation time. Deferred import avoids
         # any risk of an orchestration -> compiler cycle.
-        from agent_foundry.orchestration.run_context import (
-            require_current_run_context,
-        )
+        from agent_foundry.orchestration.run_context import require_current_run_context
 
         run_ctx = require_current_run_context()
         return action, prompt, instructions, run_ctx, model_input
@@ -567,7 +584,83 @@ def _compile_agent_action(
 
         graph.add_node(node_id, node_fn_sync)  # type: ignore[arg-type]
 
-    return (node_id, node_id)
+    return CompileResult(node_id, node_id)
 
 
 register_compiler(AgentAction, _compile_agent_action)
+
+
+def _compile_ai_request(
+    graph: StateGraph,
+    action: AIRequest,
+    ctx: CompileContext,
+) -> CompileResult:
+    node_id = ctx.prefix
+    input_type, output_type = get_type_args(action)
+
+    def _resolve(state: dict[str, Any]) -> tuple[str, str, Any]:
+        model_input = _validate_scoped_input(state, input_type, node_id)
+        instructions = (
+            action.model_input.instructions(model_input)
+            if callable(action.model_input.instructions)
+            else action.model_input.instructions
+        )
+        prompt = (
+            action.model_input.prompt(model_input)
+            if callable(action.model_input.prompt)
+            else action.model_input.prompt
+        )
+        config = (
+            action.model_configuration(model_input)
+            if callable(action.model_configuration)
+            else action.model_configuration
+        )
+        return instructions, prompt, config
+
+    async def node_fn(state: dict[str, Any]) -> dict[str, Any]:
+        from agent_foundry.orchestration.run_context import current_run_context
+
+        instructions, prompt, config = _resolve(state)
+
+        ctx_opt = current_run_context.get()
+        redaction = (
+            ctx_opt.telemetry.redaction
+            if ctx_opt is not None and ctx_opt.telemetry is not None
+            else None
+        )
+        run_id = ctx_opt.run_id if ctx_opt is not None else node_id
+
+        with emit_span(
+            name=f"agent_foundry.AIRequest.{node_id}",
+            primitive_type="AIRequest",
+            primitive_name=node_id,
+            input_model=_validate_scoped_input(state, input_type, node_id),
+            run_id=run_id,
+            redaction=redaction,
+        ) as handle:
+            handle.set_operation_name("chat")
+
+            if action.provider == InferenceProvider.ANTHROPIC:
+                from agent_foundry.providers.anthropic_provider import call_anthropic
+
+                result = await call_anthropic(instructions, prompt, config, output_type)
+            else:
+                raise PrimitiveCompilationError(
+                    f"AIRequest {node_id}: unsupported provider {action.provider!r}",
+                    primitive_type=node_id,
+                )
+
+            if not isinstance(result, output_type):
+                raise PrimitiveCompilationError(
+                    f"AIRequest {node_id}: provider returned "
+                    f"{type(result).__name__}, expected {output_type.__name__}",
+                    primitive_type=node_id,
+                )
+            handle.set_output(result)
+            return result.model_dump()
+
+    graph.add_node(node_id, node_fn)  # type: ignore[arg-type]
+    return CompileResult(node_id, node_id)
+
+
+register_compiler(AIRequest, _compile_ai_request)

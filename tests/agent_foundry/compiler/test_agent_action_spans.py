@@ -55,7 +55,7 @@ def test_agent_action_emits_one_span_per_invocation(
     exporter_and_provider: tuple[InMemorySpanExporter, TracerProvider],
     tmp_path: Path,
 ) -> None:
-    from agent_foundry.compiler.primitive_compiler import _compile_primitive
+    from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
     from agent_foundry.orchestration.run_context import (
         NoOpLifecycleWriter,
         RunContext,
@@ -82,7 +82,7 @@ def test_agent_action_emits_one_span_per_invocation(
     )
     tok = current_run_context.set(ctx)
     try:
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
         graph.invoke(_In(ticket_id="42").model_dump())
     finally:
         current_run_context.reset(tok)
@@ -104,7 +104,7 @@ def test_agent_action_executor_exception_records_error_span(
     exporter_and_provider: tuple[InMemorySpanExporter, TracerProvider],
     tmp_path: Path,
 ) -> None:
-    from agent_foundry.compiler.primitive_compiler import _compile_primitive
+    from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
     from agent_foundry.orchestration.run_context import (
         NoOpLifecycleWriter,
         RunContext,
@@ -131,7 +131,7 @@ def test_agent_action_executor_exception_records_error_span(
     )
     tok = current_run_context.set(ctx)
     try:
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
         with pytest.raises(RuntimeError, match="executor blew up"):
             graph.invoke(_In(ticket_id="42").model_dump())
     finally:

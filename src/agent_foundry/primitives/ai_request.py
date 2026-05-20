@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from agent_foundry.primitives.models import Primitive
 
@@ -17,8 +17,6 @@ class InferenceProvider(StrEnum):
 
 class ModelInput[I: BaseModel](BaseModel):
     """What the model reads: instructions (system prompt) and prompt (user message)."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     instructions: str | Callable[[I], str]
     prompt: str | Callable[[I], str]
