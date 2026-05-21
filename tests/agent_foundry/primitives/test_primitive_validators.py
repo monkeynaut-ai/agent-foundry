@@ -555,3 +555,60 @@ class TestAgentActionCompositionValidation:
         seq = Sequence[_AgentValInput, _AgentValOutput](steps=[action])
         with pytest.raises(TypeMismatchError):
             validate_primitive(seq)
+
+
+# ======================================================================
+# AIRequest validation
+# ======================================================================
+
+
+class _AIReqInput(BaseModel):
+    text: str
+
+
+class _AIReqOutput(BaseModel):
+    result: str
+
+
+class TestAIRequestValidation:
+    def test_standalone_ai_request_validates(self):
+        from agent_foundry.ai_models.inference import InferenceParameters
+        from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
+        from agent_foundry.primitives.ai_request import AIRequest, ModelInput
+
+        entry = ModelEntry(
+            model_id="fake",
+            provider=object(),
+            capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
+        )
+        action = AIRequest[_AIReqInput, _AIReqOutput](
+            model_input=ModelInput[_AIReqInput](
+                instructions="do the thing",
+                prompt=lambda s: s.text,
+            ),
+            parameters=InferenceParameters(max_tokens=256),
+            model=entry,
+        )
+        validate_primitive(action)  # must not raise
+
+    def test_ai_request_in_sequence_validates(self):
+        from agent_foundry.ai_models.inference import InferenceParameters
+        from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
+        from agent_foundry.primitives.ai_request import AIRequest, ModelInput
+        from agent_foundry.primitives.models import Sequence
+
+        entry = ModelEntry(
+            model_id="fake",
+            provider=object(),
+            capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
+        )
+        action = AIRequest[_AIReqInput, _AIReqOutput](
+            model_input=ModelInput[_AIReqInput](
+                instructions="do the thing",
+                prompt=lambda s: s.text,
+            ),
+            parameters=InferenceParameters(max_tokens=256),
+            model=entry,
+        )
+        seq = Sequence[_AIReqInput, _AIReqOutput](steps=[action])
+        validate_primitive(seq)  # must not raise
