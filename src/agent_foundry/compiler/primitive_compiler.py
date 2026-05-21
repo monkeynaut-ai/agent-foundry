@@ -9,7 +9,7 @@ from typing import Any, NamedTuple, TypedDict, cast
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ValidationError
 
-from agent_foundry.primitives.ai_request import AIRequest, InferenceProvider
+from agent_foundry.primitives.ai_request import AIRequest
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     AgentAction,
@@ -598,7 +598,9 @@ def _compile_ai_request(
     node_id = ctx.prefix
     input_type, output_type = get_type_args(action)
 
-    def _resolve(state: dict[str, Any]) -> tuple[str, str, Any]:
+    def _resolve(state: dict[str, Any]) -> tuple[Any, Any]:
+        from agent_foundry.ai_models.inference import InferenceRequest
+
         model_input = _validate_scoped_input(state, input_type, node_id)
         instructions = (
             action.model_input.instructions(model_input)
@@ -610,17 +612,22 @@ def _compile_ai_request(
             if callable(action.model_input.prompt)
             else action.model_input.prompt
         )
-        config = (
-            action.model_configuration(model_input)
-            if callable(action.model_configuration)
-            else action.model_configuration
+        parameters = (
+            action.parameters(model_input) if callable(action.parameters) else action.parameters
         )
-        return instructions, prompt, config
+        model_entry = action.model(model_input) if callable(action.model) else action.model
+        request = InferenceRequest(
+            instructions=instructions,
+            prompt=prompt,
+            parameters=parameters,
+            output_type=output_type,
+        )
+        return request, model_entry.provider
 
     async def node_fn(state: dict[str, Any]) -> dict[str, Any]:
         from agent_foundry.orchestration.run_context import current_run_context
 
-        instructions, prompt, config = _resolve(state)
+        request, provider = _resolve(state)
 
         ctx_opt = current_run_context.get()
         redaction = (
@@ -639,16 +646,7 @@ def _compile_ai_request(
             redaction=redaction,
         ) as handle:
             handle.set_operation_name("chat")
-
-            if action.provider == InferenceProvider.ANTHROPIC:
-                from agent_foundry.providers.anthropic_provider import call_anthropic
-
-                result = await call_anthropic(instructions, prompt, config, output_type)
-            else:
-                raise PrimitiveCompilationError(
-                    f"AIRequest {node_id}: unsupported provider {action.provider!r}",
-                    primitive_type=node_id,
-                )
+            result = await provider(request)
 
             if not isinstance(result, output_type):
                 raise PrimitiveCompilationError(

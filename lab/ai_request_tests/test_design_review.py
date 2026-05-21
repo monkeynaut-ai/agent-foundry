@@ -1,12 +1,8 @@
 """Lab: AIRequest primitive — design review harness.
 
-Exercises AIRequest with Anthropic as the provider. Declares a design_review
-primitive that takes a design document as input and returns a structured
-review result.
-
-Since the AIRequest compiler is not yet implemented, this harness calls the
-provider adapter directly. Once the compiler is wired up, this will be
-replaced by run_primitive_plan.
+Exercises AIRequest with the Anthropic provider via the Model registry.
+Declares a design_review primitive that takes a design document as input
+and returns a structured review result.
 
 Run:
     python lab/ai_request_tests/test_design_review.py
@@ -20,13 +16,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from agent_foundry.primitives.ai_request import (
-    AIRequest,
-    InferenceProvider,
-    ModelConfiguration,
-    ModelInput,
-)
-from agent_foundry.providers.anthropic_provider import call_anthropic
+from agent_foundry.ai_models.inference import InferenceParameters, InferenceRequest
+from agent_foundry.ai_models.model import Model
+from agent_foundry.primitives.ai_request import AIRequest, ModelInput
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(_REPO_ROOT / ".env")
@@ -54,7 +46,7 @@ class DesignReviewOutput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Inline runner — resolves AIRequest fields and delegates to provider adapter
+# Inline runner — resolves AIRequest fields and delegates to provider
 # ---------------------------------------------------------------------------
 
 
@@ -69,18 +61,20 @@ async def run_ai_request(primitive: AIRequest, state: BaseModel) -> BaseModel:
         if callable(primitive.model_input.prompt)
         else primitive.model_input.prompt
     )
-    config = (
-        primitive.model_configuration(state)
-        if callable(primitive.model_configuration)
-        else primitive.model_configuration
+    parameters = (
+        primitive.parameters(state) if callable(primitive.parameters) else primitive.parameters
     )
+    model_entry = primitive.model(state) if callable(primitive.model) else primitive.model
 
     _, output_type = _get_type_args(primitive)
 
-    if primitive.provider == InferenceProvider.ANTHROPIC:
-        return await call_anthropic(instructions, prompt, config, output_type)
-
-    raise NotImplementedError(f"provider not implemented in harness: {primitive.provider}")
+    request = InferenceRequest(
+        instructions=instructions,
+        prompt=prompt,
+        parameters=parameters,
+        output_type=output_type,
+    )
+    return await model_entry.provider(request)
 
 
 def _get_type_args(primitive: AIRequest) -> tuple[type[BaseModel], type[BaseModel]]:
@@ -118,11 +112,8 @@ design_review = AIRequest[DesignInput, DesignReviewOutput](
         instructions=_INSTRUCTIONS,
         prompt=_prompt,
     ),
-    model_configuration=ModelConfiguration(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=1024,
-    ),
-    provider=InferenceProvider.ANTHROPIC,
+    parameters=InferenceParameters(max_tokens=1024),
+    model=Model.CLAUDE_HAIKU_4_5,
 )
 
 # ---------------------------------------------------------------------------
