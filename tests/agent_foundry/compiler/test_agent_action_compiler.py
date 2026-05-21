@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import _compile_primitive
+from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     AgentAction,
@@ -103,7 +103,7 @@ class TestAgentActionCompiler:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         graph.invoke({"query": "hello"})
 
@@ -133,7 +133,7 @@ class TestAgentActionCompiler:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         graph.invoke({"query": "probe"})
 
@@ -170,7 +170,7 @@ class TestAgentActionCompiler:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         graph.invoke({"query": "hello"})
 
@@ -189,7 +189,7 @@ class TestAgentActionCompiler:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         with pytest.raises(PrimitiveCompilationError, match="Boundary validation failed"):
             graph.invoke({})  # missing `query`
@@ -207,7 +207,7 @@ class TestAgentActionCompiler:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         result = graph.invoke({"query": "hello"})
 
@@ -234,7 +234,7 @@ class TestAgentActionCompiler:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         with pytest.raises(PrimitiveCompilationError, match="AgentOutput"):
             graph.invoke({"query": "hello"})
@@ -260,7 +260,7 @@ class TestAgentActionCompiler:
             # visible_dirs and writable_dirs default to empty.
         )
         plan = PrimitivePlan(root=action)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         result = graph.invoke({"query": "hello"})
 
@@ -292,7 +292,7 @@ class TestAgentActionCompiler_ExceptionPropagation:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         with pytest.raises(_ExecutorFailure, match="agent failed"):
             graph.invoke({"query": "hello"})
@@ -349,7 +349,7 @@ class TestAgentActionCompiler_Composition:
         )
         seq = Sequence[SeqInput, SeqOutput](steps=[agent_step, annotate_step])
         plan = PrimitivePlan(root=seq)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         result = await graph.ainvoke({"query": "hello"})
 
@@ -394,7 +394,7 @@ class TestAgentActionCompiler_Composition:
         )
         seq = Sequence[SeqInput, AgentStepOutput](steps=[step1, agent_step])
         plan = PrimitivePlan(root=seq)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         result = await graph.ainvoke({"query": "hello"})
         assert result["answer"] == "42"
@@ -438,7 +438,7 @@ class TestAgentActionCompiler_RunCtxThreading:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         run_ctx = RunContext(
             run_id="run-g1-agent",
@@ -491,7 +491,7 @@ class TestAgentActionCompiler_RunCtxThreading:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         plan = PrimitivePlan(root=action)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
 
         run_ctx_a = RunContext(
             run_id="run-g1-late-bind-a",

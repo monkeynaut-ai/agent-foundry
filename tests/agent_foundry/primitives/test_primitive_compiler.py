@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import _compile_primitive, get_type_args
+from agent_foundry.compiler.primitive_compiler import compile_runtime_plan, get_type_args
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     Conditional,
@@ -23,7 +23,7 @@ from agent_foundry.primitives.plan import PrimitivePlan
 async def compile_and_run(plan: PrimitivePlan, state: BaseModel | None = None) -> Any:
     """Minimal async test runner: compile and ainvoke without the full production pipeline."""
     _, root_out = get_type_args(plan.root)
-    graph = _compile_primitive(plan)
+    graph = compile_runtime_plan(plan)
     input_dict = state.model_dump() if state is not None else {}
     result_dict = await graph.ainvoke(input_dict)
     return root_out.model_validate(result_dict)
@@ -106,7 +106,7 @@ class TestCompilerRegistry:
     def test_unknown_type_raises(self):
         from pydantic import BaseModel
 
-        from agent_foundry.compiler.primitive_compiler import _compile_primitive
+        from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
         from agent_foundry.primitives.models import Primitive
         from agent_foundry.primitives.plan import PrimitivePlan
         from agent_foundry.primitives.validators import register_validator
@@ -121,7 +121,7 @@ class TestCompilerRegistry:
         prim = _UncompiledPrim[InputState, InputState]()
         plan = PrimitivePlan(root=prim)
         with pytest.raises(PrimitiveCompilationError, match="No compiler registered"):
-            _compile_primitive(plan)
+            compile_runtime_plan(plan)
 
     def test_duplicate_registration_raises(self):
         """Re-registering a compiler for the same type is a footgun; raise instead of clobbering."""
@@ -247,7 +247,7 @@ class TestCompileFunctionAction:
             function=lambda s: TransformOutput(result=s.query.upper()),
         )
         plan = PrimitivePlan(root=action)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
         with pytest.raises(PrimitiveCompilationError):
             graph.invoke({})  # missing required 'query'
 
@@ -505,7 +505,7 @@ class TestCompileSequence:
         seq = Sequence[In, Out](steps=[step1, step2])
         plan = PrimitivePlan(root=seq)
         with pytest.raises(TypeMismatchError, match=r"requires fields.*y.*not available"):
-            _compile_primitive(plan)
+            compile_runtime_plan(plan)
 
 
 # ======================================================================
@@ -893,7 +893,7 @@ class TestCompileGateAction:
             prompt_key="escalation_context",
         )
         plan = PrimitivePlan(root=gate)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
         assert graph is not None
 
     def test_interrupts_execution(self):
@@ -902,7 +902,7 @@ class TestCompileGateAction:
             prompt_key="escalation_context",
         )
         plan = PrimitivePlan(root=gate)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
         result = graph.invoke(
             {"escalation_context": "need help", "value": "stuck"},
             config={"configurable": {"thread_id": "test-1"}},
@@ -915,7 +915,7 @@ class TestCompileGateAction:
             prompt_key="escalation_context",
         )
         plan = PrimitivePlan(root=gate)
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
         result = graph.invoke(
             {"escalation_context": "review failed twice", "value": "blocked"},
             config={"configurable": {"thread_id": "test-2"}},

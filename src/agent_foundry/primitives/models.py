@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from agent_foundry.agents.lifecycle import ContainerConfig
 from agent_foundry.primitives.mcp import McpServer
@@ -32,8 +32,6 @@ class Primitive[I: BaseModel, O: BaseModel](BaseModel):
     keys the primitive reads from and writes back to its parent scope.
     Type information is accessible at runtime via ``get_type_args()``.
     """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @model_validator(mode="after")
     def _require_parameterization(self) -> Primitive:

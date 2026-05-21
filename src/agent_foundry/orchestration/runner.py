@@ -4,7 +4,7 @@
 orchestration wiring (RunContext, container registry, lifecycle writer,
 signal handlers, artifacts).
 
-Orchestration depends on the compiler (calls ``_compile_primitive`` to
+Orchestration depends on the compiler (calls ``compile_runtime_plan`` to
 build the executable graph), not the other way around. The compiler
 knows nothing about runs, contexts, responders, or containers.
 """
@@ -24,7 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import _compile_primitive
+from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
 from agent_foundry.orchestration.artifacts import bootstrap_run_artifacts
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import JsonlLifecycleWriter
@@ -189,7 +189,7 @@ async def run_primitive_plan(
     caught_exc: BaseException | None = None
     final_output: BaseModel | None = None
     try:
-        graph = _compile_primitive(plan)
+        graph = compile_runtime_plan(plan)
         result_dict = await graph.ainvoke(initial_state.model_dump())
         final_output = root_out.model_validate(result_dict)
         return final_output

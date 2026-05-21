@@ -65,7 +65,10 @@ def test_function_action_callable_can_emit_via_runtime(tmp_path):
     from langgraph.graph import StateGraph
 
     from agent_foundry import runtime
-    from agent_foundry.compiler.primitive_compiler import _compile_function_action
+    from agent_foundry.compiler.primitive_compiler import (
+        CompileContext,
+        _compile_function_action,
+    )
     from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
     from agent_foundry.orchestration.run_context import (
         RunContext,
@@ -91,7 +94,7 @@ def test_function_action_callable_can_emit_via_runtime(tmp_path):
     action = FunctionAction[InputModel, OutputModel](function=fn)
 
     graph = StateGraph(dict)
-    node_id, _ = _compile_function_action(graph, action, prefix="fa", gate_ids=[])
+    node_id, _ = _compile_function_action(graph, action, CompileContext(prefix="fa"))
 
     run_ctx = RunContext(
         run_id="run-fn-compile",

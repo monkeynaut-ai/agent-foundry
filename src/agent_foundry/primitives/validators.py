@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, cast
 
+from agent_foundry.primitives.ai_request import AIRequest
 from agent_foundry.primitives.errors import (
     InvalidPromptKeyError,
     TypeMismatchError,
@@ -284,6 +285,10 @@ def _validate_agent_action(_action: AgentAction) -> None:
     return
 
 
+def _validate_ai_request(_action: AIRequest) -> None:
+    return
+
+
 # -- Registration --
 
 register_validator(Sequence, _validate_sequence)
@@ -293,3 +298,4 @@ register_validator(Conditional, _validate_conditional)
 register_validator(GateAction, _validate_gate_action)
 register_validator(FunctionAction, _validate_function_action)
 register_validator(AgentAction, _validate_agent_action)
+register_validator(AIRequest, _validate_ai_request)
