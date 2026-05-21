@@ -24,7 +24,7 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
 def _invocation_pair(
     *,
     run_id: str,
-    agent: str,
+    agent_name: str,
     start_ts: str,
     end_ts: str,
     failed: bool = False,
@@ -33,7 +33,7 @@ def _invocation_pair(
         "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
         "ts": start_ts,
         "run_id": run_id,
-        "agent": agent,
+        "agent_name": agent_name,
     }
     end_type = (
         LifecycleEvent.AGENT_INVOCATION_FAILED
@@ -44,7 +44,7 @@ def _invocation_pair(
         "type": end_type.value,
         "ts": end_ts,
         "run_id": run_id,
-        "agent": agent,
+        "agent_name": agent_name,
     }
     return [started, ended]
 
@@ -74,7 +74,7 @@ def test_render_summary_complete_run(tmp_path: Path) -> None:
     records.extend(
         _invocation_pair(
             run_id=run_id,
-            agent="planner",
+            agent_name="planner",
             start_ts="2026-04-15T10:00:01+00:00",
             end_ts="2026-04-15T10:00:01.500000+00:00",
         )
@@ -82,7 +82,7 @@ def test_render_summary_complete_run(tmp_path: Path) -> None:
     records.extend(
         _invocation_pair(
             run_id=run_id,
-            agent="planner",
+            agent_name="planner",
             start_ts="2026-04-15T10:00:02+00:00",
             end_ts="2026-04-15T10:00:03.500000+00:00",
         )
@@ -116,7 +116,7 @@ def test_render_summary_partial_run_marks_incomplete(tmp_path: Path) -> None:
     records.extend(
         _invocation_pair(
             run_id=run_id,
-            agent="worker",
+            agent_name="worker",
             start_ts="2026-04-15T09:00:01+00:00",
             end_ts="2026-04-15T09:00:02+00:00",
         )
@@ -165,7 +165,7 @@ def test_render_summary_multiple_agents_alphabetical(tmp_path: Path) -> None:
         records.extend(
             _invocation_pair(
                 run_id=run_id,
-                agent=agent,
+                agent_name=agent,
                 start_ts=start,
                 end_ts=end,
                 failed=failed,
@@ -196,7 +196,7 @@ def test_render_summary_counts_success_and_failure_separately(tmp_path: Path) ->
     records.extend(
         _invocation_pair(
             run_id=run_id,
-            agent="builder",
+            agent_name="builder",
             start_ts="2026-04-15T06:00:01+00:00",
             end_ts="2026-04-15T06:00:02+00:00",
         )
@@ -204,7 +204,7 @@ def test_render_summary_counts_success_and_failure_separately(tmp_path: Path) ->
     records.extend(
         _invocation_pair(
             run_id=run_id,
-            agent="builder",
+            agent_name="builder",
             start_ts="2026-04-15T06:00:03+00:00",
             end_ts="2026-04-15T06:00:04+00:00",
         )
@@ -212,7 +212,7 @@ def test_render_summary_counts_success_and_failure_separately(tmp_path: Path) ->
     records.extend(
         _invocation_pair(
             run_id=run_id,
-            agent="builder",
+            agent_name="builder",
             start_ts="2026-04-15T06:00:05+00:00",
             end_ts="2026-04-15T06:00:06+00:00",
             failed=True,
