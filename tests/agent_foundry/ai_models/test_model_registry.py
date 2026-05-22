@@ -3,8 +3,18 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import BaseModel
 
+from agent_foundry.ai_models.inference import InferenceProvider, InferenceRequest
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry, get_model, register_model
+
+
+class _StubProvider(InferenceProvider):
+    async def __call__(self, request: InferenceRequest) -> BaseModel:
+        raise NotImplementedError("stub provider — not invoked in registry tests")
+
+    async def close(self) -> None:
+        pass
 
 
 class TestBuiltinModels:
@@ -42,7 +52,7 @@ class TestModelRegistry:
     def test_register_and_retrieve_custom_model(self):
         entry = ModelEntry(
             model_id="custom-model",
-            provider=object(),
+            provider=_StubProvider(),
             capabilities=ModelCapabilities(context_window=8000, max_output_tokens=1000),
         )
         register_model("CUSTOM_TEST_MODEL", entry)
@@ -51,7 +61,7 @@ class TestModelRegistry:
     def test_register_duplicate_raises(self):
         entry = ModelEntry(
             model_id="dup-model",
-            provider=object(),
+            provider=_StubProvider(),
             capabilities=ModelCapabilities(context_window=8000, max_output_tokens=1000),
         )
         register_model("DUP_TEST_MODEL", entry)

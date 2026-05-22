@@ -12,7 +12,11 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.ai_models.inference import InferenceParameters, InferenceRequest
+from agent_foundry.ai_models.inference import (
+    InferenceParameters,
+    InferenceProvider,
+    InferenceRequest,
+)
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.primitives.ai_request import AIRequest, ModelInput, invoke_ai_request
 
@@ -26,14 +30,22 @@ class _Output(BaseModel):
     result: str
 
 
-def _capturing_entry(captured: list[InferenceRequest]) -> ModelEntry:
-    async def _provider(request: InferenceRequest) -> BaseModel:
-        captured.append(request)
+class _CapturingProvider(InferenceProvider):
+    def __init__(self, captured: list[InferenceRequest]) -> None:
+        self._captured = captured
+
+    async def __call__(self, request: InferenceRequest) -> BaseModel:
+        self._captured.append(request)
         return _Output(result="ok")
 
+    async def close(self) -> None:
+        pass
+
+
+def _capturing_entry(captured: list[InferenceRequest]) -> ModelEntry:
     return ModelEntry(
         model_id="fake",
-        provider=_provider,
+        provider=_CapturingProvider(captured),
         capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
     )
 
@@ -154,12 +166,16 @@ async def test_provider_returning_wrong_type_raises() -> None:
     class WrongOutput(BaseModel):
         other: str
 
-    async def _bad_provider(request: InferenceRequest) -> BaseModel:
-        return WrongOutput(other="wrong")
+    class _BadProvider(InferenceProvider):
+        async def __call__(self, request: InferenceRequest) -> BaseModel:
+            return WrongOutput(other="wrong")
+
+        async def close(self) -> None:
+            pass
 
     entry = ModelEntry(
         model_id="fake",
-        provider=_bad_provider,
+        provider=_BadProvider(),
         capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
     )
     req = AIRequest[_Input, _Output](

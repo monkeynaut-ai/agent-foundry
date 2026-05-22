@@ -1,9 +1,9 @@
-"""Inference contract — provider protocol, request, and tuning parameters."""
+"""Inference contract — provider abstract base, request, and tuning parameters."""
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Protocol
 
 from pydantic import BaseModel, Field
 
@@ -27,7 +27,19 @@ class InferenceRequest[O: BaseModel]:
     output_type: type[O]
 
 
-class InferenceProvider(Protocol):
-    """Common interface for all inference provider callables."""
+class InferenceProvider(ABC):
+    """A service object that calls an inference backend.
 
-    async def __call__(self, request: InferenceRequest) -> BaseModel: ...
+    Beyond the single ``__call__``, concrete providers own the backend
+    client, the mapping from ``InferenceRequest`` into provider-specific
+    inputs (headers, parameter names, tool-use shapes), response parsing,
+    and any provider-specific lifecycle (e.g. closing the client).
+    """
+
+    @abstractmethod
+    async def __call__(self, request: InferenceRequest) -> BaseModel:
+        """Execute one inference call and return the parsed typed output."""
+
+    @abstractmethod
+    async def close(self) -> None:
+        """Release any resources held by the provider."""

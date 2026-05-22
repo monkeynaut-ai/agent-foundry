@@ -18,7 +18,11 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace.status import StatusCode
 from pydantic import BaseModel
 
-from agent_foundry.ai_models.inference import InferenceParameters, InferenceRequest
+from agent_foundry.ai_models.inference import (
+    InferenceParameters,
+    InferenceProvider,
+    InferenceRequest,
+)
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.primitives.ai_request import AIRequest, ModelInput
 from agent_foundry.primitives.plan import PrimitivePlan
@@ -42,7 +46,7 @@ def exporter_and_provider() -> Iterator[tuple[InMemorySpanExporter, TracerProvid
     provider.shutdown()
 
 
-def _build_action(provider_fn) -> AIRequest[_In, _Out]:
+def _build_action(provider: InferenceProvider) -> AIRequest[_In, _Out]:
     return AIRequest[_In, _Out](
         model_input=ModelInput[_In](
             instructions="you are a reviewer",
@@ -51,7 +55,7 @@ def _build_action(provider_fn) -> AIRequest[_In, _Out]:
         parameters=InferenceParameters(max_tokens=256),
         model=ModelEntry(
             model_id="fake",
-            provider=provider_fn,
+            provider=provider,
             capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
         ),
     )
@@ -81,10 +85,14 @@ def test_ai_request_emits_one_span_per_invocation(
 
     exporter, provider = exporter_and_provider
 
-    async def fake_provider(_request: InferenceRequest) -> BaseModel:
-        return _Out(success=True)
+    class _FakeProvider(InferenceProvider):
+        async def __call__(self, request: InferenceRequest) -> BaseModel:
+            return _Out(success=True)
 
-    action = _build_action(fake_provider)
+        async def close(self) -> None:
+            pass
+
+    action = _build_action(_FakeProvider())
     plan = PrimitivePlan(root=action)
 
     ctx = _run_ctx(tmp_path, provider)
@@ -116,10 +124,14 @@ def test_ai_request_provider_exception_records_error_span(
 
     exporter, provider = exporter_and_provider
 
-    async def boom_provider(_request: InferenceRequest) -> BaseModel:
-        raise RuntimeError("provider blew up")
+    class _BoomProvider(InferenceProvider):
+        async def __call__(self, request: InferenceRequest) -> BaseModel:
+            raise RuntimeError("provider blew up")
 
-    action = _build_action(boom_provider)
+        async def close(self) -> None:
+            pass
+
+    action = _build_action(_BoomProvider())
     plan = PrimitivePlan(root=action)
 
     ctx = _run_ctx(tmp_path, provider)

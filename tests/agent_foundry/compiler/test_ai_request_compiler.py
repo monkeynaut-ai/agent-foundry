@@ -7,7 +7,11 @@ import asyncio
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.ai_models.inference import InferenceParameters, InferenceRequest
+from agent_foundry.ai_models.inference import (
+    InferenceParameters,
+    InferenceProvider,
+    InferenceRequest,
+)
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
 from agent_foundry.primitives.ai_request import AIRequest, ModelInput
@@ -48,14 +52,22 @@ def _default_run_context(tmp_path):
         current_run_context.reset(token)
 
 
-def _fake_entry(captured: list[InferenceRequest]) -> ModelEntry:
-    async def _provider(request: InferenceRequest) -> BaseModel:
-        captured.append(request)
+class _CapturingProvider(InferenceProvider):
+    def __init__(self, captured: list[InferenceRequest]) -> None:
+        self._captured = captured
+
+    async def __call__(self, request: InferenceRequest) -> BaseModel:
+        self._captured.append(request)
         return Output(result="ok")
 
+    async def close(self) -> None:
+        pass
+
+
+def _fake_entry(captured: list[InferenceRequest]) -> ModelEntry:
     return ModelEntry(
         model_id="fake",
-        provider=_provider,
+        provider=_CapturingProvider(captured),
         capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
     )
 
@@ -177,12 +189,16 @@ class TestAIRequestCompilerOutputValidation:
         class WrongOutput(BaseModel):
             other: str
 
-        async def _bad_provider(request: InferenceRequest) -> BaseModel:
-            return WrongOutput(other="wrong")
+        class _BadProvider(InferenceProvider):
+            async def __call__(self, request: InferenceRequest) -> BaseModel:
+                return WrongOutput(other="wrong")
+
+            async def close(self) -> None:
+                pass
 
         entry = ModelEntry(
             model_id="fake",
-            provider=_bad_provider,
+            provider=_BadProvider(),
             capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
         )
         action = AIRequest[Input, Output](
