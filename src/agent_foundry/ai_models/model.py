@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from pydantic import BaseModel, Field
+
+from agent_foundry.ai_models.inference import InferenceProvider
 
 
 class ModelCapabilities(BaseModel):
@@ -22,7 +23,7 @@ class ModelEntry:
     """A registered AI model — its identity, provider, and capabilities."""
 
     model_id: str
-    provider: Any  # InferenceProvider — opaque to Pydantic to avoid Protocol isinstance failure
+    provider: InferenceProvider
     capabilities: ModelCapabilities
 
 
@@ -58,11 +59,14 @@ class Model:
 
 
 def _register_builtins() -> None:
-    from agent_foundry.ai_models.providers import anthropic
+    from agent_foundry.ai_models.providers import AnthropicProvider
+
+    # AsyncAnthropic is safe for concurrent use within an event loop.
+    anthropic = AnthropicProvider()
 
     Model.CLAUDE_OPUS_4_7 = ModelEntry(
         model_id="claude-opus-4-7",
-        provider=anthropic("claude-opus-4-7"),
+        provider=anthropic,
         capabilities=ModelCapabilities(
             context_window=200_000,
             max_output_tokens=32_000,
@@ -74,7 +78,7 @@ def _register_builtins() -> None:
 
     Model.CLAUDE_SONNET_4_6 = ModelEntry(
         model_id="claude-sonnet-4-6",
-        provider=anthropic("claude-sonnet-4-6"),
+        provider=anthropic,
         capabilities=ModelCapabilities(
             context_window=200_000,
             max_output_tokens=64_000,
@@ -86,7 +90,7 @@ def _register_builtins() -> None:
 
     Model.CLAUDE_HAIKU_4_5 = ModelEntry(
         model_id="claude-haiku-4-5-20251001",
-        provider=anthropic("claude-haiku-4-5-20251001"),
+        provider=anthropic,
         capabilities=ModelCapabilities(
             context_window=200_000,
             max_output_tokens=8_192,

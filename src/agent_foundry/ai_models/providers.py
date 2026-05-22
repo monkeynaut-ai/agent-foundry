@@ -10,18 +10,25 @@ from pydantic import BaseModel
 from agent_foundry.ai_models.inference import InferenceProvider, InferenceRequest
 
 
-def anthropic(model_id: str) -> InferenceProvider:
-    """Return an InferenceProvider that calls the Anthropic API with the given model."""
+class AnthropicProvider(InferenceProvider):
+    """Inference provider backed by the Anthropic Messages API.
 
-    async def _call(request: InferenceRequest) -> BaseModel:
-        client = AsyncAnthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    A connection to Anthropic — owns one ``AsyncAnthropic`` client (and
+    its connection pool) for the lifetime of the instance. ``AsyncAnthropic``
+    is safe for concurrent use within an event loop.
+    """
+
+    def __init__(self, api_key: str | None = None) -> None:
+        self._client = AsyncAnthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
+
+    async def __call__(self, request: InferenceRequest) -> BaseModel:
         tool = {
             "name": "structured_output",
             "description": "Return the structured response.",
             "input_schema": request.output_type.model_json_schema(),
         }
         kwargs: dict = {
-            "model": model_id,
+            "model": request.model_id,
             "system": request.instructions,
             "messages": [{"role": "user", "content": request.prompt}],
             "tools": [tool],
@@ -31,12 +38,13 @@ def anthropic(model_id: str) -> InferenceProvider:
         if request.parameters.temperature is not None:
             kwargs["temperature"] = request.parameters.temperature
 
-        response = await client.messages.create(**kwargs)
+        response = await self._client.messages.create(**kwargs)
         tool_use_block = next((b for b in response.content if b.type == "tool_use"), None)
         if tool_use_block is None:
             raise RuntimeError(
-                f"Anthropic provider returned no tool_use block for model {model_id!r}"
+                f"Anthropic provider returned no tool_use block for model {request.model_id!r}"
             )
         return request.output_type.model_validate(tool_use_block.input)
 
-    return _call
+    async def close(self) -> None:
+        await self._client.close()

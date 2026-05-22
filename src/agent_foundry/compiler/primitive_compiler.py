@@ -596,38 +596,13 @@ def _compile_ai_request(
     ctx: CompileContext,
 ) -> CompileResult:
     node_id = ctx.prefix
-    input_type, output_type = get_type_args(action)
-
-    def _resolve(state: dict[str, Any]) -> tuple[Any, Any]:
-        from agent_foundry.ai_models.inference import InferenceRequest
-
-        model_input = _validate_scoped_input(state, input_type, node_id)
-        instructions = (
-            action.model_input.instructions(model_input)
-            if callable(action.model_input.instructions)
-            else action.model_input.instructions
-        )
-        prompt = (
-            action.model_input.prompt(model_input)
-            if callable(action.model_input.prompt)
-            else action.model_input.prompt
-        )
-        parameters = (
-            action.parameters(model_input) if callable(action.parameters) else action.parameters
-        )
-        model_entry = action.model(model_input) if callable(action.model) else action.model
-        request = InferenceRequest(
-            instructions=instructions,
-            prompt=prompt,
-            parameters=parameters,
-            output_type=output_type,
-        )
-        return request, model_entry.provider
+    input_type, _ = get_type_args(action)
 
     async def node_fn(state: dict[str, Any]) -> dict[str, Any]:
+        from agent_foundry.ai_models.execute.invoke import invoke_ai_request
         from agent_foundry.orchestration.run_context import current_run_context
 
-        request, provider = _resolve(state)
+        model_input = _validate_scoped_input(state, input_type, node_id)
 
         ctx_opt = current_run_context.get()
         redaction = (
@@ -641,19 +616,18 @@ def _compile_ai_request(
             name=f"agent_foundry.AIRequest.{node_id}",
             primitive_type="AIRequest",
             primitive_name=node_id,
-            input_model=_validate_scoped_input(state, input_type, node_id),
+            input_model=model_input,
             run_id=run_id,
             redaction=redaction,
         ) as handle:
             handle.set_operation_name("chat")
-            result = await provider(request)
-
-            if not isinstance(result, output_type):
+            try:
+                result = await invoke_ai_request(action, model_input)
+            except TypeError as exc:
                 raise PrimitiveCompilationError(
-                    f"AIRequest {node_id}: provider returned "
-                    f"{type(result).__name__}, expected {output_type.__name__}",
+                    f"AIRequest {node_id}: {exc}",
                     primitive_type=node_id,
-                )
+                ) from exc
             handle.set_output(result)
             return result.model_dump()
 
