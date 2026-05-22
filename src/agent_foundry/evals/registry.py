@@ -1,15 +1,8 @@
 """Registry for ``AICall`` instances eligible for evaluation.
 
-Apps populate one or more registries at startup, mapping a stable
-identity name (e.g. ``"design_review"``) to the production ``AICall``
-declaration. Both the eval CLI and any future eval web app / API server
-look AICalls up by name through the same registry instance — that
-shared lookup is what lets multiple authoring paths (Python suite
-files, UI-defined suites, programmatic API) target the same set of
-AICalls without duplicating declarations.
-
-The registry holds names only. The choice of executor for a given
-evaluation run is made at eval-definition time, not at registration.
+An application's opt-in surface for Agent Foundry's eval system.
+Use the ``register`` method to register each AICall object you
+want evaluated.
 """
 
 from __future__ import annotations
