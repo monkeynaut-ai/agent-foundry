@@ -9,8 +9,15 @@ from pydantic import BaseModel
 from pydantic_evals import Case, Dataset
 from pydantic_evals.evaluators import EqualsExpected
 
-from agent_foundry.evals.models import EvalSuite, RunResult
-from agent_foundry.evals.runner import run_suite
+from agent_foundry.ai_models.inference import (
+    InferenceParameters,
+    InferenceProvider,
+    InferenceRequest,
+)
+from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
+from agent_foundry.evals.models import AgentTarget, AICallTarget, EvalSuite, RunResult
+from agent_foundry.evals.runner import build_invoke_ai_call_task, run_suite
+from agent_foundry.primitives.ai_call import AICall, ModelInput
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
 
@@ -48,7 +55,7 @@ def _make_suite(invocations_per_case: int = 1) -> EvalSuite:
     )
     return EvalSuite(
         name="test_suite",
-        agent=_make_agent(),
+        target=AgentTarget(agent=_make_agent()),
         dataset=dataset,
         invocations_per_case=invocations_per_case,
     )
@@ -157,3 +164,82 @@ async def test_run_suite_passes_max_concurrency_through() -> None:
 
     await run_suite(suite, task=task, max_concurrency=7)
     assert calls == [7]
+
+
+# --- build_invoke_ai_call_task ---
+
+
+def _make_ai_call(captured: list[InferenceRequest]) -> AICall[_Input, _Output]:
+    class _CapturingProvider(InferenceProvider):
+        async def __call__(self, request: InferenceRequest) -> BaseModel:
+            captured.append(request)
+            return _Output(result=request.prompt.upper())
+
+        async def close(self) -> None:
+            pass
+
+    entry = ModelEntry(
+        model_id="fake",
+        provider=_CapturingProvider(),
+        capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
+    )
+    return AICall[_Input, _Output](
+        model_input=ModelInput[_Input](
+            instructions="i",
+            prompt=lambda s: s.text,
+        ),
+        parameters=InferenceParameters(max_tokens=128),
+        model=entry,
+    )
+
+
+def _make_ai_call_suite(
+    captured: list[InferenceRequest], invocations_per_case: int = 1
+) -> EvalSuite:
+    dataset = Dataset[_Input, _Output, None](
+        name="ds",
+        cases=[
+            Case(name="c1", inputs=_Input(text="a"), expected_output=_Output(result="A")),
+            Case(name="c2", inputs=_Input(text="b"), expected_output=_Output(result="B")),
+        ],
+        evaluators=[EqualsExpected()],
+    )
+    return EvalSuite(
+        name="ai_call_suite",
+        target=AICallTarget(ai_call=_make_ai_call(captured)),
+        dataset=dataset,
+        invocations_per_case=invocations_per_case,
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_invoke_ai_call_task_passes_input_through_to_provider() -> None:
+    captured: list[InferenceRequest] = []
+    call = _make_ai_call(captured)
+    task = build_invoke_ai_call_task(call)
+
+    output = await task(_Input(text="hello"))
+
+    assert len(captured) == 1
+    assert captured[0].prompt == "hello"
+    assert isinstance(output, _Output)
+    assert output.result == "HELLO"
+
+
+@pytest.mark.asyncio
+async def test_run_suite_with_ai_call_target_end_to_end() -> None:
+    captured: list[InferenceRequest] = []
+    suite = _make_ai_call_suite(captured, invocations_per_case=1)
+    task = build_invoke_ai_call_task(_get_ai_call(suite))
+
+    result = await run_suite(suite, task=task)
+
+    # 2 cases x 1 invocation = 2 provider calls
+    assert len(captured) == 2
+    # Report has the two case entries — successes via EqualsExpected.
+    assert {c.name for c in result.report.cases} == {"c1", "c2"}
+
+
+def _get_ai_call(suite: EvalSuite) -> AICall:
+    assert isinstance(suite.target, AICallTarget)
+    return suite.target.ai_call

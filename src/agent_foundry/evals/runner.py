@@ -4,10 +4,16 @@ The runner orchestrates ``N x cases`` invocations of a task function
 against a Pydantic Evals ``Dataset`` and assembles a typed
 :class:`RunResult`.
 
-The runner is decoupled from agent invocation: callers supply the task
-function. For production use, build the task via
-:func:`build_run_primitive_plan_task` (which wraps Agent Foundry's
-``run_primitive_plan``). Tests can supply any async callable.
+The runner is decoupled from target invocation: callers supply the
+task function. Two task builders are provided:
+
+- :func:`build_run_primitive_plan_task` — for :class:`AgentAction`
+  targets. Wraps the full container-backed orchestration path.
+- :func:`build_invoke_ai_call_task` — for :class:`AICall` targets.
+  Wraps :func:`invoke_ai_call`. No container, no ``RunContext``, no
+  responder.
+
+Tests can supply any async callable in place of these builders.
 """
 
 from __future__ import annotations
@@ -20,8 +26,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from agent_foundry.ai_models.execute.invoke import invoke_ai_call
 from agent_foundry.evals.models import EvalSuite, RunResult
 from agent_foundry.evals.responder import RaiseOnInvokeResponder
+from agent_foundry.primitives.ai_call import AICall
 from agent_foundry.primitives.models import AgentAction
 from agent_foundry.primitives.plan import PrimitivePlan
 
@@ -102,6 +110,20 @@ def build_run_primitive_plan_task(
             base_image_tag=base_image_tag,
             responder_provider=responder_provider,
         )
+
+    return task
+
+
+def build_invoke_ai_call_task(call: AICall) -> Task:
+    """Build a task function that invokes ``call`` via ``invoke_ai_call``.
+
+    No container, no ``RunContext``, no responder — the task is a
+    direct call into the AICall's resolved fields and configured
+    provider. Each task call performs one inference.
+    """
+
+    async def task(input_state: Any) -> BaseModel:
+        return await invoke_ai_call(call, input_state)
 
     return task
 
