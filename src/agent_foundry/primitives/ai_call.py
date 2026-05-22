@@ -1,4 +1,4 @@
-"""AIRequest primitive — single LLM inference call with structured output."""
+"""AICall primitive — single LLM inference call with structured output."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class ModelInput[I: BaseModel](BaseModel):
     prompt: str | Callable[[I], str]
 
 
-class AIRequest[I: BaseModel, O: BaseModel](Primitive[I, O], arbitrary_types_allowed=True):
+class AICall[I: BaseModel, O: BaseModel](Primitive[I, O], arbitrary_types_allowed=True):
     """Make a single LLM inference call and return structured output.
 
     A leaf primitive — no children, no tool loop. Returns an instance of O
@@ -31,4 +31,4 @@ class AIRequest[I: BaseModel, O: BaseModel](Primitive[I, O], arbitrary_types_all
     timeout_seconds: int = Field(default=30, ge=1)
 
 
-AIRequest.model_rebuild()
+AICall.model_rebuild()
