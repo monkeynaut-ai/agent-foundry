@@ -149,6 +149,28 @@ async def test_callable_model_selected_from_state() -> None:
 
 
 @pytest.mark.asyncio
+async def test_model_id_from_model_entry_passed_to_provider() -> None:
+    """The ModelEntry.model_id flows into request.model_id so the provider
+    knows which backend model to call. Model identity is call-time data,
+    not part of provider identity."""
+    captured: list[InferenceRequest] = []
+    entry = ModelEntry(
+        model_id="claude-haiku-4-5-20251001",
+        provider=_CapturingProvider(captured),
+        capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
+    )
+    req = AIRequest[_Input, _Output](
+        model_input=ModelInput[_Input](instructions="i", prompt="p"),
+        parameters=InferenceParameters(max_tokens=256),
+        model=entry,
+    )
+
+    await invoke_ai_request(req, _Input(text="x"))
+
+    assert captured[0].model_id == "claude-haiku-4-5-20251001"
+
+
+@pytest.mark.asyncio
 async def test_output_type_passed_to_provider() -> None:
     captured: list[InferenceRequest] = []
     req = AIRequest[_Input, _Output](

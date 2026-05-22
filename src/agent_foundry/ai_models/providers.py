@@ -13,13 +13,15 @@ from agent_foundry.ai_models.inference import InferenceProvider, InferenceReques
 class AnthropicProvider(InferenceProvider):
     """Inference provider backed by the Anthropic Messages API.
 
-    Owns one ``AsyncAnthropic`` client (and its connection pool) for the
-    lifetime of the provider instance — created once at construction,
-    reused for every call, released via :meth:`close`.
+    A connection to Anthropic — owns one ``AsyncAnthropic`` client (and
+    its connection pool) for the lifetime of the instance. Stateless
+    with respect to model choice: every call reads ``request.model_id``,
+    so one provider instance serves every Claude model. ``AsyncAnthropic``
+    is safe for concurrent use within an event loop, so a single shared
+    instance is the intended deployment pattern.
     """
 
-    def __init__(self, model_id: str, api_key: str | None = None) -> None:
-        self._model_id = model_id
+    def __init__(self, api_key: str | None = None) -> None:
         self._client = AsyncAnthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
 
     async def __call__(self, request: InferenceRequest) -> BaseModel:
@@ -29,7 +31,7 @@ class AnthropicProvider(InferenceProvider):
             "input_schema": request.output_type.model_json_schema(),
         }
         kwargs: dict = {
-            "model": self._model_id,
+            "model": request.model_id,
             "system": request.instructions,
             "messages": [{"role": "user", "content": request.prompt}],
             "tools": [tool],
@@ -43,7 +45,7 @@ class AnthropicProvider(InferenceProvider):
         tool_use_block = next((b for b in response.content if b.type == "tool_use"), None)
         if tool_use_block is None:
             raise RuntimeError(
-                f"Anthropic provider returned no tool_use block for model {self._model_id!r}"
+                f"Anthropic provider returned no tool_use block for model {request.model_id!r}"
             )
         return request.output_type.model_validate(tool_use_block.input)
 

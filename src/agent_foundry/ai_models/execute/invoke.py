@@ -52,6 +52,7 @@ async def invoke_ai_request[I: BaseModel, O: BaseModel](
     model_entry = req.model if isinstance(req.model, ModelEntry) else req.model(input_state)
 
     request = InferenceRequest(
+        model_id=model_entry.model_id,
         instructions=instructions,
         prompt=prompt,
         parameters=parameters,

@@ -19,8 +19,15 @@ class InferenceParameters(BaseModel):
 
 @dataclass
 class InferenceRequest[O: BaseModel]:
-    """Typed input to an inference provider call."""
+    """Typed input to an inference provider call.
 
+    ``model_id`` is the provider-specific model identifier for this
+    particular call. It lives on the request (not the provider) because
+    the model choice is call-time data, not part of the provider's
+    identity — one ``AnthropicProvider`` serves every Claude model.
+    """
+
+    model_id: str
     instructions: str
     prompt: str
     parameters: InferenceParameters

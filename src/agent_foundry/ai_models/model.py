@@ -61,9 +61,14 @@ class Model:
 def _register_builtins() -> None:
     from agent_foundry.ai_models.providers import AnthropicProvider
 
+    # One shared provider — model choice flows through InferenceRequest,
+    # not through provider identity. AsyncAnthropic is safe for
+    # concurrent use within an event loop.
+    anthropic = AnthropicProvider()
+
     Model.CLAUDE_OPUS_4_7 = ModelEntry(
         model_id="claude-opus-4-7",
-        provider=AnthropicProvider("claude-opus-4-7"),
+        provider=anthropic,
         capabilities=ModelCapabilities(
             context_window=200_000,
             max_output_tokens=32_000,
@@ -75,7 +80,7 @@ def _register_builtins() -> None:
 
     Model.CLAUDE_SONNET_4_6 = ModelEntry(
         model_id="claude-sonnet-4-6",
-        provider=AnthropicProvider("claude-sonnet-4-6"),
+        provider=anthropic,
         capabilities=ModelCapabilities(
             context_window=200_000,
             max_output_tokens=64_000,
@@ -87,7 +92,7 @@ def _register_builtins() -> None:
 
     Model.CLAUDE_HAIKU_4_5 = ModelEntry(
         model_id="claude-haiku-4-5-20251001",
-        provider=AnthropicProvider("claude-haiku-4-5-20251001"),
+        provider=anthropic,
         capabilities=ModelCapabilities(
             context_window=200_000,
             max_output_tokens=8_192,
