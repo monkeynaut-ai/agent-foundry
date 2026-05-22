@@ -1,8 +1,8 @@
-"""Tests for ``agent_foundry.ai_models.execute.invoke.invoke_ai_request``.
+"""Tests for ``agent_foundry.ai_models.execute.invoke.invoke_ai_call``.
 
 These tests exercise the direct-invocation path: no compiler, no
 ``RunContext``, no LangGraph. The helper is the single source of truth
-for resolving ``AIRequest`` fields and calling the provider; both the
+for resolving ``AICall`` fields and calling the provider; both the
 compiler node and out-of-band callers (e.g., the eval harness) consume
 it.
 """
@@ -12,14 +12,14 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.ai_models.execute.invoke import invoke_ai_request
+from agent_foundry.ai_models.execute.invoke import invoke_ai_call
 from agent_foundry.ai_models.inference import (
     InferenceParameters,
     InferenceProvider,
     InferenceRequest,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
-from agent_foundry.primitives.ai_request import AIRequest, ModelInput
+from agent_foundry.primitives.ai_call import AICall, ModelInput
 
 
 class _Input(BaseModel):
@@ -54,7 +54,7 @@ def _capturing_entry(captured: list[InferenceRequest]) -> ModelEntry:
 @pytest.mark.asyncio
 async def test_static_instructions_and_prompt_passed_to_provider() -> None:
     captured: list[InferenceRequest] = []
-    req = AIRequest[_Input, _Output](
+    req = AICall[_Input, _Output](
         model_input=ModelInput[_Input](
             instructions="system prompt",
             prompt="user message",
@@ -63,7 +63,7 @@ async def test_static_instructions_and_prompt_passed_to_provider() -> None:
         model=_capturing_entry(captured),
     )
 
-    output = await invoke_ai_request(req, _Input(text="hello"))
+    output = await invoke_ai_call(req, _Input(text="hello"))
 
     assert len(captured) == 1
     assert captured[0].instructions == "system prompt"
@@ -75,7 +75,7 @@ async def test_static_instructions_and_prompt_passed_to_provider() -> None:
 @pytest.mark.asyncio
 async def test_callable_instructions_and_prompt_resolved_from_state() -> None:
     captured: list[InferenceRequest] = []
-    req = AIRequest[_Input, _Output](
+    req = AICall[_Input, _Output](
         model_input=ModelInput[_Input](
             instructions=lambda s: f"system:{s.text}",
             prompt=lambda s: f"user:{s.text}",
@@ -84,7 +84,7 @@ async def test_callable_instructions_and_prompt_resolved_from_state() -> None:
         model=_capturing_entry(captured),
     )
 
-    await invoke_ai_request(req, _Input(text="world"))
+    await invoke_ai_call(req, _Input(text="world"))
 
     assert captured[0].instructions == "system:world"
     assert captured[0].prompt == "user:world"
@@ -94,13 +94,13 @@ async def test_callable_instructions_and_prompt_resolved_from_state() -> None:
 async def test_static_parameters_passed_to_provider() -> None:
     captured: list[InferenceRequest] = []
     params = InferenceParameters(max_tokens=512, temperature=0.3)
-    req = AIRequest[_Input, _Output](
+    req = AICall[_Input, _Output](
         model_input=ModelInput[_Input](instructions="i", prompt="p"),
         parameters=params,
         model=_capturing_entry(captured),
     )
 
-    await invoke_ai_request(req, _Input(text="x"))
+    await invoke_ai_call(req, _Input(text="x"))
 
     assert captured[0].parameters.max_tokens == 512
     assert captured[0].parameters.temperature == 0.3
@@ -113,16 +113,16 @@ async def test_callable_parameters_resolved_from_state() -> None:
     def _params(state: _Input) -> InferenceParameters:
         return InferenceParameters(max_tokens=1024 if state.flag else 128)
 
-    req = AIRequest[_Input, _Output](
+    req = AICall[_Input, _Output](
         model_input=ModelInput[_Input](instructions="i", prompt="p"),
         parameters=_params,
         model=_capturing_entry(captured),
     )
 
-    await invoke_ai_request(req, _Input(text="x", flag=True))
+    await invoke_ai_call(req, _Input(text="x", flag=True))
     assert captured[0].parameters.max_tokens == 1024
 
-    await invoke_ai_request(req, _Input(text="x", flag=False))
+    await invoke_ai_call(req, _Input(text="x", flag=False))
     assert captured[1].parameters.max_tokens == 128
 
 
@@ -133,17 +133,17 @@ async def test_callable_model_selected_from_state() -> None:
     entry_a = _capturing_entry(captured_a)
     entry_b = _capturing_entry(captured_b)
 
-    req = AIRequest[_Input, _Output](
+    req = AICall[_Input, _Output](
         model_input=ModelInput[_Input](instructions="i", prompt="p"),
         parameters=InferenceParameters(max_tokens=256),
         model=lambda state: entry_a if state.flag else entry_b,
     )
 
-    await invoke_ai_request(req, _Input(text="x", flag=True))
+    await invoke_ai_call(req, _Input(text="x", flag=True))
     assert len(captured_a) == 1
     assert len(captured_b) == 0
 
-    await invoke_ai_request(req, _Input(text="x", flag=False))
+    await invoke_ai_call(req, _Input(text="x", flag=False))
     assert len(captured_a) == 1
     assert len(captured_b) == 1
 
@@ -159,13 +159,13 @@ async def test_model_id_from_model_entry_passed_to_provider() -> None:
         provider=_CapturingProvider(captured),
         capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
     )
-    req = AIRequest[_Input, _Output](
+    req = AICall[_Input, _Output](
         model_input=ModelInput[_Input](instructions="i", prompt="p"),
         parameters=InferenceParameters(max_tokens=256),
         model=entry,
     )
 
-    await invoke_ai_request(req, _Input(text="x"))
+    await invoke_ai_call(req, _Input(text="x"))
 
     assert captured[0].model_id == "claude-haiku-4-5-20251001"
 
@@ -173,13 +173,13 @@ async def test_model_id_from_model_entry_passed_to_provider() -> None:
 @pytest.mark.asyncio
 async def test_output_type_passed_to_provider() -> None:
     captured: list[InferenceRequest] = []
-    req = AIRequest[_Input, _Output](
+    req = AICall[_Input, _Output](
         model_input=ModelInput[_Input](instructions="i", prompt="p"),
         parameters=InferenceParameters(max_tokens=256),
         model=_capturing_entry(captured),
     )
 
-    await invoke_ai_request(req, _Input(text="x"))
+    await invoke_ai_call(req, _Input(text="x"))
 
     assert captured[0].output_type is _Output
 
@@ -201,11 +201,11 @@ async def test_provider_returning_wrong_type_raises() -> None:
         provider=_BadProvider(),
         capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
     )
-    req = AIRequest[_Input, _Output](
+    req = AICall[_Input, _Output](
         model_input=ModelInput[_Input](instructions="i", prompt="p"),
         parameters=InferenceParameters(max_tokens=256),
         model=entry,
     )
 
     with pytest.raises(TypeError):
-        await invoke_ai_request(req, _Input(text="x"))
+        await invoke_ai_call(req, _Input(text="x"))

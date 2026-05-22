@@ -1,11 +1,11 @@
-"""Direct execution of an ``AIRequest`` declaration.
+"""Direct execution of an ``AICall`` declaration.
 
 Standalone invocation path — no compiler, no ``RunContext``, no
 LangGraph. Resolves each callable-or-static field on the request,
 builds an ``InferenceRequest``, calls the provider, and validates
 output type. Both the compiler node and out-of-band callers (eval
 harness, scripts, ad-hoc tooling) consume this function as the single
-canonical implementation of "given an AIRequest + typed input, run it
+canonical implementation of "given an AICall + typed input, run it
 and return typed output."
 """
 
@@ -20,11 +20,11 @@ from agent_foundry.ai_models.model import ModelEntry
 from agent_foundry.primitives.models import get_type_args
 
 if TYPE_CHECKING:
-    from agent_foundry.primitives.ai_request import AIRequest
+    from agent_foundry.primitives.ai_call import AICall
 
 
-async def invoke_ai_request[I: BaseModel, O: BaseModel](
-    req: AIRequest[I, O],
+async def invoke_ai_call[I: BaseModel, O: BaseModel](
+    req: AICall[I, O],
     input_state: I,
 ) -> O:
     """Invoke ``req`` against ``input_state`` and return the typed output.
@@ -62,6 +62,6 @@ async def invoke_ai_request[I: BaseModel, O: BaseModel](
 
     if not isinstance(result, output_type):
         raise TypeError(
-            f"AIRequest provider returned {type(result).__name__}, expected {output_type.__name__}"
+            f"AICall provider returned {type(result).__name__}, expected {output_type.__name__}"
         )
     return cast("O", result)

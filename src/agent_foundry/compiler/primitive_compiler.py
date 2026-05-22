@@ -9,7 +9,7 @@ from typing import Any, NamedTuple, TypedDict, cast
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ValidationError
 
-from agent_foundry.primitives.ai_request import AIRequest
+from agent_foundry.primitives.ai_call import AICall
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     AgentAction,
@@ -590,16 +590,16 @@ def _compile_agent_action(
 register_compiler(AgentAction, _compile_agent_action)
 
 
-def _compile_ai_request(
+def _compile_ai_call(
     graph: StateGraph,
-    action: AIRequest,
+    action: AICall,
     ctx: CompileContext,
 ) -> CompileResult:
     node_id = ctx.prefix
     input_type, _ = get_type_args(action)
 
     async def node_fn(state: dict[str, Any]) -> dict[str, Any]:
-        from agent_foundry.ai_models.execute.invoke import invoke_ai_request
+        from agent_foundry.ai_models.execute.invoke import invoke_ai_call
         from agent_foundry.orchestration.run_context import current_run_context
 
         model_input = _validate_scoped_input(state, input_type, node_id)
@@ -613,8 +613,8 @@ def _compile_ai_request(
         run_id = ctx_opt.run_id if ctx_opt is not None else node_id
 
         with emit_span(
-            name=f"agent_foundry.AIRequest.{node_id}",
-            primitive_type="AIRequest",
+            name=f"agent_foundry.AICall.{node_id}",
+            primitive_type="AICall",
             primitive_name=node_id,
             input_model=model_input,
             run_id=run_id,
@@ -622,10 +622,10 @@ def _compile_ai_request(
         ) as handle:
             handle.set_operation_name("chat")
             try:
-                result = await invoke_ai_request(action, model_input)
+                result = await invoke_ai_call(action, model_input)
             except TypeError as exc:
                 raise PrimitiveCompilationError(
-                    f"AIRequest {node_id}: {exc}",
+                    f"AICall {node_id}: {exc}",
                     primitive_type=node_id,
                 ) from exc
             handle.set_output(result)
@@ -635,4 +635,4 @@ def _compile_ai_request(
     return CompileResult(node_id, node_id)
 
 
-register_compiler(AIRequest, _compile_ai_request)
+register_compiler(AICall, _compile_ai_call)

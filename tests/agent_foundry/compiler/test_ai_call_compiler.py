@@ -1,4 +1,4 @@
-"""Tests for the AIRequest compiler node."""
+"""Tests for the AICall compiler node."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from agent_foundry.ai_models.inference import (
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
-from agent_foundry.primitives.ai_request import AIRequest, ModelInput
+from agent_foundry.primitives.ai_call import AICall, ModelInput
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.plan import PrimitivePlan
 
@@ -72,10 +72,10 @@ def _fake_entry(captured: list[InferenceRequest]) -> ModelEntry:
     )
 
 
-class TestAIRequestCompilerFieldResolution:
+class TestAICallCompilerFieldResolution:
     def test_static_instructions_and_prompt_passed_to_provider(self):
         captured: list[InferenceRequest] = []
-        action = AIRequest[Input, Output](
+        action = AICall[Input, Output](
             model_input=ModelInput[Input](
                 instructions="system prompt",
                 prompt="user message",
@@ -92,7 +92,7 @@ class TestAIRequestCompilerFieldResolution:
 
     def test_callable_instructions_and_prompt_resolved_from_state(self):
         captured: list[InferenceRequest] = []
-        action = AIRequest[Input, Output](
+        action = AICall[Input, Output](
             model_input=ModelInput[Input](
                 instructions=lambda s: f"system:{s.text}",
                 prompt=lambda s: f"user:{s.text}",
@@ -109,7 +109,7 @@ class TestAIRequestCompilerFieldResolution:
     def test_static_parameters_passed_to_provider(self):
         captured: list[InferenceRequest] = []
         params = InferenceParameters(max_tokens=512, temperature=0.3)
-        action = AIRequest[Input, Output](
+        action = AICall[Input, Output](
             model_input=ModelInput[Input](instructions="i", prompt="p"),
             parameters=params,
             model=_fake_entry(captured),
@@ -126,7 +126,7 @@ class TestAIRequestCompilerFieldResolution:
         def _params(state: Input) -> InferenceParameters:
             return InferenceParameters(max_tokens=1024 if state.flag else 128)
 
-        action = AIRequest[Input, Output](
+        action = AICall[Input, Output](
             model_input=ModelInput[Input](instructions="i", prompt="p"),
             parameters=_params,
             model=_fake_entry(captured),
@@ -138,7 +138,7 @@ class TestAIRequestCompilerFieldResolution:
 
     def test_output_type_passed_to_provider(self):
         captured: list[InferenceRequest] = []
-        action = AIRequest[Input, Output](
+        action = AICall[Input, Output](
             model_input=ModelInput[Input](instructions="i", prompt="p"),
             parameters=InferenceParameters(max_tokens=256),
             model=_fake_entry(captured),
@@ -150,7 +150,7 @@ class TestAIRequestCompilerFieldResolution:
 
     def test_provider_output_merged_into_state(self):
         captured: list[InferenceRequest] = []
-        action = AIRequest[Input, Output](
+        action = AICall[Input, Output](
             model_input=ModelInput[Input](instructions="i", prompt="p"),
             parameters=InferenceParameters(max_tokens=256),
             model=_fake_entry(captured),
@@ -161,14 +161,14 @@ class TestAIRequestCompilerFieldResolution:
         assert result["result"] == "ok"
 
 
-class TestAIRequestCompilerModelSelection:
+class TestAICallCompilerModelSelection:
     def test_callable_model_selected_from_state(self):
         captured_a: list[InferenceRequest] = []
         captured_b: list[InferenceRequest] = []
         entry_a = _fake_entry(captured_a)
         entry_b = _fake_entry(captured_b)
 
-        action = AIRequest[Input, Output](
+        action = AICall[Input, Output](
             model_input=ModelInput[Input](instructions="i", prompt="p"),
             parameters=InferenceParameters(max_tokens=256),
             model=lambda state: entry_a if state.flag else entry_b,
@@ -184,7 +184,7 @@ class TestAIRequestCompilerModelSelection:
         assert len(captured_b) == 1
 
 
-class TestAIRequestCompilerOutputValidation:
+class TestAICallCompilerOutputValidation:
     def test_provider_returning_wrong_type_raises(self):
         class WrongOutput(BaseModel):
             other: str
@@ -201,7 +201,7 @@ class TestAIRequestCompilerOutputValidation:
             provider=_BadProvider(),
             capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
         )
-        action = AIRequest[Input, Output](
+        action = AICall[Input, Output](
             model_input=ModelInput[Input](instructions="i", prompt="p"),
             parameters=InferenceParameters(max_tokens=256),
             model=entry,
