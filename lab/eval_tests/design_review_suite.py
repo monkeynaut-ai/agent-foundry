@@ -11,8 +11,6 @@ Run with::
     ./lab/eval_tests/run_design_review_eval.sh
 """
 
-from __future__ import annotations
-
 from pydantic import BaseModel
 from pydantic_evals import Case, Dataset
 from pydantic_evals.evaluators import IsInstance
