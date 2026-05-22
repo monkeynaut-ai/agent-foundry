@@ -14,11 +14,8 @@ class AnthropicProvider(InferenceProvider):
     """Inference provider backed by the Anthropic Messages API.
 
     A connection to Anthropic — owns one ``AsyncAnthropic`` client (and
-    its connection pool) for the lifetime of the instance. Stateless
-    with respect to model choice: every call reads ``request.model_id``,
-    so one provider instance serves every Claude model. ``AsyncAnthropic``
-    is safe for concurrent use within an event loop, so a single shared
-    instance is the intended deployment pattern.
+    its connection pool) for the lifetime of the instance. ``AsyncAnthropic``
+    is safe for concurrent use within an event loop.
     """
 
     def __init__(self, api_key: str | None = None) -> None:

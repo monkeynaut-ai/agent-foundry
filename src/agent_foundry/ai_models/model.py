@@ -61,9 +61,7 @@ class Model:
 def _register_builtins() -> None:
     from agent_foundry.ai_models.providers import AnthropicProvider
 
-    # One shared provider — model choice flows through InferenceRequest,
-    # not through provider identity. AsyncAnthropic is safe for
-    # concurrent use within an event loop.
+    # AsyncAnthropic is safe for concurrent use within an event loop.
     anthropic = AnthropicProvider()
 
     Model.CLAUDE_OPUS_4_7 = ModelEntry(
