@@ -1,4 +1,4 @@
-"""Tests for ``agent_foundry.primitives.ai_request.invoke_ai_request``.
+"""Tests for ``agent_foundry.ai_models.execute.invoke.invoke_ai_request``.
 
 These tests exercise the direct-invocation path: no compiler, no
 ``RunContext``, no LangGraph. The helper is the single source of truth
@@ -12,13 +12,14 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
+from agent_foundry.ai_models.execute.invoke import invoke_ai_request
 from agent_foundry.ai_models.inference import (
     InferenceParameters,
     InferenceProvider,
     InferenceRequest,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
-from agent_foundry.primitives.ai_request import AIRequest, ModelInput, invoke_ai_request
+from agent_foundry.primitives.ai_request import AIRequest, ModelInput
 
 
 class _Input(BaseModel):

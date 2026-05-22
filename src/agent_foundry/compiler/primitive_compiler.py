@@ -599,8 +599,8 @@ def _compile_ai_request(
     input_type, _ = get_type_args(action)
 
     async def node_fn(state: dict[str, Any]) -> dict[str, Any]:
+        from agent_foundry.ai_models.execute.invoke import invoke_ai_request
         from agent_foundry.orchestration.run_context import current_run_context
-        from agent_foundry.primitives.ai_request import invoke_ai_request
 
         model_input = _validate_scoped_input(state, input_type, node_id)
 
