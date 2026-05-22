@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from pydantic_evals import Case, Dataset
 from pydantic_evals.evaluators import EqualsExpected
 
-from agent_foundry.evals.models import EvalSuite
+from agent_foundry.evals.models import AgentTarget, EvalSuite
 from agent_foundry.orchestration.container_executor import run_agent_in_container
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
@@ -145,7 +145,7 @@ italian_word_agent = AgentAction[ItalianWordInput, ItalianWordAnswer](
 
 suite = EvalSuite(
     name="italian_word_classifier",
-    agent=italian_word_agent,
+    target=AgentTarget(agent=italian_word_agent),
     dataset=Dataset[ItalianWordInput, ItalianWordAnswer, None](
         name="italian_word_classifier_v1",
         cases=[

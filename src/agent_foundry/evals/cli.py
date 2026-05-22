@@ -3,14 +3,22 @@
 Usage::
 
     python -m agent_foundry.evals.cli <path-to-suite.py>
-        --artifacts-dir <path> --workspace-volume <name>
-        --base-image-tag <name>
         [--invocations <N>] [--max-concurrency <N>] [--out-dir <path>]
+        [--artifacts-dir <path>] [--workspace-volume <name>]
+        [--base-image-tag <name>]
 
 The CLI is a thin wrapper over :func:`agent_foundry.evals.runner.run_suite`.
-It loads the suite module, builds a task that invokes the agent via
-``run_primitive_plan``, executes the suite, persists the report to
+It loads the suite module, builds a task appropriate to the suite's
+target kind, executes the suite, persists the report to
 ``<out-dir>/<run_id>/report.json``, and prints a console summary.
+
+Target-specific arg requirements:
+
+- ``AgentTarget`` — ``--artifacts-dir``, ``--workspace-volume``, and
+  ``--base-image-tag`` are required (the agent runs in a container via
+  ``run_primitive_plan``).
+- ``AICallTarget`` — those three are not used; ``invoke_ai_call`` runs
+  in-process without container infrastructure.
 """
 
 from __future__ import annotations
@@ -21,13 +29,26 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from agent_foundry.evals.models import EvalSuite
+from agent_foundry.evals.models import (
+    AgentTarget,
+    AICallTarget,
+    EvalSuite,
+)
 from agent_foundry.evals.persistence import write_report
-from agent_foundry.evals.runner import build_run_primitive_plan_task, run_suite
+from agent_foundry.evals.runner import (
+    Task,
+    build_invoke_ai_call_task,
+    build_run_primitive_plan_task,
+    run_suite,
+)
 
 
 class SuiteLoadError(RuntimeError):
     """Raised when a suite module cannot be loaded or doesn't export ``suite``."""
+
+
+class MissingTargetArgsError(RuntimeError):
+    """Raised when a suite's target requires CLI args that weren't supplied."""
 
 
 def load_suite(path: Path) -> EvalSuite:
@@ -61,7 +82,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments. Exposed for testability."""
     parser = argparse.ArgumentParser(
         prog="agent_foundry.evals.cli",
-        description="Run an agent eval suite and write a structured report.",
+        description="Run an eval suite and write a structured report.",
     )
     parser.add_argument(
         "suite_path",
@@ -71,18 +92,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--artifacts-dir",
         type=Path,
-        required=True,
-        help="Artifacts directory passed to run_primitive_plan (lifecycle events, agent outputs).",
+        default=None,
+        help="Artifacts directory for AgentTarget runs (required for agent suites).",
     )
     parser.add_argument(
         "--workspace-volume",
-        required=True,
-        help="Docker workspace volume name for agent containers.",
+        default=None,
+        help="Docker workspace volume name for AgentTarget runs (required for agent suites).",
     )
     parser.add_argument(
         "--base-image-tag",
-        required=True,
-        help="Docker base image tag for agent containers.",
+        default=None,
+        help="Docker base image tag for AgentTarget runs (required for agent suites).",
     )
     parser.add_argument(
         "--out-dir",
@@ -105,6 +126,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def build_task_for_suite(suite: EvalSuite, args: argparse.Namespace) -> Task:
+    """Build the appropriate :class:`Task` for ``suite.target``.
+
+    Raises :class:`MissingTargetArgsError` if an ``AgentTarget`` suite
+    is missing one of the container-related CLI args.
+    """
+    target = suite.target
+    if isinstance(target, AgentTarget):
+        missing = [
+            flag
+            for flag, value in (
+                ("--artifacts-dir", args.artifacts_dir),
+                ("--workspace-volume", args.workspace_volume),
+                ("--base-image-tag", args.base_image_tag),
+            )
+            if value is None
+        ]
+        if missing:
+            raise MissingTargetArgsError(f"AgentTarget suite requires {', '.join(missing)}")
+        return build_run_primitive_plan_task(
+            target.agent,
+            artifacts_dir=args.artifacts_dir,
+            workspace_volume=args.workspace_volume,
+            base_image_tag=args.base_image_tag,
+        )
+    if isinstance(target, AICallTarget):
+        return build_invoke_ai_call_task(target.ai_call)
+    raise AssertionError(f"Unhandled target kind: {type(target).__name__}")
+
+
 async def _run(args: argparse.Namespace) -> int:
     suite = load_suite(args.suite_path)
 
@@ -113,12 +164,7 @@ async def _run(args: argparse.Namespace) -> int:
     if args.invocations is not None:
         suite = suite.model_copy(update={"invocations_per_case": args.invocations})
 
-    task = build_run_primitive_plan_task(
-        suite.agent,
-        artifacts_dir=args.artifacts_dir,
-        workspace_volume=args.workspace_volume,
-        base_image_tag=args.base_image_tag,
-    )
+    task = build_task_for_suite(suite, args)
     result = await run_suite(suite, task=task, max_concurrency=args.max_concurrency)
 
     # Render then persist.
@@ -134,6 +180,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return asyncio.run(_run(args))
     except SuiteLoadError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    except MissingTargetArgsError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
 

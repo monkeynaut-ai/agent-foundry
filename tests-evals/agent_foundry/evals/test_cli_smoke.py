@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from pydantic_evals import Case, Dataset
 from pydantic_evals.evaluators import EqualsExpected
 
-from agent_foundry.evals.models import EvalSuite
+from agent_foundry.evals.models import AgentTarget, EvalSuite
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
 
@@ -52,7 +52,7 @@ _agent = AgentAction[SmokeInput, SmokeOutput](
 
 suite = EvalSuite(
     name="smoke_suite",
-    agent=_agent,
+    target=AgentTarget(agent=_agent),
     dataset=Dataset[SmokeInput, SmokeOutput, None](
         name="smoke_ds",
         cases=[
