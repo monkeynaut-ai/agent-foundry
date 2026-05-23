@@ -14,7 +14,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class EvaluatorKind(StrEnum):
@@ -28,8 +28,6 @@ class EvaluatorKind(StrEnum):
 class EqualsExpectedSpec(BaseModel):
     """Pass if the case's output equals the case's ``expected_output``."""
 
-    model_config = ConfigDict(extra="forbid")
-
     kind: Literal[EvaluatorKind.EQUALS_EXPECTED] = EvaluatorKind.EQUALS_EXPECTED
 
 
@@ -40,16 +38,12 @@ class IsInstanceSpec(BaseModel):
     matching mirrors the backend's behavior.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     kind: Literal[EvaluatorKind.IS_INSTANCE] = EvaluatorKind.IS_INSTANCE
     type_name: str = Field(min_length=1)
 
 
 class LLMJudgeSpec(BaseModel):
     """Pass if an LLM judging the case output against ``rubric`` returns true."""
-
-    model_config = ConfigDict(extra="forbid")
 
     kind: Literal[EvaluatorKind.LLM_JUDGE] = EvaluatorKind.LLM_JUDGE
     rubric: str = Field(min_length=1)

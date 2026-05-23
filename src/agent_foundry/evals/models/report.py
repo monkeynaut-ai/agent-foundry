@@ -15,13 +15,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class AssertionResult(BaseModel):
     """One evaluator's verdict on one case."""
-
-    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1)
     value: bool
@@ -30,8 +28,6 @@ class AssertionResult(BaseModel):
 
 class CaseResult(BaseModel):
     """A successful case invocation — the task ran and produced output."""
-
-    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1)
     inputs: dict[str, Any]
@@ -42,8 +38,6 @@ class CaseResult(BaseModel):
 class CaseFailure(BaseModel):
     """A case where the task raised an exception."""
 
-    model_config = ConfigDict(extra="forbid")
-
     name: str = Field(min_length=1)
     inputs: dict[str, Any]
     error: str = Field(min_length=1)
@@ -52,8 +46,6 @@ class CaseFailure(BaseModel):
 class EvaluationReport(BaseModel):
     """Full report for one suite execution."""
 
-    model_config = ConfigDict(extra="forbid")
-
     name: str = Field(min_length=1)
     cases: list[CaseResult] = Field(default_factory=list)
     failures: list[CaseFailure] = Field(default_factory=list)
@@ -61,8 +53,6 @@ class EvaluationReport(BaseModel):
 
 class RunResult(BaseModel):
     """Top-level artifact of a suite execution."""
-
-    model_config = ConfigDict(extra="forbid")
 
     run_id: str = Field(min_length=1)
     suite_name: str = Field(min_length=1)
