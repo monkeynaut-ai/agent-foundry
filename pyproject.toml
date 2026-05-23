@@ -125,3 +125,16 @@ typeCheckingMode = "basic"
 reportMissingImports = "warning"
 reportMissingTypeStubs = false
 ignore = []
+
+[tool.importlinter]
+root_packages = ["agent_foundry"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Third-party eval libraries confined to evals.runners"
+type = "forbidden"
+source_modules = ["agent_foundry"]
+forbidden_modules = ["pydantic_evals"]
+ignore_imports = [
+    "agent_foundry.evals.runners.pydantic_evals -> pydantic_evals",
+]

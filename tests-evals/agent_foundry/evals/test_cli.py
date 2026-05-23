@@ -19,10 +19,14 @@ _AGENT_SUITE_MODULE = '''
 """Minimal agent eval suite for CLI tests."""
 
 from pydantic import BaseModel
-from pydantic_evals import Case, Dataset
-from pydantic_evals.evaluators import EqualsExpected
 
-from agent_foundry.evals.models import AgentTarget, EvalSuite
+from agent_foundry.evals.models import (
+    AgentTarget,
+    Case,
+    Dataset,
+    EqualsExpectedSpec,
+    EvalSuite,
+)
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
 
@@ -50,10 +54,10 @@ _agent = AgentAction[_Input, _Output](
 suite = EvalSuite(
     name="loaded_suite",
     target=AgentTarget(agent=_agent),
-    dataset=Dataset[_Input, _Output, None](
+    dataset=Dataset(
         name="ds",
         cases=[Case(name="c1", inputs=_Input(text="a"), expected_output=_Output(result="A"))],
-        evaluators=[EqualsExpected()],
+        evaluators=[EqualsExpectedSpec()],
     ),
     invocations_per_case=1,
 )
@@ -64,12 +68,16 @@ _AI_CALL_SUITE_MODULE = '''
 """Minimal AICall eval suite for CLI tests."""
 
 from pydantic import BaseModel
-from pydantic_evals import Case, Dataset
-from pydantic_evals.evaluators import EqualsExpected
 
 from agent_foundry.ai_models.inference import InferenceParameters
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
-from agent_foundry.evals.models import AICallTarget, EvalSuite
+from agent_foundry.evals.models import (
+    AICallTarget,
+    Case,
+    Dataset,
+    EqualsExpectedSpec,
+    EvalSuite,
+)
 from agent_foundry.primitives.ai_call import AICall, ModelInput
 
 
@@ -96,10 +104,10 @@ _call = AICall[_Input, _Output](
 suite = EvalSuite(
     name="ai_call_loaded_suite",
     target=AICallTarget(ai_call=_call),
-    dataset=Dataset[_Input, _Output, None](
+    dataset=Dataset(
         name="ds",
         cases=[Case(name="c1", inputs=_Input(text="a"), expected_output=_Output(result="A"))],
-        evaluators=[EqualsExpected()],
+        evaluators=[EqualsExpectedSpec()],
     ),
     invocations_per_case=1,
 )

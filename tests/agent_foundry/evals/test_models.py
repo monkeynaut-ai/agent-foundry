@@ -6,17 +6,18 @@ from datetime import UTC, datetime
 
 import pytest
 from pydantic import BaseModel, ValidationError
-from pydantic_evals import Case, Dataset
-from pydantic_evals.evaluators import EqualsExpected
-from pydantic_evals.reporting import EvaluationReport
 
 from agent_foundry.ai_models.inference import InferenceParameters
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.evals.models import (
     AgentTarget,
     AICallTarget,
+    Case,
+    Dataset,
+    EqualsExpectedSpec,
     EvalSuite,
     EvalTargetKind,
+    EvaluationReport,
     RunResult,
 )
 from agent_foundry.primitives.ai_call import AICall, ModelInput
@@ -35,13 +36,13 @@ def _stub_executor(*, primitive, prompt, instructions, run_ctx) -> _Output:
     return _Output(result="")
 
 
-def _make_dataset() -> Dataset[_Input, _Output, None]:
-    return Dataset[_Input, _Output, None](
+def _make_dataset() -> Dataset:
+    return Dataset(
         name="ds",
         cases=[
             Case(name="c1", inputs=_Input(text="a"), expected_output=_Output(result="A")),
         ],
-        evaluators=[EqualsExpected()],
+        evaluators=[EqualsExpectedSpec()],
     )
 
 
@@ -178,7 +179,7 @@ def test_eval_suite_rejects_negative_invocations() -> None:
 def test_run_result_construction() -> None:
     started = datetime(2026, 5, 15, 12, 0, 0, tzinfo=UTC)
     ended = datetime(2026, 5, 15, 12, 0, 5, tzinfo=UTC)
-    report = EvaluationReport[_Input, _Output, None](name="r1", cases=[])
+    report = EvaluationReport(name="r1")
     result = RunResult(
         run_id="run_001",
         suite_name="test_suite",
@@ -196,7 +197,7 @@ def test_run_result_construction() -> None:
 
 
 def test_run_result_rejects_empty_run_id() -> None:
-    report = EvaluationReport[_Input, _Output, None](name="r1", cases=[])
+    report = EvaluationReport(name="r1")
     with pytest.raises(ValidationError):
         RunResult(
             run_id="",
