@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from agent_foundry.evals.models.cases import Dataset
 from agent_foundry.evals.models.targets import EvalTarget
@@ -10,8 +10,6 @@ from agent_foundry.evals.models.targets import EvalTarget
 
 class EvalSuite(BaseModel):
     """Single-target eval suite declaration."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     name: str = Field(min_length=1)
     target: EvalTarget

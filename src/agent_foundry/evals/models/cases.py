@@ -10,15 +10,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from agent_foundry.evals.models.evaluators import EvaluatorSpec
 
 
 class Case(BaseModel):
     """A single evaluation input + optional expected output + metadata."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     name: str = Field(min_length=1)
     inputs: BaseModel
@@ -32,8 +30,6 @@ class Dataset(BaseModel):
     The runner is responsible for executing the dataset's cases against
     a task callable and applying ``evaluators`` to each output.
     """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     name: str = Field(min_length=1)
     cases: list[Case]

@@ -31,7 +31,7 @@ class AssertionResult(BaseModel):
 class CaseResult(BaseModel):
     """A successful case invocation — the task ran and produced output."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1)
     inputs: dict[str, Any]
