@@ -25,22 +25,93 @@ Two consequences fall out of this:
 ## The architecture
 
 Treat pydantic-evals as **execution infrastructure**, not data model.
+Three principles:
 
-- Agent-foundry owns the declarative types: `EvalSuite`, `Case`,
-  `Dataset`, `Evaluator`. Pure Pydantic, zero pydantic-evals imports.
-- A single `Runner` interface defines "execute this suite, return a
-  typed report."
-- The default `PydanticEvalsRunner` translates our types to
-  pydantic-evals' types, calls `Dataset.evaluate`, translates the
-  report back. It is the **only** module that imports pydantic-evals.
-- An `import-linter` contract enforces the boundary: nothing outside
-  the runner module may import `pydantic_evals`. Future PRs that
-  re-couple fail CI.
+- **Models layer** owns the declarative contracts: `EvalSuite`,
+  `Case`, `Dataset`, `Evaluator`, `RunResult`, and the `Runner`
+  Protocol. Pure Pydantic; zero third-party eval-library imports.
+- **Runners layer** owns the execution backends. Each file is one
+  implementation of the `Runner` Protocol. Third-party eval libraries
+  may be imported here, and only here.
+- **API and other consumers** depend on the model layer (including
+  the `Runner` Protocol) but never statically import a concrete
+  runner. Dependency injection at app construction binds a specific
+  runner; concrete backends are resolved at startup via dynamic
+  `importlib` lookup from a config-declared `module:Class` string —
+  the same pattern the registry already uses.
 
-This mirrors the platform's existing pattern: `InferenceProvider`
-isolates inference backends; per-primitive executors isolate
-execution mechanisms; the registry isolates app code from the eval
-system. Evals would now follow the same shape.
+This mirrors the platform's existing pluggable-backend pattern:
+`InferenceProvider` isolates inference backends; per-primitive
+executors isolate execution mechanisms; the registry isolates app
+code from the eval system. Evals follow the same shape.
+
+## Package layout
+
+```
+src/agent_foundry/evals/
+├── README.md
+├── __init__.py
+├── __main__.py                  ← bootstrap: loads config → resolves backends → builds app → uvicorn.run
+│
+├── models/                      ← declarative contracts (pure Pydantic)
+│   ├── __init__.py              ← re-exports
+│   ├── targets.py               ← EvalTarget, AgentTarget, AICallTarget, EvalTargetKind
+│   ├── cases.py                 ← Case, Dataset
+│   ├── evaluators.py            ← Evaluator base + IsInstance, EqualsExpected, LLMJudge specs
+│   ├── suite.py                 ← EvalSuite
+│   ├── report.py                ← RunResult and report types
+│   └── runner.py                ← Runner Protocol
+│
+├── registry.py                  ← AICallRegistry (app-side opt-in surface)
+├── persistence.py               ← JSON read/write of RunResult
+├── cli.py                       ← command-line entry
+│
+├── runners/                     ← execution backends
+│   ├── __init__.py
+│   └── pydantic_evals.py        ← PydanticEvalsRunner (initial implementation)
+│
+└── api/                         ← HTTP surface
+    ├── __init__.py
+    ├── app.py                   ← create_app(registry, runner)
+    ├── config.py
+    ├── registry_loader.py
+    ├── runner_loader.py
+    ├── schemas.py
+    └── targets.py
+```
+
+Each directory boundary signals a contract:
+
+- **Top-level files** (`registry.py`, `persistence.py`, `cli.py`) =
+  orthogonal services that consume the model layer only.
+- **`models/`** = declarative public API. Stable surface. No
+  third-party eval imports.
+- **`runners/`** = pluggable backends. New backend = new file. No
+  other code in the package may import these directly.
+- **`api/`** = HTTP surface. Depends on the model layer + registry.
+  Resolves concrete backends dynamically via the loader modules.
+- **`__main__.py`** at the package root = the one wiring point.
+  Reads config, instantiates registry and runner, builds the app,
+  launches uvicorn.
+
+## Boundary enforcement
+
+```toml
+# Third-party eval libraries confined to runners/
+[[tool.importlinter.contracts]]
+source_modules = ["agent_foundry"]
+forbidden_modules = ["pydantic_evals", "deepeval", "inspect_ai"]
+ignore_imports = ["agent_foundry.evals.runners.*"]
+
+# API surface depends only on declarative types + registry
+[[tool.importlinter.contracts]]
+source_modules = ["agent_foundry.evals.api"]
+forbidden_modules = ["agent_foundry.evals.runners", "agent_foundry.evals.cli"]
+```
+
+Future PRs that re-couple the API to a runner implementation, or that
+import pydantic-evals outside its designated backend file, fail CI.
+The architectural intent becomes a contract the build checks for us.
 
 ## What we gain
 
