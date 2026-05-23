@@ -4,7 +4,7 @@ build-backend = "pdm.backend"
 
 [project]
 name = "agent-foundry"
-version = "0.10.0"
+version = "0.10.1"
 description = "Default template for PDM package"
 authors = [
     {name = "Mark Norman", email = "mark@marknorman.com"},
@@ -25,6 +25,8 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.41.1",
     "anthropic>=0.100.0",
     "pydantic-evals>=1.96.1",
+    "fastapi>=0.136.1",
+    "uvicorn[standard]>=0.47.0",
 ]
 requires-python = "==3.14.*"
 readme = "README.md"
@@ -57,6 +59,7 @@ package-dir = "src"
 post_install.cmd = "pre-commit install --hook-type pre-commit --hook-type pre-push"
 demo.cmd = "python -m agent_foundry.demo.cli"
 demo.env = {PYTHONPATH = "src"}
+eval-api.cmd = "python -m agent_foundry.evals.api"
 docker-base.cmd = "docker build -t agent-worker:latest -f src/agent_foundry/agents/docker/Dockerfile.base ."
 docker-foundry-dev.cmd = "docker build -t agent-worker-foundry-dev:latest -f src/agent_foundry/agents/docker/Dockerfile.foundry-dev ."
 docker-rebuild.shell = "docker build --no-cache -t agent-worker:latest -f src/agent_foundry/agents/docker/Dockerfile.base . && docker build --no-cache -t agent-worker-foundry-dev:latest -f src/agent_foundry/agents/docker/Dockerfile.foundry-dev ."
