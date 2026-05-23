@@ -1,69 +1,15 @@
-"""Real-world smoke test for the AICall eval path.
-
-AICall under test: a design-review classifier that takes a design
-document and returns a structured review (summary, findings, approved
-flag). Mirrors the declaration in ``lab/ai_call_tests/test_design_review.py``
-but is self-contained so the eval CLI can load it without lab-path
-gymnastics.
+"""Eval suite for the ``design_review`` AICall.
 
 Run with::
 
     ./lab/eval_tests/run_design_review_eval.sh
 """
 
-from pydantic import BaseModel
+from lab.eval_tests.design_review import DesignInput, DesignReviewOutput, design_review
 from pydantic_evals import Case, Dataset
 from pydantic_evals.evaluators import IsInstance
 
-from agent_foundry.ai_models.inference import InferenceParameters
-from agent_foundry.ai_models.model import Model
 from agent_foundry.evals.models import AICallTarget, EvalSuite
-from agent_foundry.primitives.ai_call import AICall, ModelInput
-
-
-class DesignInput(BaseModel):
-    document: str
-
-
-class ReviewFinding(BaseModel):
-    area: str
-    severity: str
-    observation: str
-
-
-class DesignReviewOutput(BaseModel):
-    summary: str
-    findings: list[ReviewFinding]
-    approved: bool
-
-
-_INSTRUCTIONS = """\
-You are a senior software architect conducting a design review.
-
-Evaluate the submitted design document against these criteria:
-- Clarity: is the design clearly explained?
-- Completeness: are key decisions and trade-offs covered?
-- Risk: are there obvious gaps or risks?
-
-Identify findings by area (e.g. "data model", "api surface", "error handling").
-Severity values: "low", "medium", "high".
-Set approved to true only if there are no high-severity findings.
-"""
-
-
-def _build_prompt(state: DesignInput) -> str:
-    return f"Review the following design document:\n\n{state.document}"
-
-
-design_review = AICall[DesignInput, DesignReviewOutput](
-    model_input=ModelInput[DesignInput](
-        instructions=_INSTRUCTIONS,
-        prompt=_build_prompt,
-    ),
-    parameters=InferenceParameters(max_tokens=1024),
-    model=Model.CLAUDE_HAIKU_4_5,
-)
-
 
 _GOOD_DESIGN = """\
 ## Feature: Idempotent payment retry

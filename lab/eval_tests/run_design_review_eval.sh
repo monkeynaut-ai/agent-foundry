@@ -68,7 +68,9 @@ fi
 echo
 
 cd "${REPO_ROOT}"
-export PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
+# Add ${REPO_ROOT} so the suite can import sibling modules under
+# lab.eval_tests.* (namespace packages, no __init__.py required).
+export PYTHONPATH="${REPO_ROOT}/src:${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 exec pdm run python -m agent_foundry.evals.cli \
     "${SUITE}" \
     --out-dir "${OUT_DIR}" \
