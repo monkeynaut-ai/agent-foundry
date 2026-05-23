@@ -6,7 +6,7 @@ Lab stand-in for the equivalent module a real application would ship
 as an evaluation target.
 """
 
-from lab.eval_tests.design_review import design_review
+from lab.eval_tests.ai_call.design_review import design_review
 
 from agent_foundry.evals.registry import AICallRegistry
 

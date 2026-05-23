@@ -5,7 +5,7 @@ Run with::
     ./lab/eval_tests/run_design_review_eval.sh
 """
 
-from lab.eval_tests.design_review import DesignInput, DesignReviewOutput, design_review
+from lab.eval_tests.ai_call.design_review import DesignInput, DesignReviewOutput, design_review
 from pydantic_evals import Case, Dataset
 from pydantic_evals.evaluators import IsInstance
 
