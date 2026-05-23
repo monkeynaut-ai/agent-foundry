@@ -36,7 +36,7 @@ from agent_foundry.evals.models import (
     Task,
 )
 from agent_foundry.evals.persistence import write_report
-from agent_foundry.evals.runners.pydantic_evals import PydanticEvalsRunner
+from agent_foundry.evals.runner_loader import load_runner
 from agent_foundry.evals.tasks import (
     build_invoke_ai_call_task,
     build_run_primitive_plan_task,
@@ -186,7 +186,7 @@ async def _run(args: argparse.Namespace) -> int:
         suite = suite.model_copy(update={"invocations_per_case": args.invocations})
 
     task = build_task_for_suite(suite, args)
-    runner = PydanticEvalsRunner()
+    runner = load_runner()
     result = await runner.run(suite, task=task, max_concurrency=args.max_concurrency)
 
     print(render_summary(result))
