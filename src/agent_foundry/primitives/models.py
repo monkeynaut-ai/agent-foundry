@@ -64,6 +64,18 @@ class Loop[I: BaseModel, O: BaseModel](Primitive[I, O]):
     max_iterations: int = Field(default=100, ge=1)
 
 
+class RetryExceptionPolicy(StrEnum):
+    """Controls what Retry does when its body raises an exception.
+
+    - PROPAGATE: re-raise immediately (default, preserves existing behaviour).
+    - TREAT_AS_FAILURE: consume the attempt, restore pre-attempt state,
+      continue to the next attempt as if the body returned an unmet condition.
+    """
+
+    PROPAGATE = "propagate"
+    TREAT_AS_FAILURE = "treat_as_failure"
+
+
 class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Execute body, evaluate condition, repeat up to max_attempts times.
 
@@ -76,6 +88,16 @@ class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):
     max_attempts: int = Field(ge=1)
     until: Callable[[I], bool]
     body: Primitive
+    exception_policy: RetryExceptionPolicy = RetryExceptionPolicy.PROPAGATE
+    """Exception handling policy for body failures. Defaults to PROPAGATE (existing behaviour)."""
+    on_exhaustion: Callable[..., O | Awaitable[O]] | None = None
+    """Optional hook called when all attempts are consumed without until() returning True.
+
+    Receives a ``RetryExhaustion`` instance. May be sync or async. When None,
+    Retry exits silently with the current accumulated state (today's behaviour).
+    When set, its return value (an instance of ``O``) replaces the accumulated
+    state, enabling the parent Conditional to route on a structured failure output.
+    """
 
 
 class Conditional[I: BaseModel, O: BaseModel](Primitive[I, O]):

@@ -446,20 +446,102 @@ def _compile_retry(
     body_graph.add_edge(body_exit, END)
     compiled_body = body_graph.compile()
 
+    import copy as _copy
+    import inspect as _inspect
+
+    from agent_foundry.primitives.models import RetryExceptionPolicy as _RetryExceptionPolicy
+
     until_fn = retry.until
     max_attempts = retry.max_attempts
+    # Precompute as a bool so the closure captures a plain value, not the enum class.
+    treat_body_exception_as_failure = (
+        retry.exception_policy == _RetryExceptionPolicy.TREAT_AS_FAILURE
+    )
+    on_exhaustion_fn = retry.on_exhaustion
+    on_exhaustion_is_async = on_exhaustion_fn is not None and _inspect.iscoroutinefunction(
+        on_exhaustion_fn
+    )
 
     # Wrapper node: retry loop with scoped body execution
     node_id = f"{ctx.prefix}_retry"
 
     async def retry_node(state: dict[str, Any]) -> dict[str, Any]:
+        from datetime import UTC, datetime
+
+        from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+        from agent_foundry.orchestration.run_context import current_run_context
+        from agent_foundry.primitives.retry_types import (
+            AttemptFailure,
+            RetryExhaustion,
+            RetryExhaustionReason,
+        )
+
+        ctx_opt = current_run_context.get()
         current_state = dict(state)
-        for _ in range(max_attempts):
-            result = await compiled_body.ainvoke(dict(current_state))  # type: ignore[arg-type]
-            current_state.update(_scope_out(result, body_out))
-            model = _validate_scoped_input(current_state, retry_in, node_id)
-            if until_fn(model):
-                break
+        attempt_failures: list[AttemptFailure] = []
+        successful_completions = 0
+
+        for attempt_num in range(max_attempts):
+            snapshot = _copy.deepcopy(current_state)
+            try:
+                result = await compiled_body.ainvoke(dict(current_state))  # type: ignore[arg-type]
+                current_state.update(_scope_out(result, body_out))
+                model = _validate_scoped_input(current_state, retry_in, node_id)
+                if until_fn(model):
+                    return _scope_out(current_state, retry_out)
+                successful_completions += 1
+            except Exception as exc:
+                if not treat_body_exception_as_failure:
+                    raise
+                # TREAT_AS_FAILURE: record failure, restore pre-attempt state, continue
+                failure = AttemptFailure(
+                    attempt_num=attempt_num + 1,
+                    exception_type=type(exc).__name__,
+                    exception_message=str(exc),
+                    timestamp=datetime.now(UTC),
+                )
+                attempt_failures.append(failure)
+                if ctx_opt is not None:
+                    ctx_opt.lifecycle_writer.append(
+                        LifecycleEvent.RETRY_ATTEMPT_FAILED,
+                        node_id=node_id,
+                        attempt_num=failure.attempt_num,
+                        exception_type=failure.exception_type,
+                        exception_message=failure.exception_message,
+                    )
+                current_state = snapshot  # discard partial mutations
+
+        # All attempts exhausted without until() returning True.
+        if on_exhaustion_fn is not None:
+            if not attempt_failures:
+                reason = RetryExhaustionReason.CONDITION_NOT_MET
+            elif successful_completions == 0:
+                reason = RetryExhaustionReason.BODY_EXCEPTIONS
+            else:
+                reason = RetryExhaustionReason.MIXED
+
+            last_state_model = retry_in.model_validate(
+                {k: current_state[k] for k in retry_in.model_fields if k in current_state}
+            )
+            exhaustion = RetryExhaustion(
+                max_attempts=max_attempts,
+                reason=reason,
+                attempt_failures=attempt_failures,
+                last_state=last_state_model,
+            )
+            if on_exhaustion_is_async:
+                output = await on_exhaustion_fn(exhaustion)
+            else:
+                output = on_exhaustion_fn(exhaustion)
+            if not isinstance(output, retry_out):
+                raise PrimitiveCompilationError(
+                    f"Retry {node_id}: on_exhaustion returned "
+                    f"{type(output).__name__}, expected {retry_out.__name__}",
+                    primitive_type=node_id,
+                )
+            return output.model_dump()
+
+        # on_exhaustion is None: silent exit with accumulated state (existing behaviour)
         return _scope_out(current_state, retry_out)
 
     graph.add_node(node_id, retry_node)  # type: ignore[arg-type]
@@ -595,11 +677,24 @@ def _compile_ai_call(
     action: AICall,
     ctx: CompileContext,
 ) -> CompileResult:
+    import inspect as _inspect
+
     node_id = ctx.prefix
-    input_type, _ = get_type_args(action)
+    input_type, output_type = get_type_args(action)
+
+    executor = action.executor
+    executor_is_async = executor is not None and _inspect.iscoroutinefunction(executor)
+
+    def _validate_typed(result: Any) -> BaseModel:
+        if not isinstance(result, output_type):
+            raise PrimitiveCompilationError(
+                f"AICall {node_id}: executor returned "
+                f"{type(result).__name__}, expected {output_type.__name__}",
+                primitive_type=node_id,
+            )
+        return result
 
     async def node_fn(state: dict[str, Any]) -> dict[str, Any]:
-        from agent_foundry.ai_models.execute.invoke import invoke_ai_call
         from agent_foundry.orchestration.run_context import current_run_context
 
         model_input = _validate_scoped_input(state, input_type, node_id)
@@ -622,14 +717,22 @@ def _compile_ai_call(
         ) as handle:
             handle.set_operation_name("chat")
             try:
-                result = await invoke_ai_call(action, model_input)
+                if executor is None:
+                    from agent_foundry.ai_models.execute.invoke import invoke_ai_call
+
+                    result = await invoke_ai_call(primitive=action, model_input=model_input)
+                elif executor_is_async:
+                    result = await executor(primitive=action, model_input=model_input)
+                else:
+                    result = executor(primitive=action, model_input=model_input)
             except TypeError as exc:
                 raise PrimitiveCompilationError(
                     f"AICall {node_id}: {exc}",
                     primitive_type=node_id,
                 ) from exc
-            handle.set_output(result)
-            return result.model_dump()
+            typed = _validate_typed(result)
+            handle.set_output(typed)
+            return typed.model_dump()
 
     graph.add_node(node_id, node_fn)  # type: ignore[arg-type]
     return CompileResult(node_id, node_id)

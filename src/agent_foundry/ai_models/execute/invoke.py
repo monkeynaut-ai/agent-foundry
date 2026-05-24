@@ -24,32 +24,38 @@ if TYPE_CHECKING:
 
 
 async def invoke_ai_call[I: BaseModel, O: BaseModel](
-    req: AICall[I, O],
-    input_state: I,
+    primitive: AICall[I, O],
+    model_input: I,
 ) -> O:
-    """Invoke ``req`` against ``input_state`` and return the typed output.
+    """Invoke ``primitive`` against ``model_input`` and return the typed output.
 
     Raises ``TypeError`` if the provider returns an object that isn't an
     instance of the request's declared output type.
+
+    Parameter names match the AICall executor contract so consumers can
+    wrap this function directly:
+    ``return await invoke_ai_call(primitive=primitive, model_input=model_input)``.
     """
-    _, output_type = get_type_args(req)
+    _, output_type = get_type_args(primitive)
 
     instructions = (
-        req.model_input.instructions
-        if isinstance(req.model_input.instructions, str)
-        else req.model_input.instructions(input_state)
+        primitive.model_input.instructions
+        if isinstance(primitive.model_input.instructions, str)
+        else primitive.model_input.instructions(model_input)
     )
     prompt = (
-        req.model_input.prompt
-        if isinstance(req.model_input.prompt, str)
-        else req.model_input.prompt(input_state)
+        primitive.model_input.prompt
+        if isinstance(primitive.model_input.prompt, str)
+        else primitive.model_input.prompt(model_input)
     )
     parameters = (
-        req.parameters
-        if isinstance(req.parameters, InferenceParameters)
-        else req.parameters(input_state)
+        primitive.parameters
+        if isinstance(primitive.parameters, InferenceParameters)
+        else primitive.parameters(model_input)
     )
-    model_entry = req.model if isinstance(req.model, ModelEntry) else req.model(input_state)
+    model_entry = (
+        primitive.model if isinstance(primitive.model, ModelEntry) else primitive.model(model_input)
+    )
 
     request = InferenceRequest(
         model_id=model_entry.model_id,

@@ -30,6 +30,7 @@ class LifecycleEvent(StrEnum):
     FUNCTION_ACTION_STARTED = "function_action_started"
     FUNCTION_ACTION_COMPLETED = "function_action_completed"
     FUNCTION_ACTION_FAILED = "function_action_failed"
+    RETRY_ATTEMPT_FAILED = "retry_attempt_failed"
     GATE_ENTERED = "gate_entered"
     GATE_RESUMED = "gate_resumed"
     DOMAIN = "domain"
