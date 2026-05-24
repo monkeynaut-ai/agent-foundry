@@ -1,10 +1,13 @@
-"""Tests for ``agent_foundry.evals.responder``."""
+"""Tests for ``RaiseOnInvokeResponder`` in ``agent_foundry.evals.tasks``."""
 
 from __future__ import annotations
 
 import pytest
 
-from agent_foundry.evals.responder import EvalResponderInvokedError, RaiseOnInvokeResponder
+from agent_foundry.evals.agent_foundry_tasks import (
+    EvalResponderInvokedError,
+    RaiseOnInvokeResponder,
+)
 from agent_foundry.responders.models import (
     ClarificationRequest,
     ResponderContext,

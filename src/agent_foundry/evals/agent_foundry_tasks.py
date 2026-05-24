@@ -9,6 +9,11 @@ mechanisms).
 The CLI and the API server use these builders to materialize the
 appropriate :class:`Task` for a suite's target kind, then hand the
 task to the runner.
+
+Agent-target builds also install :class:`RaiseOnInvokeResponder`,
+which forces eval cases to fail loudly rather than auto-answer
+clarification requests — auto-answering would make outcomes
+non-deterministic and obscure the variable under test.
 """
 
 from __future__ import annotations
@@ -20,10 +25,37 @@ from pydantic import BaseModel
 
 from agent_foundry.ai_models.execute.invoke import invoke_ai_call
 from agent_foundry.evals.models import Task
-from agent_foundry.evals.responder import RaiseOnInvokeResponder
 from agent_foundry.primitives.ai_call import AICall
 from agent_foundry.primitives.models import AgentAction
 from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.responders.models import (
+    ResponderContext,
+    ResponderRequest,
+    ResponderResponse,
+)
+from agent_foundry.responders.protocol import Responder
+
+
+class EvalResponderInvokedError(RuntimeError):
+    """Raised when an agent under eval triggers a responder interaction."""
+
+
+class RaiseOnInvokeResponder(Responder):
+    """Responder that raises on every invocation.
+
+    Plugs into :func:`agent_foundry.orchestration.runner.run_primitive_plan`
+    via :func:`agent_foundry.responders.protocol.static_provider`.
+    """
+
+    async def respond(
+        self, request: ResponderRequest, context: ResponderContext
+    ) -> ResponderResponse:
+        raise EvalResponderInvokedError(
+            "Responder invoked during eval — single-agent eval cases must run "
+            "to completion without interactions. "
+            f"agent={context.agent_name!r} invocation={context.invocation} "
+            f"turn={context.turn} request_kind={request.kind}"
+        )
 
 
 def build_run_primitive_plan_task(

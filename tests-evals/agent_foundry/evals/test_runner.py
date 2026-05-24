@@ -11,6 +11,7 @@ from agent_foundry.ai_models.inference import (
     InferenceRequest,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
+from agent_foundry.evals.agent_foundry_tasks import build_invoke_ai_call_task
 from agent_foundry.evals.models import (
     AgentTarget,
     AICallTarget,
@@ -21,7 +22,6 @@ from agent_foundry.evals.models import (
     RunResult,
 )
 from agent_foundry.evals.runners.pydantic_evals import PydanticEvalsRunner
-from agent_foundry.evals.tasks import build_invoke_ai_call_task
 from agent_foundry.primitives.ai_call import AICall, ModelInput
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 

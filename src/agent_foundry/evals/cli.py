@@ -28,6 +28,10 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from agent_foundry.evals.agent_foundry_tasks import (
+    build_invoke_ai_call_task,
+    build_run_primitive_plan_task,
+)
 from agent_foundry.evals.models import (
     AgentTarget,
     AICallTarget,
@@ -37,10 +41,6 @@ from agent_foundry.evals.models import (
 )
 from agent_foundry.evals.persistence import write_report
 from agent_foundry.evals.runner_loader import load_runner
-from agent_foundry.evals.tasks import (
-    build_invoke_ai_call_task,
-    build_run_primitive_plan_task,
-)
 
 
 class SuiteLoadError(RuntimeError):

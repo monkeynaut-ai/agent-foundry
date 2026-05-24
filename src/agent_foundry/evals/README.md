@@ -27,6 +27,13 @@ The package provides:
 - **Persistent reports** — each run is written as a self-describing
   JSON document, ready for downstream viewers.
 
+## Contents
+
+- [Architecture: framework-agnostic by construction](#architecture-framework-agnostic-by-construction)
+- [Using the eval system](#using-the-eval-system)
+- [Boundary enforcement](#boundary-enforcement)
+- [Creating a Generic Eval System](#creating-a-generic-eval-system)
+
 ## Architecture: framework-agnostic by construction
 
 The eval system treats the third-party execution engine
@@ -74,8 +81,7 @@ src/agent_foundry/evals/
 │
 ├── registry.py                  ← AICallRegistry (app-side opt-in surface)
 ├── persistence.py               ← JSON read/write of RunResult
-├── responder.py                 ← RaiseOnInvokeResponder (agent-target eval path)
-├── tasks.py                     ← build_run_primitive_plan_task, build_invoke_ai_call_task
+├── agent_foundry_tasks.py       ← task builders specific to agent-foundry
 ├── cli.py                       ← command-line entry
 ├── runner_loader.py             ← resolves a runner module:Class spec to an instance
 │
@@ -219,3 +225,99 @@ meta-path blocker: any test added there that triggers a heavy load
 fails immediately, telling the author to move it to `tests-evals/`.
 This keeps the 16 xdist workers in `pdm test-unit` free of the
 per-worker memory cost of the eval framework.
+
+## Creating a Generic Eval System
+
+The package today is intentionally agent-foundry-shaped: targets are
+`AICall` and `AgentAction`, the registry holds `AICall`, the API
+server's `TargetSpec` extracts schemas from agent-foundry primitives.
+A future generalization could lift those couplings and let the eval
+system evaluate anything, not just agent-foundry primitives.
+
+### What couples the package to agent-foundry today
+
+Five modules import from `agent_foundry.*` outside `evals/`:
+
+| Module | Imports from outside evals | Purpose |
+|---|---|---|
+| `models/targets.py` | `primitives.ai_call.AICall`, `primitives.models.AgentAction` | `AgentTarget` and `AICallTarget` wrap these as evaluation targets. |
+| `registry.py` | `primitives.ai_call.AICall` | `AICallRegistry` is typed against `AICall`. |
+| `api/schemas.py` | `primitives.ai_call.AICall`, `primitives.models.get_type_args` | `TargetSpec` extracts input/output JSON schemas from an AICall. |
+| `agent_foundry_tasks.py` | `ai_models.execute.invoke`, `primitives.*`, `orchestration.*`, `responders.*` | Builds runnable tasks from `AICall` and `AgentAction`. |
+| `runners/pydantic_evals.py` | `pydantic_evals.*` (third-party) | Backend implementation. (Already a designated boundary; not a generalization concern.) |
+
+The first four bind the eval system's data model and adapter surface
+to specific agent-foundry primitives.
+
+### How to eliminate those dependencies
+
+Introduce an **adapter layer** that lives outside the eval system and
+provides everything agent-foundry-specific. The eval system then sees
+only generic descriptors and callables.
+
+```python
+# Lives in the consuming app (or in agent_foundry.orchestration), not in evals/.
+class TargetAdapter(Protocol):
+    def list_targets(self) -> list[TargetDescriptor]: ...
+    async def invoke(self, target_name: str, inputs: dict) -> dict: ...
+```
+
+`TargetDescriptor` carries only what the eval system needs to know:
+`{name, input_schema, output_schema, metadata}` — all JSON-serializable,
+no Python class references.
+
+With the adapter in place, the four agent-foundry-coupled modules above
+collapse:
+
+- `models/targets.py` — `AgentTarget`/`AICallTarget` go away. The
+  generic `EvalTarget` is just a `target_name: str` that the adapter
+  resolves at run time.
+- `registry.py` — replaced by `adapter.list_targets()`. The adapter
+  owns whatever in-process structure it likes (AICallRegistry,
+  database, hard-coded list).
+- `api/schemas.py`'s `TargetSpec` — populated from
+  `adapter.list_targets()`. No import of `AICall` or
+  `get_type_args`.
+- `agent_foundry_tasks.py` — moves out of `evals/` into the adapter.
+  The eval runner calls `adapter.invoke(target_name, inputs)`; the
+  adapter knows whether to invoke an `AICall`, an `AgentAction`, an
+  HTTP endpoint, a deterministic Python function, or anything else.
+
+Result: `evals/` imports nothing from `agent_foundry.*` outside
+itself, and could be lifted into its own package or used by projects
+unrelated to agent-foundry.
+
+### Dealing with callables
+
+Real targets often carry callable fields — `AICall.prompt` and
+`AICall.instructions` can be `str | Callable[[I], str]` that transform
+case input into the final prompt at invocation time. Generalizing the
+eval system raises the question of how the web app and the wire
+format handle these.
+
+Two distinct cases:
+
+1. **Callables internal to the target.** The callable is hidden
+   behind the target's contract. The eval system sees only the
+   target's input and output schemas; what the target does with the
+   input internally is its business. The web app never sees or
+   defines the callable.
+
+2. **Callables that are part of the eval definition.** The user wants
+   to vary the prompt, instructions, or parameters as part of the
+   eval — "try this AICall with five different prompts." Now the
+   callable is a *variable*, and the web app must be able to express
+   it. Two ways to do that without literal Python in the wire format:
+
+   - **Pre-coded variants.** The adapter registers multiple targets
+     under different names, each with its own callable baked in. The
+     web app picks among them.
+   - **Templated prompts.** The wire format carries a template string
+     (Jinja-style: `"Review: {{ document }}"`). The adapter compiles
+     it to a callable at run time, rendering against case input.
+     Users author dynamic prompts via a safe DSL — never literal
+     Python.
+
+In both cases, the eval system stays clean: targets are opaque to it,
+and the adapter resolves any callable concerns before invocation. The
+templating layer, if any, lives in the adapter — not in `evals/`.
