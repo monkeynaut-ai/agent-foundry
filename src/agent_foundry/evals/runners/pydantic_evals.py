@@ -30,12 +30,13 @@ from agent_foundry.evals.models import (
     EvaluationReport,
     EvaluatorKind,
     EvaluatorSpec,
+    Runner,
     RunResult,
     Task,
 )
 
 
-class PydanticEvalsRunner:
+class PydanticEvalsRunner(Runner):
     """Runner that delegates execution to the ``pydantic_evals`` library."""
 
     async def run(
