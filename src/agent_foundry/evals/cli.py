@@ -7,9 +7,8 @@ Usage::
         [--artifacts-dir <path>] [--workspace-volume <name>]
         [--base-image-tag <name>]
 
-The CLI is a thin wrapper over :func:`agent_foundry.evals.runner.run_suite`.
-It loads the suite module, builds a task appropriate to the suite's
-target kind, executes the suite, persists the report to
+Loads the suite module, picks the appropriate task builder for the
+target kind, dispatches to a :class:`Runner`, persists the report to
 ``<out-dir>/<run_id>/report.json``, and prints a console summary.
 
 Target-specific arg requirements:
@@ -33,13 +32,14 @@ from agent_foundry.evals.models import (
     AgentTarget,
     AICallTarget,
     EvalSuite,
+    RunResult,
+    Task,
 )
 from agent_foundry.evals.persistence import write_report
-from agent_foundry.evals.runner import (
-    Task,
+from agent_foundry.evals.runner_loader import load_runner
+from agent_foundry.evals.tasks import (
     build_invoke_ai_call_task,
     build_run_primitive_plan_task,
-    run_suite,
 )
 
 
@@ -156,6 +156,27 @@ def build_task_for_suite(suite: EvalSuite, args: argparse.Namespace) -> Task:
     raise AssertionError(f"Unhandled target kind: {type(target).__name__}")
 
 
+def render_summary(result: RunResult) -> str:
+    """Render a compact text summary of a run for the CLI."""
+    passes = 0
+    fails = 0
+    for case in result.report.cases:
+        if case.assertions and all(a.value for a in case.assertions):
+            passes += 1
+        else:
+            fails += 1
+    total_cases = len(result.report.cases)
+    duration = (result.ended_at - result.started_at).total_seconds()
+    lines = [
+        f"Run: {result.run_id}",
+        f"Suite: {result.suite_name}",
+        f"Cases: {total_cases} ({passes} passed, {fails} failed/unscored, "
+        f"{len(result.report.failures)} errored)",
+        f"Duration: {duration:.2f}s",
+    ]
+    return "\n".join(lines)
+
+
 async def _run(args: argparse.Namespace) -> int:
     suite = load_suite(args.suite_path)
 
@@ -165,10 +186,10 @@ async def _run(args: argparse.Namespace) -> int:
         suite = suite.model_copy(update={"invocations_per_case": args.invocations})
 
     task = build_task_for_suite(suite, args)
-    result = await run_suite(suite, task=task, max_concurrency=args.max_concurrency)
+    runner = load_runner()
+    result = await runner.run(suite, task=task, max_concurrency=args.max_concurrency)
 
-    # Render then persist.
-    result.report.print(include_input=True, include_output=True)
+    print(render_summary(result))
     report_path = write_report(result, args.out_dir)
     print(f"\nReport written to: {report_path}")
     return 0

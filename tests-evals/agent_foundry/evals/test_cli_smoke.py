@@ -22,10 +22,14 @@ _SUITE_MODULE = '''
 """Minimal suite for CLI smoke test."""
 
 from pydantic import BaseModel
-from pydantic_evals import Case, Dataset
-from pydantic_evals.evaluators import EqualsExpected
 
-from agent_foundry.evals.models import AgentTarget, EvalSuite
+from agent_foundry.evals.models import (
+    AgentTarget,
+    Case,
+    Dataset,
+    EqualsExpectedSpec,
+    EvalSuite,
+)
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
 
@@ -53,13 +57,13 @@ _agent = AgentAction[SmokeInput, SmokeOutput](
 suite = EvalSuite(
     name="smoke_suite",
     target=AgentTarget(agent=_agent),
-    dataset=Dataset[SmokeInput, SmokeOutput, None](
+    dataset=Dataset(
         name="smoke_ds",
         cases=[
             Case(name="upper_a", inputs=SmokeInput(text="a"), expected_output=SmokeOutput(result="A")),
             Case(name="upper_b", inputs=SmokeInput(text="b"), expected_output=SmokeOutput(result="B")),
         ],
-        evaluators=[EqualsExpected()],
+        evaluators=[EqualsExpectedSpec()],
     ),
     invocations_per_case=2,
 )

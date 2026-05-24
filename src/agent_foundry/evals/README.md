@@ -1,57 +1,67 @@
-# Agent Foundry Evals — Design Notes
+# Agent Foundry Evals
 
-## The pydantic-evals coupling problem
+A typed, declarative eval system for the primitives Agent Foundry
+defines. Products built on Agent Foundry
+use this package to score the behavior of their AI calls and agents
+against curated datasets.
 
-Agent Foundry currently uses Pydantic-Evals as both the **execution
-engine** (`Dataset.evaluate`, async concurrency, evaluator framework,
-report assembly) **and** part of its own data model — `EvalSuite`
-embeds a `pydantic_evals.Dataset`, `RunResult` embeds a
-`pydantic_evals.EvaluationReport`. Any module that touches those
-types transitively loads the entire library at import time.
+The package provides:
 
-Two consequences fall out of this:
+- **Declarative suite types** — `EvalSuite`, `Case`, `Dataset`,
+  `Evaluator` specs, `RunResult` — pure agent-foundry Pydantic models.
+  Suite files in your app are Python data, not framework calls.
+- **Two target kinds** — `AICallTarget` evaluates an `AICall` (one
+  inference call producing structured output) via direct invocation;
+  `AgentTarget` evaluates an `AgentAction` (multi-turn containerized
+  agent) through the full orchestration path.
+- **Pluggable runner backends** — execution goes through the `Runner`
+  Protocol. The default backend wraps Pydantic-Evals; alternative
+  backends (DeepEval, Inspect, custom) can be added by dropping a new
+  file under `runners/`.
+- **App-side registry** — `AICallRegistry` is the opt-in surface for
+  exposing AICalls to the eval system (today consumed by the API
+  server; future consumers include the web app).
+- **CLI and HTTP API** — `pdm eval` runs a suite file; `pdm eval-api`
+  boots a FastAPI server that exposes registered AICalls as
+  evaluation targets.
+- **Persistent reports** — each run is written as a self-describing
+  JSON document, ready for downstream viewers.
 
-1. **Memory cost multiplied across processes.** Pytest runs with
-   `-n 16` xdist workers; each is a separate interpreter that
-   loads pydantic-evals independently. Anything in the runtime web
-   app that needs even an enum from `evals.models` pulls the
-   library into every server worker.
-2. **Single-vendor lock-in.** The library isn't just a backend choice
-   — it's woven into our public type surface. Replacing it, or
-   supporting a second eval framework alongside it, would ripple
-   through models, the API server, downstream consumers, and stored
-   reports.
+## Architecture: framework-agnostic by construction
 
-## The architecture
+The eval system treats the third-party execution engine
+(Pydantic-Evals today, possibly others tomorrow) as **infrastructure**,
+not data model. Agent-foundry owns every type that crosses a public
+or persistent boundary; backends translate to and from their own
+representations only at the moment of execution.
 
-Treat pydantic-evals as **execution infrastructure**, not data model.
-Three principles:
+The runtime contract is the `Runner` Protocol (`models/runner.py`).
+Concrete runners live in `runners/` and are the only modules in
+agent-foundry that may import third-party eval libraries. Callers
+resolve a runner at startup via `runner_loader.load_runner(spec)`,
+which takes a `module:Class` string and instantiates dynamically — no
+caller statically depends on any specific backend.
 
-- **Models layer** owns the declarative contracts: `EvalSuite`,
-  `Case`, `Dataset`, `Evaluator`, `RunResult`, and the `Runner`
-  Protocol. Pure Pydantic; zero third-party eval-library imports.
-- **Runners layer** owns the execution backends. Each file is one
-  implementation of the `Runner` Protocol. Third-party eval libraries
-  may be imported here, and only here.
-- **API and other consumers** depend on the model layer (including
-  the `Runner` Protocol) but never statically import a concrete
-  runner. Dependency injection at app construction binds a specific
-  runner; concrete backends are resolved at startup via dynamic
-  `importlib` lookup from a config-declared `module:Class` string —
-  the same pattern the registry already uses.
+What this buys:
 
-This mirrors the platform's existing pluggable-backend pattern:
-`InferenceProvider` isolates inference backends; per-primitive
-executors isolate execution mechanisms; the registry isolates app
-code from the eval system. Evals follow the same shape.
-
-## Package layout
+- **Swap eval frameworks** by writing one new file in `runners/`.
+  Models, API, registry, suite files, and downstream consumers don't
+  change.
+- **Multi-runner coexistence** — AICall evals could route to one
+  backend, agent-system evals to another, all behind one declarative
+  surface.
+- **Serializable suite specs** — every model is pure Pydantic, so
+  suites round-trip through JSON cleanly. The future web app
+  persists suite definitions in a database and rehydrates via
+  `model_validate`; the models *are* the spec.
+- **Light import graph by default** — the API server, the registry,
+  and any caller that only inspects metadata never load the heavy
+  eval framework. Memory cost is paid once, in the runner process,
+  when an eval actually runs.
 
 ```
 src/agent_foundry/evals/
-├── README.md
 ├── __init__.py
-├── __main__.py                  ← bootstrap: loads config → resolves backends → builds app → uvicorn.run
 │
 ├── models/                      ← declarative contracts (pure Pydantic)
 │   ├── __init__.py              ← re-exports
@@ -64,7 +74,10 @@ src/agent_foundry/evals/
 │
 ├── registry.py                  ← AICallRegistry (app-side opt-in surface)
 ├── persistence.py               ← JSON read/write of RunResult
+├── responder.py                 ← RaiseOnInvokeResponder (agent-target eval path)
+├── tasks.py                     ← build_run_primitive_plan_task, build_invoke_ai_call_task
 ├── cli.py                       ← command-line entry
+├── runner_loader.py             ← resolves a runner module:Class spec to an instance
 │
 ├── runners/                     ← execution backends
 │   ├── __init__.py
@@ -72,77 +85,137 @@ src/agent_foundry/evals/
 │
 └── api/                         ← HTTP surface
     ├── __init__.py
-    ├── app.py                   ← create_app(registry, runner)
-    ├── config.py
-    ├── registry_loader.py
-    ├── runner_loader.py
-    ├── schemas.py
-    └── targets.py
+    ├── __main__.py              ← bootstrap: load config → load registry → build app → uvicorn.run
+    ├── app.py                   ← create_app(registry)
+    ├── config.py                ← TOML loader for agent_foundry.config
+    ├── registry_loader.py       ← resolves the registry module:VAR spec
+    ├── schemas.py               ← TargetSpec
+    └── targets.py               ← /targets routes
 ```
 
-Each directory boundary signals a contract:
+## Using the eval system
 
-- **Top-level files** (`registry.py`, `persistence.py`, `cli.py`) =
-  orthogonal services that consume the model layer only.
-- **`models/`** = declarative public API. Stable surface. No
-  third-party eval imports.
-- **`runners/`** = pluggable backends. New backend = new file. No
-  other code in the package may import these directly.
-- **`api/`** = HTTP surface. Depends on the model layer + registry.
-  Resolves concrete backends dynamically via the loader modules.
-- **`__main__.py`** at the package root = the one wiring point.
-  Reads config, instantiates registry and runner, builds the app,
-  launches uvicorn.
+### 1. Configure
+
+Place an `agent_foundry.config` (TOML) at your app's repo root:
+
+```toml
+registry = "your_app.evals.registration:EVAL_REGISTRY"
+
+[api]
+host = "127.0.0.1"
+port = 8000
+```
+
+The `registry` value is a `module:attribute` string pointing at your
+app's `AICallRegistry` instance.
+
+### 2. Register evaluable AICalls
+
+In your app, instantiate an `AICallRegistry` and register each AICall
+you want exposed to the eval system:
+
+```python
+# your_app/evals/registration.py
+from agent_foundry.evals.registry import AICallRegistry
+from your_app.ai_calls import design_review, work_router
+
+EVAL_REGISTRY = AICallRegistry()
+EVAL_REGISTRY.register("design_review", design_review)
+EVAL_REGISTRY.register("work_router", work_router)
+```
+
+Apps choose which AICalls to expose. Unregistered AICalls are
+invisible to the eval system.
+
+### 3. Define a suite
+
+A suite is a Python file that exports a `suite: EvalSuite`:
+
+```python
+from agent_foundry.evals.models import (
+    AICallTarget, Case, Dataset, EqualsExpectedSpec, EvalSuite,
+)
+from your_app.ai_calls import design_review
+
+suite = EvalSuite(
+    name="design_review_v1",
+    target=AICallTarget(ai_call=design_review),
+    dataset=Dataset(
+        name="design_review_cases_v1",
+        cases=[
+            Case(name="good", inputs=..., expected_output=...),
+            Case(name="bad",  inputs=..., expected_output=...),
+        ],
+        evaluators=[EqualsExpectedSpec()],
+    ),
+    invocations_per_case=3,
+)
+```
+
+### 4. Run
+
+Via CLI, against any suite file:
+
+```bash
+pdm run python -m agent_foundry.evals.cli path/to/suite.py \
+    --out-dir ./eval-runs
+```
+
+Reports are written to `./eval-runs/<run_id>/report.json`.
+
+Via the HTTP API:
+
+```bash
+pdm eval-api          # boots the FastAPI server on the configured port
+curl http://127.0.0.1:8000/targets
+curl http://127.0.0.1:8000/targets/design_review
+```
+
+Today the API serves target discovery (`/targets`). The roadmap is to
+add a `/runs` endpoint for executing suites over HTTP, then a web app
+that uses both endpoints to author suites in a UI, run them, and
+browse results — all consuming the same `AICallRegistry` apps already
+expose.
 
 ## Boundary enforcement
 
-```toml
-# Third-party eval libraries confined to runners/
-[[tool.importlinter.contracts]]
-source_modules = ["agent_foundry"]
-forbidden_modules = ["pydantic_evals", "deepeval", "inspect_ai"]
-ignore_imports = ["agent_foundry.evals.runners.*"]
+Two mechanisms protect the architecture from drift:
 
-# API surface depends only on declarative types + registry
+**import-linter contract.** Catches direct API coupling — any module
+in agent-foundry importing `pydantic_evals` outside of
+`runners.pydantic_evals` fails CI.
+
+```toml
+[tool.importlinter]
+root_packages = ["agent_foundry"]
+include_external_packages = true
+
 [[tool.importlinter.contracts]]
-source_modules = ["agent_foundry.evals.api"]
-forbidden_modules = ["agent_foundry.evals.runners", "agent_foundry.evals.cli"]
+name = "Third-party eval libraries confined to evals.runners"
+type = "forbidden"
+source_modules = ["agent_foundry"]
+forbidden_modules = ["pydantic_evals"]
+ignore_imports = [
+    "agent_foundry.evals.runners.pydantic_evals -> pydantic_evals",
+]
 ```
 
-Future PRs that re-couple the API to a runner implementation, or that
-import pydantic-evals outside its designated backend file, fail CI.
-The architectural intent becomes a contract the build checks for us.
+`pdm lint-imports` runs on pre-commit and pre-push, so the contract
+is checked before every push.
 
-## What we gain
+**Runtime meta-path blocker (`tests/conftest.py`).** Catches
+transitive loads — installs a `sys.meta_path` finder that raises
+`ImportError` if anything during a `tests/` worker's lifetime
+attempts to import `pydantic_evals`. Fires for both static-import
+chains caught at collection time and dynamic loads during test
+execution. The error surfaces as a normal test failure (propagates
+cleanly under xdist).
 
-**Eval-framework agnosticism.** Pydantic-evals becomes one backend
-among potentially many. Swap it for DeepEval, Inspect, OpenAI Evals,
-LangSmith, or a custom runner by rewriting one module. Models, API
-server, registry, suite files, and downstream consumers (Archipelago,
-the future eval web app) don't change.
-
-**Multi-runner coexistence.** Different suite kinds can route to
-different runners. AICall evaluations might use pydantic-evals for
-its structured-output ergonomics; agent-system evaluations might use
-something with richer trace tooling; regression suites might use a
-deterministic in-house runner. The declarative layer stays uniform.
-
-**Ecosystem resilience.** The Python eval-framework landscape is
-volatile — new entrants regularly, abandonment risk on any single
-one. Decoupling protects the platform from any one vendor's roadmap.
-
-**First-class serializable specs.** Pure agent-foundry Pydantic
-types round-trip through JSON cleanly. The future eval web app
-stores suite definitions in a database and rehydrates them via
-`model_validate` — no parallel "spec layer" needed. The models
-*are* the spec.
-
-**Lightweight import graph by default.** The API server, the
-registry, and any caller that only inspects suite metadata never
-load pydantic-evals at all. Memory cost is paid once, in the runner
-process, at execution time — not by every consumer that happens to
-touch a model.
-
-**Lint-enforced boundary.** The architectural intent becomes a
-contract the build checks for us, not a discipline we have to
-remember.
+**Test directory split.** Tests that exercise the runner backend (and
+therefore load the heavy library) live under `tests-evals/` and run
+via `pdm test-evals`. The main `tests/` tree is guarded by the
+meta-path blocker: any test added there that triggers a heavy load
+fails immediately, telling the author to move it to `tests-evals/`.
+This keeps the 16 xdist workers in `pdm test-unit` free of the
+per-worker memory cost of the eval framework.

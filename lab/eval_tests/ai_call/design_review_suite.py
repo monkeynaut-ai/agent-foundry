@@ -5,11 +5,15 @@ Run with::
     ./lab/eval_tests/run_design_review_eval.sh
 """
 
-from lab.eval_tests.ai_call.design_review import DesignInput, DesignReviewOutput, design_review
-from pydantic_evals import Case, Dataset
-from pydantic_evals.evaluators import IsInstance
+from lab.eval_tests.ai_call.design_review import DesignInput, design_review
 
-from agent_foundry.evals.models import AICallTarget, EvalSuite
+from agent_foundry.evals.models import (
+    AICallTarget,
+    Case,
+    Dataset,
+    EvalSuite,
+    IsInstanceSpec,
+)
 
 _GOOD_DESIGN = """\
 ## Feature: Idempotent payment retry
@@ -38,7 +42,7 @@ or failure.
 suite = EvalSuite(
     name="design_review",
     target=AICallTarget(ai_call=design_review),
-    dataset=Dataset[DesignInput, DesignReviewOutput, None](
+    dataset=Dataset(
         name="design_review_v1",
         cases=[
             Case(
@@ -50,7 +54,7 @@ suite = EvalSuite(
                 inputs=DesignInput(document=_BAD_DESIGN),
             ),
         ],
-        evaluators=[IsInstance(type_name="DesignReviewOutput")],
+        evaluators=[IsInstanceSpec(type_name="DesignReviewOutput")],
     ),
     invocations_per_case=1,
 )

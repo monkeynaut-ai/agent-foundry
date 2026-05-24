@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from agent_foundry.evals.models import EvalTargetKind
 from agent_foundry.primitives.ai_call import AICall
@@ -19,8 +19,6 @@ from agent_foundry.primitives.models import get_type_args
 
 class TargetSpec(BaseModel):
     """Public, JSON-serializable description of an evaluation target."""
-
-    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1)
     kind: EvalTargetKind
