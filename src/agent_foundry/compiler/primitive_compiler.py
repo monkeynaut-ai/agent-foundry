@@ -94,6 +94,18 @@ def register_compiler[P: Primitive](
 # -- Helpers --
 
 
+def _is_async_callable(obj: Any) -> bool:
+    """Return True if obj is an async callable.
+
+    Handles both ``async def`` functions and callable objects whose
+    ``__call__`` method is a coroutine function.
+    """
+    if inspect.iscoroutinefunction(obj):
+        return True
+    call = getattr(type(obj), "__call__", None)  # noqa: B004 — not a callability test; need the method to inspect
+    return call is not None and inspect.iscoroutinefunction(call)
+
+
 def _derive_state_type(input_type: type[BaseModel], output_type: type[BaseModel]) -> type:
     """Derive a TypedDict(total=False) from the union of I and O model fields."""
     fields: dict[str, Any] = {}
@@ -462,9 +474,7 @@ def _compile_retry(
         retry.exception_policy == RetryExceptionPolicy.CATCH_AND_CONTINUE
     )
     on_exhaustion_fn = retry.on_exhaustion
-    on_exhaustion_is_async = on_exhaustion_fn is not None and inspect.iscoroutinefunction(
-        on_exhaustion_fn
-    )
+    on_exhaustion_is_async = on_exhaustion_fn is not None and _is_async_callable(on_exhaustion_fn)
 
     # Wrapper node: retry loop with scoped body execution
     node_id = f"{ctx.prefix}_retry"
@@ -579,7 +589,7 @@ def _compile_agent_action(
     # async node callables and runs sync ones via ``asyncio.to_thread``
     # — giving both sync and async executors correct semantics without
     # a blanket coroutine-wrap on the sync path.
-    executor_is_async = inspect.iscoroutinefunction(executor)
+    executor_is_async = _is_async_callable(executor)
 
     def _validate_typed(result: Any) -> BaseModel:
         if not isinstance(result, output_type):
@@ -668,7 +678,12 @@ def _compile_ai_call(
     input_type, output_type = get_type_args(action)
 
     executor = action.executor
-    executor_is_async = executor is not None and inspect.iscoroutinefunction(executor)
+
+    if executor is not None and not _is_async_callable(executor):
+        raise PrimitiveCompilationError(
+            f"AICall {node_id}: executor must be async (async def or class with async __call__)",
+            primitive_type=node_id,
+        )
 
     def _validate_typed(result: Any) -> BaseModel:
         if not isinstance(result, output_type):
@@ -702,11 +717,14 @@ def _compile_ai_call(
             try:
                 if executor is None:
                     result = await invoke_ai_call(primitive=action, model_input=model_input)
-                elif executor_is_async:
-                    result = await executor(primitive=action, model_input=model_input)
                 else:
-                    result = executor(primitive=action, model_input=model_input)
+                    result = await executor(primitive=action, model_input=model_input)
             except TypeError as exc:
+                # TypeError here typically means the executor's return value was not
+                # awaitable — e.g. a sync callable that passed the _is_async_callable
+                # check via __call__ but whose invocation returned a plain object.
+                # This can happen if __call__ is not actually async despite the class
+                # structure suggesting it is.
                 raise PrimitiveCompilationError(
                     f"AICall {node_id}: {exc}",
                     primitive_type=node_id,

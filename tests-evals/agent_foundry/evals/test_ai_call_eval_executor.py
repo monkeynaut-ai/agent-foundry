@@ -45,11 +45,11 @@ def _never_called_entry() -> ModelEntry:
 
 class TestAICallEvalExecutor:
     @pytest.mark.asyncio
-    async def test_b6_custom_sync_executor_runs_not_invoke_ai_call(self) -> None:
+    async def test_b6_custom_executor_runs_not_invoke_ai_call(self) -> None:
         """B6: eval task calls the custom executor, not the underlying provider."""
         calls: list[dict] = []
 
-        def spy_executor(*, primitive: Any, model_input: Any) -> _Output:
+        async def spy_executor(*, primitive: Any, model_input: Any) -> _Output:
             calls.append({"primitive": primitive, "model_input": model_input})
             return _Output(result="from-spy")
 

@@ -29,18 +29,18 @@ class AICall[I: BaseModel, O: BaseModel](Primitive[I, O], arbitrary_types_allowe
     model: ModelEntry | Callable[[I], ModelEntry]
     parameters: InferenceParameters | Callable[[I], InferenceParameters]
     timeout_seconds: int = Field(default=30, ge=1)
-    executor: Callable[..., O | Awaitable[O]] | None = None
-    """Callable that performs the inference call.
+    executor: Callable[..., Awaitable[O]] | None = None
+    """Async callable that performs the inference call.
 
     When None, the compiler uses ``invoke_ai_call`` (the default LLM provider
     path). Pass a custom callable to mock inference in tests, wrap with metrics,
     swap backends, or synthesize fallback verdicts on exception.
 
-    Contract: ``(*, primitive: AICall[I, O], model_input: I) -> O | Awaitable[O]``.
+    Contract: ``async (*, primitive: AICall[I, O], model_input: I) -> O``.
     Parameter names match ``invoke_ai_call`` so consumers can wrap it directly:
     ``return await invoke_ai_call(primitive=primitive, model_input=model_input)``.
-    Both sync and async callables are accepted; the compiler detects the variant
-    at compile time.
+    Must be async — inference is always I/O. The compiler enforces this at
+    compile time and raises ``PrimitiveCompilationError`` for sync callables.
     """
 
 

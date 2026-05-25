@@ -136,45 +136,21 @@ class TestDefaultExecutor:
 
 
 # ---------------------------------------------------------------------------
-# B2 — sync custom executor
+# B2 — sync executor rejected at compile time
 # ---------------------------------------------------------------------------
 
 
-class TestSyncCustomExecutor:
-    def test_sync_executor_called_with_keyword_args(self) -> None:
-        """B2: sync executor receives (*, primitive, model_input) and its return value is used."""
-        received: list[dict] = []
+class TestSyncExecutorRejected:
+    def test_sync_executor_raises_at_compile_time(self) -> None:
+        """B2: sync executor raises PrimitiveCompilationError at compile_runtime_plan."""
 
-        def my_executor(*, primitive: Any, model_input: Any) -> _Output:
-            received.append({"primitive": primitive, "model_input": model_input})
-            return _Output(result="from-sync-executor")
+        def my_sync_executor(*, primitive: Any, model_input: Any) -> _Output:  # type: ignore[return]
+            return _Output(result="sync")
 
-        call = _make_call(executor=my_executor)
-        graph = compile_runtime_plan(PrimitivePlan(call))
-        result = asyncio.run(graph.ainvoke({"text": "hi"}))
+        call = _make_call(executor=my_sync_executor)  # type: ignore[arg-type]
 
-        assert len(received) == 1
-        assert received[0]["primitive"] is call
-        assert received[0]["model_input"].text == "hi"
-        assert result["result"] == "from-sync-executor"
-
-    def test_sync_executor_provider_not_called(self) -> None:
-        """B2: when executor is set, the underlying provider is bypassed."""
-        entry, provider = _capturing_entry()
-
-        def my_executor(*, primitive: Any, model_input: Any) -> _Output:
-            return _Output(result="custom")
-
-        call = AICall[_Input, _Output](
-            model_input=ModelInput[_Input](instructions="s", prompt="p"),
-            parameters=InferenceParameters(max_tokens=16),
-            model=entry,
-            executor=my_executor,
-        )
-        graph = compile_runtime_plan(PrimitivePlan(call))
-        asyncio.run(graph.ainvoke({"text": "x"}))
-
-        assert len(provider.calls) == 0
+        with pytest.raises(PrimitiveCompilationError, match="executor must be async"):
+            compile_runtime_plan(PrimitivePlan(call))
 
 
 # ---------------------------------------------------------------------------
@@ -183,8 +159,8 @@ class TestSyncCustomExecutor:
 
 
 class TestAsyncCustomExecutor:
-    def test_async_executor_awaited(self) -> None:
-        """B3: async executor is awaited; result used as AICall output."""
+    def test_async_executor_called_with_keyword_args(self) -> None:
+        """B3: async executor receives (*, primitive, model_input) and its return value is used."""
         received: list[dict] = []
 
         async def my_async_executor(*, primitive: Any, model_input: Any) -> _Output:
@@ -193,11 +169,30 @@ class TestAsyncCustomExecutor:
 
         call = _make_call(executor=my_async_executor)
         graph = compile_runtime_plan(PrimitivePlan(call))
-        result = asyncio.run(graph.ainvoke({"text": "async-input"}))
+        result = asyncio.run(graph.ainvoke({"text": "hi"}))
 
         assert len(received) == 1
-        assert received[0]["model_input"].text == "async-input"
+        assert received[0]["primitive"] is call
+        assert received[0]["model_input"].text == "hi"
         assert result["result"] == "from-async-executor"
+
+    def test_async_executor_provider_not_called(self) -> None:
+        """B3: when executor is set, the underlying provider is bypassed."""
+        entry, provider = _capturing_entry()
+
+        async def my_async_executor(*, primitive: Any, model_input: Any) -> _Output:
+            return _Output(result="custom")
+
+        call = AICall[_Input, _Output](
+            model_input=ModelInput[_Input](instructions="s", prompt="p"),
+            parameters=InferenceParameters(max_tokens=16),
+            model=entry,
+            executor=my_async_executor,
+        )
+        graph = compile_runtime_plan(PrimitivePlan(call))
+        asyncio.run(graph.ainvoke({"text": "x"}))
+
+        assert len(provider.calls) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +207,7 @@ class TestExecutorOutputValidation:
         class _Wrong(BaseModel):
             other: str
 
-        def bad_executor(*, primitive: Any, model_input: Any) -> Any:
+        async def bad_executor(*, primitive: Any, model_input: Any) -> Any:
             return _Wrong(other="nope")
 
         call = _make_call(executor=bad_executor)
