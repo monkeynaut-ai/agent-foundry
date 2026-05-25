@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import copy
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, NamedTuple, TypedDict, cast
 
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ValidationError
 
+# invoke_ai_call is safe at module level: invoke.py imports AICall only under
+# TYPE_CHECKING, so no runtime cycle exists.
+from agent_foundry.ai_models.execute.invoke import invoke_ai_call
+from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+from agent_foundry.orchestration.run_context import current_run_context, require_current_run_context
 from agent_foundry.primitives.ai_call import AICall
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
@@ -19,10 +27,16 @@ from agent_foundry.primitives.models import (
     Loop,
     Primitive,
     Retry,
+    RetryExceptionPolicy,
     Sequence,
     get_type_args,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.primitives.retry_types import (
+    AttemptFailure,
+    RetryExhaustion,
+    RetryExhaustionReason,
+)
 from agent_foundry.telemetry.spans import emit_span
 
 # -- Compile context and result --
@@ -187,8 +201,6 @@ def compile_runtime_plan(plan: PrimitivePlan) -> Any:
 def _compile_function_action(
     graph: StateGraph, action: FunctionAction, ctx: CompileContext
 ) -> CompileResult:
-    import inspect
-
     node_id = ctx.prefix
     input_type, _ = get_type_args(action)
     # ``FunctionAction.function`` is annotated ``(state) -> O``. Product
@@ -205,9 +217,6 @@ def _compile_function_action(
         # lifecycle events regardless of callable arity. When no run is
         # in progress (e.g. unit tests that compile nodes without a run
         # context), skip event emission.
-        from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
-        from agent_foundry.orchestration.run_context import current_run_context
-
         ctx_opt = current_run_context.get()
         if ctx_opt is not None:
             ctx_opt.lifecycle_writer.append(
@@ -446,19 +455,14 @@ def _compile_retry(
     body_graph.add_edge(body_exit, END)
     compiled_body = body_graph.compile()
 
-    import copy as _copy
-    import inspect as _inspect
-
-    from agent_foundry.primitives.models import RetryExceptionPolicy as _RetryExceptionPolicy
-
     until_fn = retry.until
     max_attempts = retry.max_attempts
     # Precompute as a bool so the closure captures a plain value, not the enum class.
     treat_body_exception_as_failure = (
-        retry.exception_policy == _RetryExceptionPolicy.CATCH_AND_CONTINUE
+        retry.exception_policy == RetryExceptionPolicy.CATCH_AND_CONTINUE
     )
     on_exhaustion_fn = retry.on_exhaustion
-    on_exhaustion_is_async = on_exhaustion_fn is not None and _inspect.iscoroutinefunction(
+    on_exhaustion_is_async = on_exhaustion_fn is not None and inspect.iscoroutinefunction(
         on_exhaustion_fn
     )
 
@@ -466,23 +470,13 @@ def _compile_retry(
     node_id = f"{ctx.prefix}_retry"
 
     async def retry_node(state: dict[str, Any]) -> dict[str, Any]:
-        from datetime import UTC, datetime
-
-        from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
-        from agent_foundry.orchestration.run_context import current_run_context
-        from agent_foundry.primitives.retry_types import (
-            AttemptFailure,
-            RetryExhaustion,
-            RetryExhaustionReason,
-        )
-
         ctx_opt = current_run_context.get()
         current_state = dict(state)
         attempt_failures: list[AttemptFailure] = []
         successful_completions = 0
 
         for attempt_num in range(max_attempts):
-            snapshot = _copy.deepcopy(current_state)
+            snapshot = copy.deepcopy(current_state)
             try:
                 result = await compiled_body.ainvoke(dict(current_state))  # type: ignore[arg-type]
                 current_state.update(_scope_out(result, body_out))
@@ -580,14 +574,12 @@ def _compile_agent_action(
     instructions_provider = action.instructions_provider
     executor = action.executor
 
-    import inspect as _inspect
-
     # Detect async executors at compile time so we can expose the node
     # to LangGraph as a coroutine function. ``graph.ainvoke`` awaits
     # async node callables and runs sync ones via ``asyncio.to_thread``
     # — giving both sync and async executors correct semantics without
     # a blanket coroutine-wrap on the sync path.
-    executor_is_async = _inspect.iscoroutinefunction(executor)
+    executor_is_async = inspect.iscoroutinefunction(executor)
 
     def _validate_typed(result: Any) -> BaseModel:
         if not isinstance(result, output_type):
@@ -602,11 +594,6 @@ def _compile_agent_action(
         model_input = _validate_scoped_input(state, input_type, node_id)
         prompt = prompt_builder(model_input)
         instructions = instructions_provider(model_input)
-
-        # Resolve ContextVar at invocation time. Deferred import avoids
-        # any risk of an orchestration -> compiler cycle.
-        from agent_foundry.orchestration.run_context import require_current_run_context
-
         run_ctx = require_current_run_context()
         return action, prompt, instructions, run_ctx, model_input
 
@@ -677,13 +664,11 @@ def _compile_ai_call(
     action: AICall,
     ctx: CompileContext,
 ) -> CompileResult:
-    import inspect as _inspect
-
     node_id = ctx.prefix
     input_type, output_type = get_type_args(action)
 
     executor = action.executor
-    executor_is_async = executor is not None and _inspect.iscoroutinefunction(executor)
+    executor_is_async = executor is not None and inspect.iscoroutinefunction(executor)
 
     def _validate_typed(result: Any) -> BaseModel:
         if not isinstance(result, output_type):
@@ -695,8 +680,6 @@ def _compile_ai_call(
         return result
 
     async def node_fn(state: dict[str, Any]) -> dict[str, Any]:
-        from agent_foundry.orchestration.run_context import current_run_context
-
         model_input = _validate_scoped_input(state, input_type, node_id)
 
         ctx_opt = current_run_context.get()
@@ -718,8 +701,6 @@ def _compile_ai_call(
             handle.set_operation_name("chat")
             try:
                 if executor is None:
-                    from agent_foundry.ai_models.execute.invoke import invoke_ai_call
-
                     result = await invoke_ai_call(primitive=action, model_input=model_input)
                 elif executor_is_async:
                     result = await executor(primitive=action, model_input=model_input)
