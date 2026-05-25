@@ -68,12 +68,12 @@ class RetryExceptionPolicy(StrEnum):
     """Controls what Retry does when its body raises an exception.
 
     - PROPAGATE: re-raise immediately (default, preserves existing behaviour).
-    - TREAT_AS_FAILURE: consume the attempt, restore pre-attempt state,
-      continue to the next attempt as if the body returned an unmet condition.
+    - CATCH_AND_CONTINUE: catch the exception, consume the attempt, restore
+      pre-attempt state, and continue to the next attempt.
     """
 
     PROPAGATE = "propagate"
-    TREAT_AS_FAILURE = "treat_as_failure"
+    CATCH_AND_CONTINUE = "catch_and_continue"
 
 
 class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):

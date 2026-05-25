@@ -2,8 +2,8 @@
 
 Covers:
   - PROPAGATE default: existing behaviour unchanged (A1)
-  - TREAT_AS_FAILURE: exception consumed, state rolled back, retry continues (A2, A4)
-  - Full exhaustion under TREAT_AS_FAILURE: on_exhaustion called when set (A3)
+  - CATCH_AND_CONTINUE: exception consumed, state rolled back, retry continues (A2, A4)
+  - Full exhaustion under CATCH_AND_CONTINUE: on_exhaustion called when set (A3)
   - Lifecycle events emitted per failed attempt (A5)
   - Existing Retry tests pass unchanged (A6 verified by running the full suite)
   - on_exhaustion: sync, async, CONDITION_NOT_MET, BODY_EXCEPTIONS, MIXED, None fallback
@@ -179,7 +179,7 @@ class TestPropagate:
 
 
 # ---------------------------------------------------------------------------
-# A2 — TREAT_AS_FAILURE: exception consumed, next attempt succeeds
+# A2 — CATCH_AND_CONTINUE: exception consumed, next attempt succeeds
 # ---------------------------------------------------------------------------
 
 
@@ -191,7 +191,7 @@ class TestTreatAsFailure:
             max_attempts=3,
             until=lambda s: s.done,
             body=_counter_body(succeed_on_attempt=2),
-            exception_policy=RetryExceptionPolicy.TREAT_AS_FAILURE,
+            exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
         )
         result = await _compile_and_run(retry, _S(value=0))
         assert result.done is True
@@ -199,13 +199,13 @@ class TestTreatAsFailure:
 
     @pytest.mark.asyncio
     async def test_all_attempts_raise_exits_silently_when_no_hook(self) -> None:
-        """TREAT_AS_FAILURE + all raise + no on_exhaustion → silent exit with pre-Retry state."""
+        """CATCH_AND_CONTINUE + all raise + no on_exhaustion → silent exit with pre-Retry state."""
         initial = _S(value=42, done=False)
         retry = Retry[_S, _S](
             max_attempts=2,
             until=lambda s: s.done,
             body=_raising_body(RuntimeError("always")),
-            exception_policy=RetryExceptionPolicy.TREAT_AS_FAILURE,
+            exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
         )
         result = await _compile_and_run(retry, initial)
         # State unchanged from input (all rollbacks restored to initial)
@@ -214,7 +214,7 @@ class TestTreatAsFailure:
 
 
 # ---------------------------------------------------------------------------
-# A3 — on_exhaustion called when all attempts raise under TREAT_AS_FAILURE
+# A3 — on_exhaustion called when all attempts raise under CATCH_AND_CONTINUE
 # ---------------------------------------------------------------------------
 
 
@@ -232,7 +232,7 @@ class TestOnExhaustionBodyExceptions:
             max_attempts=2,
             until=lambda s: s.done,
             body=_raising_body(RuntimeError("fail")),
-            exception_policy=RetryExceptionPolicy.TREAT_AS_FAILURE,
+            exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
             on_exhaustion=handler,
         )
         result = await _compile_and_run(retry, _S(value=10))
@@ -262,7 +262,7 @@ class TestOnExhaustionBodyExceptions:
             max_attempts=1,
             until=lambda s: s.done,
             body=_raising_body(ValueError("async-fail")),
-            exception_policy=RetryExceptionPolicy.TREAT_AS_FAILURE,
+            exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
             on_exhaustion=async_handler,
         )
         result = await _compile_and_run(retry, _S())
@@ -342,7 +342,7 @@ class TestOnExhaustionMixed:
             max_attempts=3,
             until=lambda s: s.done,
             body=FunctionAction[_S, _S](function=mixed_body),
-            exception_policy=RetryExceptionPolicy.TREAT_AS_FAILURE,
+            exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
             on_exhaustion=handler,
         )
         await _compile_and_run(retry, _S(value=0))
@@ -377,7 +377,7 @@ class TestStateRollback:
             max_attempts=3,
             until=lambda s: s.done,
             body=FunctionAction[_S, _S](function=body_fn),
-            exception_policy=RetryExceptionPolicy.TREAT_AS_FAILURE,
+            exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
         )
         result = await _compile_and_run(retry, _S(value=5))
 
@@ -402,7 +402,7 @@ class TestLifecycleEvents:
             max_attempts=3,
             until=lambda s: s.done,
             body=_counter_body(succeed_on_attempt=3),
-            exception_policy=RetryExceptionPolicy.TREAT_AS_FAILURE,
+            exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
         )
         await _compile_and_run(retry, _S(), writer=writer)
 

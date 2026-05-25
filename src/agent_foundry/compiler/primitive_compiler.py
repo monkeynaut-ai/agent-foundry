@@ -455,7 +455,7 @@ def _compile_retry(
     max_attempts = retry.max_attempts
     # Precompute as a bool so the closure captures a plain value, not the enum class.
     treat_body_exception_as_failure = (
-        retry.exception_policy == _RetryExceptionPolicy.TREAT_AS_FAILURE
+        retry.exception_policy == _RetryExceptionPolicy.CATCH_AND_CONTINUE
     )
     on_exhaustion_fn = retry.on_exhaustion
     on_exhaustion_is_async = on_exhaustion_fn is not None and _inspect.iscoroutinefunction(

@@ -7,7 +7,7 @@ call-order semantics described in the feature definition.
 Scenario:
     Retry[
         body = Sequence[ai_call_with_catching_executor, fallible_fn_action],
-        exception_policy = TREAT_AS_FAILURE,
+        exception_policy = CATCH_AND_CONTINUE,
         max_attempts = 3,
         until = lambda s: s.verdict == "ok",
     ]
@@ -161,7 +161,7 @@ def _workflow():
         max_attempts=3,
         until=lambda s: s.verdict == "ok",
         body=body,
-        exception_policy=RetryExceptionPolicy.TREAT_AS_FAILURE,
+        exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
     )
 
     return {
