@@ -21,9 +21,12 @@ Two checks enforce the separation:
 
 from __future__ import annotations
 
+import os
 import sys
 from importlib.abc import MetaPathFinder
 from importlib.machinery import ModuleSpec
+
+import pytest
 
 
 class _PydanticEvalsBlocker(MetaPathFinder):
@@ -54,3 +57,16 @@ if "pydantic_evals" in sys.modules:
     )
 
 sys.meta_path.insert(0, _PydanticEvalsBlocker())
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _unset_anthropic_api_key() -> None:
+    """Strip ANTHROPIC_API_KEY from the test process environment.
+
+    Some integration tests call ``load_dotenv`` at module level, which sets
+    ANTHROPIC_API_KEY in ``os.environ`` for the entire pytest process. Any
+    subprocess that inherits this environment (e.g. ``claude -p``) uses the
+    API key instead of CLAUDE_CODE_OAUTH_TOKEN, causing unexpected API billing.
+    This fixture fires before any test runs and removes the key.
+    """
+    os.environ.pop("ANTHROPIC_API_KEY", None)
