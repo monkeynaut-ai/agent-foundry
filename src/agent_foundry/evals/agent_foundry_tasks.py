@@ -104,7 +104,12 @@ def build_invoke_ai_call_task(call: AICall) -> Task:
     import inspect as _inspect
 
     executor = call.executor
-    executor_is_async = executor is not None and _inspect.iscoroutinefunction(executor)
+    # Check the instance and its __call__ method — handles both async def functions
+    # and callable classes with an async __call__.
+    executor_is_async = executor is not None and (
+        _inspect.iscoroutinefunction(executor)
+        or _inspect.iscoroutinefunction(getattr(type(executor), "__call__", None))  # noqa: B004
+    )
 
     async def task(input_state: Any) -> BaseModel:
         if executor is None:
