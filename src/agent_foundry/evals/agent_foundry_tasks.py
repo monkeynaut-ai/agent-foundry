@@ -23,7 +23,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from agent_foundry.ai_models.execute.invoke import invoke_ai_call
 from agent_foundry.evals.models import Task
 from agent_foundry.primitives.ai_call import AICall
 from agent_foundry.primitives.models import AgentAction
@@ -95,14 +94,30 @@ def build_run_primitive_plan_task(
 
 
 def build_invoke_ai_call_task(call: AICall) -> Task:
-    """Build a task that invokes ``call`` via ``invoke_ai_call``.
+    """Build a task that invokes ``call`` via its configured executor.
 
-    No container, no ``RunContext``, no responder — the task is a
-    direct call into the AICall's resolved fields and configured
-    provider. Each task call performs one inference.
+    When ``call.executor`` is None, falls back to ``invoke_ai_call``.
+    When ``call.executor`` is set, the custom executor runs instead —
+    consistent with how the compiler dispatches the same AICall. No
+    container, no ``RunContext``, no responder.
     """
+    import inspect as _inspect
+
+    executor = call.executor
+    # Check the instance and its __call__ method — handles both async def functions
+    # and callable classes with an async __call__.
+    executor_is_async = executor is not None and (
+        _inspect.iscoroutinefunction(executor)
+        or _inspect.iscoroutinefunction(getattr(type(executor), "__call__", None))  # noqa: B004
+    )
 
     async def task(input_state: Any) -> BaseModel:
-        return await invoke_ai_call(call, input_state)
+        if executor is None:
+            from agent_foundry.ai_models.execute.invoke import invoke_ai_call
+
+            return await invoke_ai_call(primitive=call, model_input=input_state)
+        if executor_is_async:
+            return await executor(primitive=call, model_input=input_state)
+        return executor(primitive=call, model_input=input_state)  # type: ignore[return-value]
 
     return task
