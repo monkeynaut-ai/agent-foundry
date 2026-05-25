@@ -99,6 +99,11 @@ def _is_async_callable(obj: Any) -> bool:
 
     Handles both ``async def`` functions and callable objects whose
     ``__call__`` method is a coroutine function.
+
+    There is the possibility of a false negative. This will occur when a
+    function returns a coroutine without declaring ``async def``. This causes
+    it to be reported as not-async, which triggers the compile-time guard and
+    blocks the coroutine from being executed.
     """
     if inspect.iscoroutinefunction(obj):
         return True
