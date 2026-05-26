@@ -136,6 +136,10 @@ class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
 
     No need to accept ``run_ctx`` as a parameter.
     """
+    name: str | None = Field(default=None, min_length=1)
+    """Diagnostic label for lifecycle events and logs. Not used for composition
+    or lookup. Optional — when None the compiler falls back to the positional
+    node_id."""
 
 
 class GateAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
