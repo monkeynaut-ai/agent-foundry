@@ -45,6 +45,46 @@ That pushes provider resilience into product-level designs. In Archipelago's des
 - Do not retry broad plan bodies. This feature is scoped to single-call inference resilience.
 - Do not mask non-transient configuration or programmer errors.
 
+## Related: AICall output artifacts
+
+A separate gap surfaced alongside resilience work: `AICall` nodes leave **no
+artifact record** of their structured output. AgentActions get a per-node
+artifact subdirectory in the run (e.g. `runs/<id>/designer/`); FunctionActions
+and AICalls write nothing. When an AICall is the meaningful unit of work — a
+reviewer producing a verdict, a classifier producing a label — there is no
+durable record of what it returned, only what downstream state happened to
+retain.
+
+Today products work around this by routing the output through a downstream
+FunctionAction that holds the value and writes it (Archipelago's design-review
+aggregator persists `design-review/attempt-N.json` this way). That works but
+is per-product boilerplate, and it only captures AICalls whose output a later
+in-process node already touches.
+
+**Suggested generic capability:** let `AICall` optionally persist its validated
+structured output to a per-node artifact directory, parallel to AgentActions —
+e.g. `runs/<id>/<name-or-node_id>/output.json` via `model_dump_json`. This
+would give every AICall a record for free, attributed by the primitive's
+`name` (see leaf-node naming), without a custom executor.
+
+Design considerations to resolve if pursued:
+
+- **Opt-in vs. default** — mirror the retry-policy decision above; writing every
+  AICall output by default may be surprising and may duplicate large payloads.
+- **Naming/uniqueness** — the artifact path needs a stable, collision-free key;
+  `node_id` is unique within the compiled graph, `name` is human-readable but
+  not guaranteed unique. Likely `<name>-<node_id>` or `node_id` with `name` in
+  the file body.
+- **Redaction** — outputs may carry sensitive content; artifact writing must
+  honor the same redaction policy used for telemetry spans.
+- **Relationship to lifecycle events** — the payload belongs in an artifact, not
+  in `lifecycle.jsonl` (a wire-stable event stream); the lifecycle event should
+  at most reference the artifact path.
+
+This is observability, not resilience, but it shares the same boundary
+(`AICall`) and the same "products shouldn't need wrapper executors" principle,
+so it is captured here pending its own design.
+
 ## Open Questions
 
 - Should the retry policy default to enabled for all `AICall`s, or require explicit opt-in?
