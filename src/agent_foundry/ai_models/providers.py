@@ -19,7 +19,20 @@ class AnthropicProvider(InferenceProvider):
     """
 
     def __init__(self, api_key: str | None = None) -> None:
-        self._client = AsyncAnthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
+        self._api_key = api_key
+        self._client_instance: AsyncAnthropic | None = None
+
+    @property
+    def _client(self) -> AsyncAnthropic:
+        # Built on first use, not at construction, so a key loaded after this
+        # provider is instantiated (the common load_dotenv()-after-import case)
+        # is still picked up. No await between the None-check and the assignment,
+        # so concurrent __call__s on the shared instance can't double-build.
+        if self._client_instance is None:
+            self._client_instance = AsyncAnthropic(
+                api_key=self._api_key or os.environ.get("ANTHROPIC_API_KEY")
+            )
+        return self._client_instance
 
     async def __call__(self, request: InferenceRequest) -> BaseModel:
         tool = {
@@ -47,4 +60,7 @@ class AnthropicProvider(InferenceProvider):
         return request.output_type.model_validate(tool_use_block.input)
 
     async def close(self) -> None:
-        await self._client.close()
+        # Read the backing field, not the property — closing must not lazily
+        # build a client just to tear it down.
+        if self._client_instance is not None:
+            await self._client_instance.close()
