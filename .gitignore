@@ -16,4 +16,5 @@ hide/
 # Eval harness run artifacts
 **/.runs/
 **/runs/
+**/.artifacts
 
