@@ -219,6 +219,7 @@ def _compile_function_action(
     graph: StateGraph, action: FunctionAction, ctx: CompileContext
 ) -> CompileResult:
     node_id = ctx.prefix
+    label = action.name or node_id
     input_type, _ = get_type_args(action)
     # ``FunctionAction.function`` is annotated ``(state) -> O``. Product
     # code that needs run-scoped state (emit domain events, read
@@ -239,6 +240,7 @@ def _compile_function_action(
             ctx_opt.lifecycle_writer.append(
                 LifecycleEvent.FUNCTION_ACTION_STARTED,
                 node_id=node_id,
+                name=label,
             )
         try:
             if arity == 0:
@@ -251,6 +253,7 @@ def _compile_function_action(
                 ctx_opt.lifecycle_writer.append(
                     LifecycleEvent.FUNCTION_ACTION_FAILED,
                     node_id=node_id,
+                    name=label,
                     reason=str(exc),
                 )
             raise
@@ -258,6 +261,7 @@ def _compile_function_action(
             ctx_opt.lifecycle_writer.append(
                 LifecycleEvent.FUNCTION_ACTION_COMPLETED,
                 node_id=node_id,
+                name=label,
             )
         return result.model_dump()
 
@@ -680,6 +684,7 @@ def _compile_ai_call(
     ctx: CompileContext,
 ) -> CompileResult:
     node_id = ctx.prefix
+    label = action.name or node_id
     input_type, output_type = get_type_args(action)
 
     executor = action.executor
@@ -710,10 +715,17 @@ def _compile_ai_call(
         )
         run_id = ctx_opt.run_id if ctx_opt is not None else node_id
 
+        if ctx_opt is not None:
+            ctx_opt.lifecycle_writer.append(
+                LifecycleEvent.AI_CALL_STARTED,
+                node_id=node_id,
+                name=label,
+            )
+
         with emit_span(
-            name=f"agent_foundry.AICall.{node_id}",
+            name=f"agent_foundry.AICall.{label}",
             primitive_type="AICall",
-            primitive_name=node_id,
+            primitive_name=label,
             input_model=model_input,
             run_id=run_id,
             redaction=redaction,
@@ -724,18 +736,40 @@ def _compile_ai_call(
                     result = await invoke_ai_call(primitive=action, model_input=model_input)
                 else:
                     result = await executor(primitive=action, model_input=model_input)
+                typed = _validate_typed(result)
             except TypeError as exc:
                 # TypeError here typically means the executor's return value was not
                 # awaitable — e.g. a sync callable that passed the _is_async_callable
                 # check via __call__ but whose invocation returned a plain object.
                 # This can happen if __call__ is not actually async despite the class
                 # structure suggesting it is.
+                if ctx_opt is not None:
+                    ctx_opt.lifecycle_writer.append(
+                        LifecycleEvent.AI_CALL_FAILED,
+                        node_id=node_id,
+                        name=label,
+                        reason=str(exc),
+                    )
                 raise PrimitiveCompilationError(
                     f"AICall {node_id}: {exc}",
                     primitive_type=node_id,
                 ) from exc
-            typed = _validate_typed(result)
+            except Exception as exc:
+                if ctx_opt is not None:
+                    ctx_opt.lifecycle_writer.append(
+                        LifecycleEvent.AI_CALL_FAILED,
+                        node_id=node_id,
+                        name=label,
+                        reason=str(exc),
+                    )
+                raise
             handle.set_output(typed)
+            if ctx_opt is not None:
+                ctx_opt.lifecycle_writer.append(
+                    LifecycleEvent.AI_CALL_COMPLETED,
+                    node_id=node_id,
+                    name=label,
+                )
             return typed.model_dump()
 
     graph.add_node(node_id, node_fn)  # type: ignore[arg-type]

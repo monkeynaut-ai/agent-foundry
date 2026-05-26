@@ -29,6 +29,10 @@ class AICall[I: BaseModel, O: BaseModel](Primitive[I, O], arbitrary_types_allowe
     model: ModelEntry | Callable[[I], ModelEntry]
     parameters: InferenceParameters | Callable[[I], InferenceParameters]
     timeout_seconds: int = Field(default=30, ge=1)
+    name: str | None = Field(default=None, min_length=1)
+    """Diagnostic label for lifecycle events, spans, and logs. Not used for
+    composition or lookup. Optional — when None the compiler falls back to the
+    positional node_id."""
     executor: Callable[..., Awaitable[O]] | None = None
     """Async callable that performs the inference call.
 
