@@ -174,7 +174,7 @@ def render_summary(run_dir: Path) -> None:
     if failure_records:
         lines.append("Failures:")
         for rec in failure_records:
-            agent = rec.get("agent_name") or rec.get("agent") or "unknown"
+            agent = rec.get("agent_name") or "unknown"
             invocation = rec.get("invocation", "?")
             fields = []
             for key in (

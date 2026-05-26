@@ -328,3 +328,30 @@ def test_render_summary_includes_failure_cause(tmp_path: Path) -> None:
     assert "implementer/1" in text
     assert "api_error_status=500" in text
     assert "exit_code=1" in text
+
+
+def test_render_summary_failure_unknown_when_agent_name_missing(tmp_path: Path) -> None:
+    run_id = "run-fail-unknown-agent"
+    run_dir = tmp_path / run_id
+    _write_jsonl(
+        run_dir / "lifecycle.jsonl",
+        [
+            _run_started(run_id, "2026-04-15T10:00:00+00:00"),
+            {
+                "type": LifecycleEvent.AGENT_INVOCATION_FAILED.value,
+                "ts": "2026-04-15T10:01:00+00:00",
+                "run_id": run_id,
+                "agent": "implementer",  # stale field — no "agent_name"
+                "invocation": 1,
+                "exit_code": 1,
+            },
+            _run_failed(run_id, "2026-04-15T10:01:01+00:00"),
+        ],
+    )
+
+    render_summary(run_dir)
+
+    text = (run_dir / "summary.txt").read_text()
+    assert "Failures:" in text
+    assert "unknown/1" in text
+    assert "implementer" not in text
