@@ -34,6 +34,7 @@ import re
 import sys
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -51,6 +52,8 @@ from agent_foundry.models.markers import (
     extract_paths,
     walk_file_path_fields,
 )
+from agent_foundry.observability.models import AgentTurnRecord, StopReason
+from agent_foundry.observability.stream_metrics import extract_stream_metrics
 from agent_foundry.orchestration.artifacts import agent_turn_dir
 from agent_foundry.orchestration.errors import AgentFailedError
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
@@ -690,6 +693,7 @@ async def run_agent_in_container(
             except Exception:
                 logger.warning("failed to persist prompt.txt for turn %s", turn_number)
 
+            turn_started_at = datetime.now(UTC)
             api_retry_attempt = 0
             while True:
                 try:
@@ -777,6 +781,8 @@ async def run_agent_in_container(
                         )
                     raise
 
+            turn_ended_at = datetime.now(UTC)
+
             # Tee the raw stream regardless of outcome so every RunTurn
             # implementation gets stderr + stream.jsonl persistence for
             # free by populating result.raw_output. Stdout is already
@@ -825,6 +831,38 @@ async def run_agent_in_container(
                 turn=turn_number,
                 outcome_kind=str(outcome.kind),
             )
+
+            try:
+                _sm = extract_stream_metrics(result.raw_output)
+                _raw_stop = _sm.stop_reason
+                try:
+                    _stop_reason = (
+                        StopReason(_raw_stop) if _raw_stop is not None else StopReason.UNKNOWN
+                    )
+                except ValueError:
+                    _stop_reason = StopReason.UNKNOWN
+                run_ctx.observability_store.append(
+                    AgentTurnRecord(
+                        agent_name=agent_name,
+                        turn_index=turn_number - 1,
+                        started_at=turn_started_at,
+                        ended_at=turn_ended_at,
+                        duration_s=(turn_ended_at - turn_started_at).total_seconds(),
+                        tool_calls_by_tool=_sm.tool_calls_by_tool,
+                        tokens=_sm.tokens,
+                        subagent_spawns=_sm.subagent_spawns,
+                        stop_reason=_stop_reason,
+                        outcome_kind=str(outcome.kind),
+                        resume_retries=api_retry_attempt,
+                        model=primitive.model,
+                    )
+                )
+            except Exception:
+                logger.warning(
+                    "failed to record observability for turn %d of agent %s",
+                    turn_number,
+                    agent_name,
+                )
 
             if outcome.kind == TurnOutcomeKind.FAILED:
                 lifecycle.append(
