@@ -32,6 +32,9 @@ requires-python = "==3.14.*"
 readme = "README.md"
 license = {text = "MIT"}
 
+[project.scripts]
+af-run-summary = "agent_foundry.observability.summary:main"
+
 [project.optional-dependencies]
 mlflow = ["mlflow>=3.6.0"]
 

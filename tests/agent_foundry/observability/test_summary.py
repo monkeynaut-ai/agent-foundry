@@ -1,5 +1,9 @@
+import os
+import subprocess
+import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 
 from agent_foundry.observability.models import AgentTurnRecord, StopReason, TokenUsage
 from agent_foundry.observability.store import NoOpObservabilityStore, ObservabilityStore
@@ -204,3 +208,100 @@ class TestTokenAggregation:
             cache_read_tokens=33,
             cache_write_tokens=44,
         )
+
+
+_PYTHONPATH = str(Path(__file__).parents[3] / "src")
+
+
+class TestCliMainValidRun:
+    def test_valid_run_id_prints_summary_to_stdout(self, tmp_path: Path) -> None:
+        run_id = "test-run-001"
+        obs_path = tmp_path / run_id / "observability.jsonl"
+        obs_path.parent.mkdir(parents=True)
+        record = _record(
+            agent_name="my-agent",
+            turn_index=0,
+            duration_s=5.0,
+            tool_calls_by_tool={"Bash": 2},
+            tokens=TokenUsage(input_tokens=500, output_tokens=200),
+            outcome_kind="success",
+        )
+        obs_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "agent_foundry.observability.summary",
+                run_id,
+                "--artifacts-dir",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": _PYTHONPATH},
+        )
+
+        assert result.returncode == 0
+        assert "Run Summary" in result.stdout
+        assert "Total turns" in result.stdout
+        assert "Total duration" in result.stdout
+        assert "5.0s" in result.stdout
+        assert "Bash" in result.stdout
+        assert "500" in result.stdout
+        assert "200" in result.stdout
+        assert "my-agent" in result.stdout
+        assert "success" in result.stdout
+
+    def test_stdout_contains_per_agent_breakdown(self, tmp_path: Path) -> None:
+        run_id = "test-run-002"
+        obs_path = tmp_path / run_id / "observability.jsonl"
+        obs_path.parent.mkdir(parents=True)
+        record = _record(
+            agent_name="planner",
+            turn_index=0,
+            duration_s=3.0,
+            tool_calls_by_tool={"Read": 4},
+            tokens=TokenUsage(input_tokens=None, output_tokens=None),
+            outcome_kind="success",
+        )
+        obs_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "agent_foundry.observability.summary",
+                run_id,
+                "--artifacts-dir",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": _PYTHONPATH},
+        )
+
+        assert result.returncode == 0
+        assert "Per-agent breakdown" in result.stdout
+        assert "planner" in result.stdout
+        assert "N/A" in result.stdout  # None token fields rendered as N/A
+
+
+class TestCliMainMissingRun:
+    def test_nonexistent_run_id_exits_with_code_1(self, tmp_path: Path) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "agent_foundry.observability.summary",
+                "nonexistent-run",
+                "--artifacts-dir",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": _PYTHONPATH},
+        )
+
+        assert result.returncode == 1
+        assert result.stderr != ""
