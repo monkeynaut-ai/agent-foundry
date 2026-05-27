@@ -24,6 +24,7 @@ from typing import Any
 from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_foundry.observability.store import NoOpObservabilityStore, ObservabilityStore
 from agent_foundry.orchestration.lifecycle_writer import (
     LifecycleWriter,
     NoOpLifecycleWriter,
@@ -115,6 +116,12 @@ class RunContext(BaseModel):
     ``AGENT_FOUNDRY_PAUSE_ON_FAILURE`` (0/false/no → False, anything
     else → True).
     """
+
+    observability_store: ObservabilityStore = Field(default_factory=NoOpObservabilityStore)
+    """Per-run observability sink. Defaults to ``NoOpObservabilityStore`` so
+    every call site (tests, notebooks, ad-hoc runs) works without supplying a
+    real store. ``run_primitive_plan`` wires in a ``JsonlObservabilityStore``
+    pointed at ``<run_dir>/observability.jsonl``."""
 
     on_run_starting: list[Callable[[RunStartingEvent], None]] = Field(default_factory=list)
     """Hooks invoked while the run is in the act of starting.
