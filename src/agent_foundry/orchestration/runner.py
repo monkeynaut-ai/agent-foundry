@@ -25,6 +25,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
+from agent_foundry.observability.store import JsonlObservabilityStore
 from agent_foundry.orchestration.artifacts import bootstrap_run_artifacts
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import JsonlLifecycleWriter
@@ -135,6 +136,7 @@ async def run_primitive_plan(
     _, root_out = get_type_args(plan.root)
 
     lifecycle = JsonlLifecycleWriter(run_id=resolved_run_id, path=run_dir / "lifecycle.jsonl")
+    observability_store = JsonlObservabilityStore(run_dir / "observability.jsonl")
 
     oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
     registry = AgentContainerRegistry(
@@ -150,6 +152,7 @@ async def run_primitive_plan(
         container_registry=registry,
         responder_provider=responder_provider,
         lifecycle_writer=lifecycle,
+        observability_store=observability_store,
         cancel_event=cancel,
         env={"CLAUDE_CODE_OAUTH_TOKEN": oauth_token} if oauth_token else {},
         extra_env=extra_env,
@@ -228,14 +231,21 @@ async def run_primitive_plan(
             label="on_run_ended",
         )
         #   4. ContextVar reset, signal handler removal, lifecycle.close,
-        #      and per-run TracerProvider shutdown. Wrap shutdown in
-        #      try/except so a hung exporter or unreachable backend
-        #      can't mask the original run exception.
+        #      observability_store.close, and per-run TracerProvider shutdown.
+        #      Wrap shutdown in try/except so a hung exporter or unreachable
+        #      backend can't mask the original run exception.
         for sig in installed_signals:
             with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
                 loop.remove_signal_handler(sig)
         current_run_context.reset(token)
         lifecycle.close()
+        try:
+            observability_store.close()
+        except Exception:
+            logger.warning(
+                "observability_store.close() raised during teardown",
+                exc_info=True,
+            )
         if telemetry_provider is not None:
             try:
                 telemetry_provider.shutdown()
