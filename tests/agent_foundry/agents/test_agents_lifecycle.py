@@ -39,6 +39,7 @@ class TestContainerConfig:
         assert cfg.mem_limit_mb == 1024
         assert cfg.cpu_quota == 100_000
         assert cfg.pids_limit == 2048
+        assert cfg.tmp_size_mb == 1024
 
 
 class TestDefaultEnvAllowlist:
@@ -93,6 +94,18 @@ class TestCreateContainer:
         assert kw["mem_limit"] == "2048m"
         assert kw["cpu_quota"] == 50000
         assert kw["pids_limit"] == 128
+
+    def test_given_create_called_then_tmpfs_uses_default_size(self, manager, mock_client):
+        manager.create_container()
+        kw = mock_client.containers.create.call_args.kwargs
+        assert kw["tmpfs"] == {"/tmp": "size=1024m"}
+
+    def test_given_tmp_size_config_when_create_called_then_tmpfs_size_applied(
+        self, manager, mock_client
+    ):
+        manager.create_container(constraints=ContainerConfig(tmp_size_mb=2048))
+        kw = mock_client.containers.create.call_args.kwargs
+        assert kw["tmpfs"] == {"/tmp": "size=2048m"}
 
     def test_given_env_allowlist_when_create_called_then_only_allowed_vars_passed(
         self, monkeypatch

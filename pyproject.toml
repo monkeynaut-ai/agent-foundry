@@ -40,6 +40,8 @@ testpaths = ["tests"]
 pythonpath = ["src", "."]
 addopts = "-m 'not benchmark' -n 16"
 asyncio_mode = "strict"
+tmp_path_retention_policy = "failed"
+tmp_path_retention_count = 3
 markers = [
     "benchmark: performance benchmark tests (excluded from normal runs)",
     "integration: integration tests (require Docker, external services)",

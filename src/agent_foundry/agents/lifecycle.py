@@ -43,6 +43,7 @@ class ContainerConfig(BaseModel):
     mem_limit_mb: int = 1024
     cpu_quota: int = 100_000
     pids_limit: int = 2048
+    tmp_size_mb: int = 1024
 
 
 class ExecResult(BaseModel):
@@ -266,7 +267,7 @@ class ContainerManager(ContainerManagerBase):
                 cap_drop=["ALL"],
                 cap_add=["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
                 read_only=False,
-                tmpfs={"/tmp": "size=256m"},
+                tmpfs={"/tmp": f"size={constraints.tmp_size_mb}m"},
                 volumes=volumes,
                 mem_limit=f"{constraints.mem_limit_mb}m",
                 environment=environment,
