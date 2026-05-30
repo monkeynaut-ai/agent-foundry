@@ -7,6 +7,12 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+# Suffixes for the namespaced exhaustion-metadata channels the compiler writes
+# into outer state before a Retry's resolver node. A resolver input model that
+# declares fields ending in these suffixes consumes the corresponding channel.
+EXHAUSTION_REASON_SUFFIX = "__exhaustion_reason"
+ATTEMPT_FAILURES_SUFFIX = "__attempt_failures"
+
 
 class AttemptOutcome(StrEnum):
     """Whether a single attempt passed the Retry primitive's until() condition.

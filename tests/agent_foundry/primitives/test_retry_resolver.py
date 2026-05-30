@@ -30,6 +30,7 @@ from agent_foundry.primitives.retry_types import (
     ResolverDidNotConvergeError,
     ResolverDisposition,
     RetryAborted,
+    RetryExhaustionReason,
 )
 
 # ---------------------------------------------------------------------------
@@ -543,3 +544,91 @@ def _raising_body(exc: Exception) -> FunctionAction:
         raise exc
 
     return FunctionAction[RS, RS](function=_raise)
+
+
+# ---------------------------------------------------------------------------
+# Task 4b — exhaustion metadata (reason + attempt failures) in resolver-readable
+# state. The namespaced channels carry an internal double underscore
+# (root__exhaustion_reason); a resolver input model declares matching field names
+# and reads the values straight from the scoped state.
+# ---------------------------------------------------------------------------
+
+
+class MetaResolverState(BaseModel):
+    """Resolver I/O model that reads the namespaced exhaustion-metadata channels.
+
+    ``root__exhaustion_reason`` / ``root__attempt_failures`` mirror the channel
+    names the compiler writes for a root-level Retry.
+    """
+
+    n: int = 0
+    verdict: str = "fail"
+    disposition: ResolverDisposition | None = None
+    root__exhaustion_reason: str = ""
+    root__attempt_failures: list = []
+
+
+def _metadata_recording_resolver(disposition: DispositionKind, sink: dict):
+    """Resolver that records the exhaustion metadata it observes, then disposes."""
+
+    def _fn(s: MetaResolverState) -> MetaResolverState:
+        sink["reason"] = s.root__exhaustion_reason
+        sink["failures"] = s.root__attempt_failures
+        return MetaResolverState(
+            n=s.n,
+            verdict=s.verdict,
+            disposition=ResolverDisposition(kind=disposition, reason="r"),
+        )
+
+    return FunctionAction[MetaResolverState, MetaResolverState](function=_fn)
+
+
+@pytest.mark.asyncio
+async def test_exhaustion_reason_condition_not_met_in_state() -> None:
+    """All attempts run cleanly without passing until(); the resolver reads the
+    namespaced reason channel and observes CONDITION_NOT_MET."""
+    sink: dict = {}
+    retry = Retry[RS, RS](
+        max_attempts=3,
+        until=lambda s: False,
+        body=_failing_body(),
+        on_max_attempts_resolver=_metadata_recording_resolver(DispositionKind.ACCEPT, sink),
+    )
+    await _compile_and_run(retry, RS(n=0))
+    assert sink["reason"] == RetryExhaustionReason.CONDITION_NOT_MET.value
+
+
+@pytest.mark.asyncio
+async def test_exhaustion_reason_body_exceptions_in_state() -> None:
+    """Every attempt raises under CATCH_AND_CONTINUE; the resolver reads
+    BODY_EXCEPTIONS and chooses ABORT -> RetryAborted."""
+    sink: dict = {}
+    retry = Retry[RS, RS](
+        max_attempts=2,
+        until=lambda s: s.verdict == "pass",
+        body=_raising_body(RuntimeError("boom")),
+        exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
+        on_max_attempts_resolver=_metadata_recording_resolver(DispositionKind.ABORT, sink),
+    )
+    with pytest.raises(RetryAborted):
+        await _compile_and_run(retry, RS(n=0))
+    assert sink["reason"] == RetryExhaustionReason.BODY_EXCEPTIONS.value
+
+
+@pytest.mark.asyncio
+async def test_attempt_failures_exposed_to_resolver() -> None:
+    """The AttemptFailure records gathered during the automated loop are readable
+    from the namespaced failures channel by the resolver node."""
+    sink: dict = {}
+    retry = Retry[RS, RS](
+        max_attempts=3,
+        until=lambda s: s.verdict == "pass",
+        body=_raising_body(ValueError("kaboom")),
+        exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
+        on_max_attempts_resolver=_metadata_recording_resolver(DispositionKind.ACCEPT, sink),
+    )
+    await _compile_and_run(retry, RS(n=0))
+    failures = sink["failures"]
+    assert len(failures) == 3
+    assert all(f["exception_type"] == "ValueError" for f in failures)
+    assert all(f["exception_message"] == "kaboom" for f in failures)

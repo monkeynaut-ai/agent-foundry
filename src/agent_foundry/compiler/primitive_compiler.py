@@ -34,12 +34,15 @@ from agent_foundry.primitives.models import (
 )
 from agent_foundry.primitives.plan import PrimitivePlan
 from agent_foundry.primitives.retry_types import (
+    ATTEMPT_FAILURES_SUFFIX,
+    EXHAUSTION_REASON_SUFFIX,
     AttemptFailure,
     AttemptOutcome,
     DispositionKind,
     ResolverDidNotConvergeError,
     ResolverDisposition,
     RetryAborted,
+    RetryExhaustionReason,
 )
 from agent_foundry.telemetry.spans import emit_span
 
@@ -133,8 +136,8 @@ def _retry_channels(prefix: str) -> dict[str, Any]:
     """
     return {
         f"{prefix}__resolver_reentries": Any,  # backstop counter (loop-carried)
-        f"{prefix}__exhaustion_reason": Any,  # Task 4b
-        f"{prefix}__attempt_failures": Any,  # Task 4b
+        f"{prefix}{EXHAUSTION_REASON_SUFFIX}": Any,  # exhaustion reason (Task 4b)
+        f"{prefix}{ATTEMPT_FAILURES_SUFFIX}": Any,  # accumulated failures (Task 4b)
         f"{prefix}__retry_route": Any,  # automated-phase routing signal
         f"{prefix}__reentry_route": Any,  # re-entry routing signal
     }
@@ -558,6 +561,8 @@ def _compile_retry(
     reentries_key = f"{prefix}__resolver_reentries"
     retry_route_key = f"{prefix}__retry_route"
     reentry_route_key = f"{prefix}__reentry_route"
+    exhaustion_reason_key = f"{prefix}{EXHAUSTION_REASON_SUFFIX}"
+    attempt_failures_key = f"{prefix}{ATTEMPT_FAILURES_SUFFIX}"
 
     def _outcome_from_body(
         state: dict[str, Any], body_result: dict[str, Any]
@@ -569,9 +574,10 @@ def _compile_retry(
 
     def _handle_body_exception(
         snapshot: dict[str, Any], exc: Exception, attempt_num: int
-    ) -> tuple[dict[str, Any], AttemptOutcome]:
+    ) -> tuple[dict[str, Any], AttemptOutcome, AttemptFailure]:
         """Map a body raise per exception_policy. PROPAGATE re-raises; otherwise
-        record the failure, restore the pre-attempt state, return NOT_PASSED."""
+        record the failure, restore the pre-attempt state, return NOT_PASSED and
+        the failure record so the automated loop can tally exhaustion reason."""
         if not treat_body_exception_as_failure:
             raise exc
         failure = AttemptFailure(
@@ -589,33 +595,48 @@ def _compile_retry(
                 exception_type=failure.exception_type,
                 exception_message=failure.exception_message,
             )
-        return snapshot, AttemptOutcome.NOT_PASSED
+        return snapshot, AttemptOutcome.NOT_PASSED, failure
 
     # Shared body-execution + outcome logic, used by BOTH the automated loop and
-    # the re-entry node so there is no separate guided-exception path.
+    # the re-entry node so there is no separate guided-exception path. The third
+    # element is the AttemptFailure when the body raised (CATCH_AND_CONTINUE),
+    # else None — the automated loop uses it to derive the exhaustion reason.
     def _run_body_once_sync(
         state: dict[str, Any], attempt_num: int
-    ) -> tuple[dict[str, Any], AttemptOutcome]:
+    ) -> tuple[dict[str, Any], AttemptOutcome, AttemptFailure | None]:
         snapshot = copy.deepcopy(state)
         try:
             result = compiled_body.invoke(dict(state))  # type: ignore[arg-type]
-            return _outcome_from_body(state, result)
+            merged, outcome = _outcome_from_body(state, result)
+            return merged, outcome, None
         except Exception as exc:
             return _handle_body_exception(snapshot, exc, attempt_num)
 
     async def _run_body_once_async(
         state: dict[str, Any], attempt_num: int
-    ) -> tuple[dict[str, Any], AttemptOutcome]:
+    ) -> tuple[dict[str, Any], AttemptOutcome, AttemptFailure | None]:
         snapshot = copy.deepcopy(state)
         try:
             result = await compiled_body.ainvoke(dict(state))  # type: ignore[arg-type]
-            return _outcome_from_body(state, result)
+            merged, outcome = _outcome_from_body(state, result)
+            return merged, outcome, None
         except Exception as exc:
             return _handle_body_exception(snapshot, exc, attempt_num)
 
-    def _retry_exhausted(state: dict[str, Any]) -> dict[str, Any]:
+    def _derive_exhaustion_reason(raised: int, clean_not_passed: int) -> RetryExhaustionReason:
+        if raised and not clean_not_passed:
+            return RetryExhaustionReason.BODY_EXCEPTIONS
+        if clean_not_passed and not raised:
+            return RetryExhaustionReason.CONDITION_NOT_MET
+        return RetryExhaustionReason.MIXED
+
+    def _retry_exhausted(
+        state: dict[str, Any], reason: RetryExhaustionReason, failures: list[AttemptFailure]
+    ) -> dict[str, Any]:
         state[retry_route_key] = "exhausted"
         state[reentries_key] = 0
+        state[exhaustion_reason_key] = reason.value
+        state[attempt_failures_key] = [f.model_dump() for f in failures]
         return state
 
     def _retry_passed(state: dict[str, Any]) -> dict[str, Any]:
@@ -625,19 +646,35 @@ def _compile_retry(
 
     def retry_node_sync(state: dict[str, Any]) -> dict[str, Any]:
         current_state = dict(state)
+        failures: list[AttemptFailure] = []
+        clean_not_passed = 0
         for attempt_num in range(max_attempts):
-            current_state, outcome = _run_body_once_sync(current_state, attempt_num + 1)
+            current_state, outcome, failure = _run_body_once_sync(current_state, attempt_num + 1)
             if outcome is AttemptOutcome.PASSED:
                 return _retry_passed(current_state)
-        return _retry_exhausted(current_state)
+            if failure is not None:
+                failures.append(failure)
+            else:
+                clean_not_passed += 1
+        reason = _derive_exhaustion_reason(len(failures), clean_not_passed)
+        return _retry_exhausted(current_state, reason, failures)
 
     async def retry_node_async(state: dict[str, Any]) -> dict[str, Any]:
         current_state = dict(state)
+        failures: list[AttemptFailure] = []
+        clean_not_passed = 0
         for attempt_num in range(max_attempts):
-            current_state, outcome = await _run_body_once_async(current_state, attempt_num + 1)
+            current_state, outcome, failure = await _run_body_once_async(
+                current_state, attempt_num + 1
+            )
             if outcome is AttemptOutcome.PASSED:
                 return _retry_passed(current_state)
-        return _retry_exhausted(current_state)
+            if failure is not None:
+                failures.append(failure)
+            else:
+                clean_not_passed += 1
+        reason = _derive_exhaustion_reason(len(failures), clean_not_passed)
+        return _retry_exhausted(current_state, reason, failures)
 
     # -- Resolver node: emits a ResolverDisposition into state --
     if retry.on_max_attempts_resolver is None:
@@ -715,14 +752,14 @@ def _compile_retry(
         reentries = _reentry_check_backstop(state)
         current_state = dict(state)
         current_state[reentries_key] = reentries
-        current_state, outcome = _run_body_once_sync(current_state, reentries)
+        current_state, outcome, _failure = _run_body_once_sync(current_state, reentries)
         return _reentry_finish(current_state, reentries, outcome)
 
     async def reentry_node_async(state: dict[str, Any]) -> dict[str, Any]:
         reentries = _reentry_check_backstop(state)
         current_state = dict(state)
         current_state[reentries_key] = reentries
-        current_state, outcome = await _run_body_once_async(current_state, reentries)
+        current_state, outcome, _failure = await _run_body_once_async(current_state, reentries)
         return _reentry_finish(current_state, reentries, outcome)
 
     def reentry_router(state: dict[str, Any]) -> str:
