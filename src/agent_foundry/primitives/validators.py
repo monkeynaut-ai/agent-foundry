@@ -31,10 +31,7 @@ from agent_foundry.primitives.models import (
     Sequence,
     get_type_args,
 )
-from agent_foundry.primitives.retry_types import (
-    ATTEMPT_FAILURES_SUFFIX,
-    EXHAUSTION_REASON_SUFFIX,
-)
+from agent_foundry.primitives.retry_types import WELL_KNOWN_METADATA_FIELDS
 
 # -- Registry --
 
@@ -175,17 +172,11 @@ def _validate_retry(retry: Retry) -> None:
 
     if retry.on_max_attempts_resolver is not None:
         resolver_in, _ = get_type_args(retry.on_max_attempts_resolver)
-        # The compiler writes two namespaced exhaustion-metadata channels into
-        # state before the resolver node (f"{prefix}__exhaustion_reason",
-        # f"{prefix}__attempt_failures"). A resolver may declare matching field
-        # names to consume them; the prefix is unknown here, so recognize the
-        # channels by suffix and exclude them from the availability check.
-        resolver_required = {
-            name
-            for name in resolver_in.model_fields
-            if not name.endswith(EXHAUSTION_REASON_SUFFIX)
-            and not name.endswith(ATTEMPT_FAILURES_SUFFIX)
-        }
+        # The compiler writes the exhaustion metadata into the Retry's scope
+        # before the resolver node under fixed well-known names. A resolver may
+        # declare those exact names to consume them; everything else must come
+        # from accumulated state.
+        resolver_required = set(resolver_in.model_fields) - WELL_KNOWN_METADATA_FIELDS
         missing = resolver_required - set(retry_in.model_fields)
         if missing:
             raise TypeMismatchError(

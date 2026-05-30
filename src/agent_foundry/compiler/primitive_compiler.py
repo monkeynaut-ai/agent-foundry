@@ -34,8 +34,7 @@ from agent_foundry.primitives.models import (
 )
 from agent_foundry.primitives.plan import PrimitivePlan
 from agent_foundry.primitives.retry_types import (
-    ATTEMPT_FAILURES_SUFFIX,
-    EXHAUSTION_REASON_SUFFIX,
+    WELL_KNOWN_METADATA_FIELDS,
     AttemptFailure,
     AttemptOutcome,
     DispositionKind,
@@ -128,19 +127,37 @@ def _derive_state_type(input_type: type[BaseModel], output_type: type[BaseModel]
 
 
 def _retry_channels(prefix: str) -> dict[str, Any]:
-    """Outer-state channel names a single Retry at ``prefix`` needs.
+    """Compiler-internal outer-state channel names a single Retry at ``prefix`` needs.
 
     These cannot be discovered during compilation: LangGraph fixes the state
     schema at ``StateGraph(state_type)`` construction and drops keys a node
-    returns that the schema did not declare. So a pre-pass declares them.
+    returns that the schema did not declare. So they are injected into the
+    schema of whatever (sub)graph owns the Retry's nodes (see
+    ``_state_type_with_retry_channels``).
+
+    Only internal channels (backstop counter, routing signals) are
+    prefix-namespaced. The resolver-read exhaustion metadata uses fixed
+    well-known names (see ``WELL_KNOWN_METADATA_CHANNELS``) so a resolver
+    author can declare matching input fields without knowing the compile
+    prefix.
     """
     return {
         f"{prefix}__resolver_reentries": Any,  # backstop counter (loop-carried)
-        f"{prefix}{EXHAUSTION_REASON_SUFFIX}": Any,  # exhaustion reason (Task 4b)
-        f"{prefix}{ATTEMPT_FAILURES_SUFFIX}": Any,  # accumulated failures (Task 4b)
         f"{prefix}__retry_route": Any,  # automated-phase routing signal
         f"{prefix}__reentry_route": Any,  # re-entry routing signal
     }
+
+
+# Fixed, resolver-knowable channel names carrying the exhaustion metadata the
+# resolver reads. The compiler writes these into the Retry's scope right before
+# the resolver node; a resolver input model declares matching fields to read
+# them. Fixed (not prefix-namespaced) because a resolver author cannot know the
+# Retry's compile prefix. v1 limitation: a Retry whose resolver or body itself
+# contains another Retry could collide on these names — acceptable for the
+# realistic single / sequential-retry cases (write-once-read-immediately).
+WELL_KNOWN_EXHAUSTION_REASON = "exhaustion_reason"
+WELL_KNOWN_ATTEMPT_FAILURES = "attempt_failures"
+WELL_KNOWN_METADATA_CHANNELS: dict[str, Any] = dict.fromkeys(WELL_KNOWN_METADATA_FIELDS, Any)
 
 
 def _collect_retry_channels(prim: Primitive, prefix: str) -> dict[str, Any]:
@@ -153,11 +170,16 @@ def _collect_retry_channels(prim: Primitive, prefix: str) -> dict[str, Any]:
       - Conditional then/else -> f"{prefix}_then" / f"{prefix}_else"
       - Loop body / Retry body -> f"{prefix}_body"
       - Retry resolver seat -> f"{prefix}_resolver"
+
+    Returns both the prefix-namespaced internal channels and the fixed
+    well-known metadata channels so any graph whose schema owns a Retry's nodes
+    declares the keys that Retry writes.
     """
     channels: dict[str, Any] = {}
 
     if isinstance(prim, Retry):
         channels.update(_retry_channels(prefix))
+        channels.update(WELL_KNOWN_METADATA_CHANNELS)
         channels.update(_collect_retry_channels(prim.body, f"{prefix}_body"))
         if prim.on_max_attempts_resolver is not None:
             channels.update(
@@ -174,6 +196,22 @@ def _collect_retry_channels(prim: Primitive, prefix: str) -> dict[str, Any]:
         channels.update(_collect_retry_channels(prim.body, f"{prefix}_body"))
 
     return channels
+
+
+def _state_type_with_retry_channels(
+    name: str, fields: dict[str, Any], children: list[tuple[Primitive, str]]
+) -> type:
+    """Build a TypedDict(total=False) from ``fields`` plus the retry channels of
+    each ``(child_primitive, child_prefix)`` compiled into this subgraph.
+
+    A subgraph's schema is fixed at ``StateGraph(...)`` construction; any Retry
+    compiled into it (at arbitrary nesting depth below its direct children)
+    writes channels that must be declared here or LangGraph drops them.
+    """
+    merged = dict(fields)
+    for child, child_prefix in children:
+        merged.update(_collect_retry_channels(child, child_prefix))
+    return TypedDict(name, merged, total=False)  # type: ignore[call-overload]
 
 
 def _scope_in(parent_state: dict[str, Any], child_input_type: type[BaseModel]) -> dict[str, Any]:
@@ -351,7 +389,8 @@ def _compile_sequence(
     for model in all_types:
         for name in model.model_fields:
             fields[name] = Any
-    sub_state_type = TypedDict("SeqState", fields, total=False)  # type: ignore[call-overload]
+    step_children = [(step, f"{ctx.prefix}_step_{i}") for i, step in enumerate(seq.steps)]
+    sub_state_type = _state_type_with_retry_channels("SeqState", fields, step_children)
     sub_graph = StateGraph(sub_state_type)
 
     first_entry = None
@@ -404,7 +443,10 @@ def _compile_conditional(
     for model in all_types:
         for name in model.model_fields:
             fields[name] = Any
-    sub_state_type = TypedDict("CondState", fields, total=False)  # type: ignore[call-overload]
+    branch_children: list[tuple[Primitive, str]] = [(cond.then_branch, f"{ctx.prefix}_then")]
+    if cond.else_branch is not None:
+        branch_children.append((cond.else_branch, f"{ctx.prefix}_else"))
+    sub_state_type = _state_type_with_retry_channels("CondState", fields, branch_children)
     sub_graph = StateGraph(sub_state_type)
 
     router_id = f"{ctx.prefix}_router"
@@ -476,7 +518,9 @@ def _compile_loop(
     for model in all_types:
         for name in model.model_fields:
             fields[name] = Any
-    body_state_type = TypedDict("LoopBodyState", fields, total=False)  # type: ignore[call-overload]
+    body_state_type = _state_type_with_retry_channels(
+        "LoopBodyState", fields, [(loop.body, f"{ctx.prefix}_body")]
+    )
     body_graph = StateGraph(body_state_type)
     body_entry, body_exit = _compile_node(body_graph, loop.body, ctx.child(f"{ctx.prefix}_body"))
     body_graph.set_entry_point(body_entry)
@@ -538,7 +582,9 @@ def _compile_retry(
     for model in all_types:
         for name in model.model_fields:
             fields[name] = Any
-    body_state_type = TypedDict("RetryBodyState", fields, total=False)  # type: ignore[call-overload]
+    body_state_type = _state_type_with_retry_channels(
+        "RetryBodyState", fields, [(retry.body, f"{prefix}_body")]
+    )
     body_graph = StateGraph(body_state_type)
     body_entry, body_exit = _compile_node(body_graph, retry.body, ctx.child(f"{prefix}_body"))
     body_graph.set_entry_point(body_entry)
@@ -561,8 +607,12 @@ def _compile_retry(
     reentries_key = f"{prefix}__resolver_reentries"
     retry_route_key = f"{prefix}__retry_route"
     reentry_route_key = f"{prefix}__reentry_route"
-    exhaustion_reason_key = f"{prefix}{EXHAUSTION_REASON_SUFFIX}"
-    attempt_failures_key = f"{prefix}{ATTEMPT_FAILURES_SUFFIX}"
+    # Resolver-read metadata uses fixed names a resolver can declare without
+    # knowing this compile prefix. Write-once-read-immediately by the resolver
+    # that runs right after the automated loop. v1 limitation: a nested Retry in
+    # this Retry's resolver or body could collide on these names.
+    exhaustion_reason_key = WELL_KNOWN_EXHAUSTION_REASON
+    attempt_failures_key = WELL_KNOWN_ATTEMPT_FAILURES
 
     def _outcome_from_body(
         state: dict[str, Any], body_result: dict[str, Any]

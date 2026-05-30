@@ -518,9 +518,10 @@ class TestGateResolver:
 
 
 def test_nested_retry_channels_declared_in_outer_schema() -> None:
-    """A Retry nested inside a Sequence step gets its namespaced backstop /
-    exhaustion channels DECLARED in the outer state schema. This fails if the
-    pre-pass prefix scheme diverges from the compiler's child-prefix scheme."""
+    """A Retry nested inside a Sequence step gets its prefix-namespaced internal
+    channels (backstop / routing) plus the fixed well-known metadata channels
+    collected. This fails if the prefix scheme diverges from the compiler's
+    child-prefix scheme."""
     from agent_foundry.compiler.primitive_compiler import _collect_retry_channels
 
     inner_retry = Retry[RS, RS](
@@ -533,10 +534,88 @@ def test_nested_retry_channels_declared_in_outer_schema() -> None:
     seq = Sequence[RS, RS](steps=[passthrough, inner_retry])
 
     channels = _collect_retry_channels(seq, "root")
-    # Sequence step 1 prefix is root_step_1; that retry's channels are namespaced under it.
+    # Sequence step 1 prefix is root_step_1; internal channels are namespaced under it.
     assert "root_step_1__resolver_reentries" in channels
-    assert "root_step_1__exhaustion_reason" in channels
-    assert "root_step_1__attempt_failures" in channels
+    assert "root_step_1__retry_route" in channels
+    assert "root_step_1__reentry_route" in channels
+    # Resolver-read metadata uses fixed well-known names, not the prefix.
+    assert "exhaustion_reason" in channels
+    assert "attempt_failures" in channels
+
+
+async def _compile_and_run_seq(seq: Sequence, initial: RS) -> RS:
+    ctx_var, ctx = _run_context()
+    token = ctx_var.set(ctx)
+    try:
+        _, root_out = get_type_args(seq)
+        graph = compile_runtime_plan(PrimitivePlan(root=seq))
+        result = await graph.ainvoke(initial.model_dump())
+        return root_out.model_validate(result)
+    finally:
+        ctx_var.reset(token)
+
+
+# ---------------------------------------------------------------------------
+# Nested Retry full cycle — a Retry inside a Sequence drives the SAME re-entry /
+# backstop behaviour as a root-level one. Regression guard for the bug where a
+# nested Retry's channels were declared only in the ROOT schema, not the
+# enclosing subgraph schema that actually owns the Retry's nodes, so LangGraph
+# silently dropped them (backstop never fired, routing collapsed).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_nested_retry_reentry_and_backstop_match_root_level() -> None:
+    """A Retry nested in a Sequence step re-enters on RETRY and trips the backstop
+    at resolver_max_reentries — identical to a root-level Retry."""
+    body_calls = {"n": 0}
+
+    def _body(s: RS) -> RS:
+        body_calls["n"] += 1
+        return RS(n=s.n + 1, verdict="fail", disposition=s.disposition)
+
+    resolver = _resolver([DispositionKind.RETRY])
+    inner = Retry[RS, RS](
+        max_attempts=1,
+        until=lambda s: False,
+        body=FunctionAction[RS, RS](function=_body),
+        on_max_attempts_resolver=resolver,
+        resolver_max_reentries=2,
+    )
+    passthrough = FunctionAction[RS, RS](function=lambda s: s)
+    seq = Sequence[RS, RS](steps=[passthrough, inner])
+
+    with pytest.raises(ResolverDidNotConvergeError):
+        await _compile_and_run_seq(seq, RS(n=0))
+    # 1 automated body + exactly 2 re-entry bodies; the 3rd re-entry trips the
+    # backstop before running the body.
+    assert body_calls["n"] == 3
+    # Resolver visited once per exhaustion: automated + each of the 2 re-entries.
+    assert resolver._calls["i"] == 3  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_nested_retry_reentry_that_passes_exits_successfully() -> None:
+    """A nested Retry whose RETRY re-run PASSES until() exits cleanly through the
+    enclosing Sequence — proving routing channels survive in the subgraph."""
+    resolver = _resolver(
+        [DispositionKind.RETRY],
+        state_edit=lambda s: {"verdict": "pass"},
+    )
+    inner = Retry[RS, RS](
+        max_attempts=1,
+        until=lambda s: s.verdict == "pass",
+        body=FunctionAction[RS, RS](
+            function=lambda s: RS(n=s.n + 1, verdict=s.verdict, disposition=s.disposition)
+        ),
+        on_max_attempts_resolver=resolver,
+    )
+    passthrough = FunctionAction[RS, RS](function=lambda s: s)
+    seq = Sequence[RS, RS](steps=[passthrough, inner])
+
+    result = await _compile_and_run_seq(seq, RS(n=0))
+    assert result.verdict == "pass"
+    assert resolver._calls["i"] == 1  # type: ignore[attr-defined]
 
 
 def _raising_body(exc: Exception) -> FunctionAction:
@@ -547,33 +626,30 @@ def _raising_body(exc: Exception) -> FunctionAction:
 
 
 # ---------------------------------------------------------------------------
-# Task 4b — exhaustion metadata (reason + attempt failures) in resolver-readable
-# state. The namespaced channels carry an internal double underscore
-# (root__exhaustion_reason); a resolver input model declares matching field names
-# and reads the values straight from the scoped state.
+# Exhaustion metadata (reason + attempt failures) in resolver-readable state.
+# The compiler writes the metadata under fixed well-known names
+# (exhaustion_reason / attempt_failures) that a resolver input model declares
+# directly — no compile prefix needed, so the same resolver works at any
+# nesting depth.
 # ---------------------------------------------------------------------------
 
 
 class MetaResolverState(BaseModel):
-    """Resolver I/O model that reads the namespaced exhaustion-metadata channels.
-
-    ``root__exhaustion_reason`` / ``root__attempt_failures`` mirror the channel
-    names the compiler writes for a root-level Retry.
-    """
+    """Resolver I/O model that reads the well-known exhaustion-metadata channels."""
 
     n: int = 0
     verdict: str = "fail"
     disposition: ResolverDisposition | None = None
-    root__exhaustion_reason: str = ""
-    root__attempt_failures: list = []
+    exhaustion_reason: str = ""
+    attempt_failures: list = []
 
 
 def _metadata_recording_resolver(disposition: DispositionKind, sink: dict):
     """Resolver that records the exhaustion metadata it observes, then disposes."""
 
     def _fn(s: MetaResolverState) -> MetaResolverState:
-        sink["reason"] = s.root__exhaustion_reason
-        sink["failures"] = s.root__attempt_failures
+        sink["reason"] = s.exhaustion_reason
+        sink["failures"] = s.attempt_failures
         return MetaResolverState(
             n=s.n,
             verdict=s.verdict,
@@ -618,7 +694,7 @@ async def test_exhaustion_reason_body_exceptions_in_state() -> None:
 @pytest.mark.asyncio
 async def test_attempt_failures_exposed_to_resolver() -> None:
     """The AttemptFailure records gathered during the automated loop are readable
-    from the namespaced failures channel by the resolver node."""
+    from the well-known failures channel by the resolver node."""
     sink: dict = {}
     retry = Retry[RS, RS](
         max_attempts=3,
@@ -632,3 +708,22 @@ async def test_attempt_failures_exposed_to_resolver() -> None:
     assert len(failures) == 3
     assert all(f["exception_type"] == "ValueError" for f in failures)
     assert all(f["exception_message"] == "kaboom" for f in failures)
+
+
+@pytest.mark.asyncio
+async def test_exhaustion_metadata_readable_from_nested_retry_resolver() -> None:
+    """A Retry NESTED in a Sequence writes the well-known metadata into its own
+    subgraph scope; its resolver reads exhaustion_reason via the fixed name
+    despite the compile prefix being root_step_1. Proves Fix 1 (subgraph schema)
+    and Fix 2 (well-known names) together."""
+    sink: dict = {}
+    inner = Retry[RS, RS](
+        max_attempts=3,
+        until=lambda s: False,
+        body=_failing_body(),
+        on_max_attempts_resolver=_metadata_recording_resolver(DispositionKind.ACCEPT, sink),
+    )
+    passthrough = FunctionAction[RS, RS](function=lambda s: s)
+    seq = Sequence[RS, RS](steps=[passthrough, inner])
+    await _compile_and_run_seq(seq, RS(n=0))
+    assert sink["reason"] == RetryExhaustionReason.CONDITION_NOT_MET.value

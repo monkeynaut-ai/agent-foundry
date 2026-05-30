@@ -362,6 +362,45 @@ class TestRetryResolverValidation:
         )
         validate_primitive(r)  # existing behaviour, no raise
 
+    def test_validate_retry_resolver_declares_well_known_metadata_ok(self):
+        """A resolver may declare the exact well-known metadata field names; the
+        compiler supplies them, so they pass availability validation."""
+
+        class MetaIn(BaseModel):
+            n: int = 0
+            exhaustion_reason: str = ""
+            attempt_failures: list = []
+
+        r = Retry[_ResolverState, _ResolverState](
+            max_attempts=1,
+            until=lambda s: False,
+            body=_resolver_body(),
+            on_max_attempts_resolver=FunctionAction[MetaIn, _ResolverState](
+                function=lambda m: _ResolverState()
+            ),
+        )
+        validate_primitive(r)  # no raise
+
+    def test_validate_retry_resolver_bogus_metadata_like_field_still_fails(self):
+        """A field that merely resembles a metadata channel but is neither in
+        retry_in nor an exact well-known name still fails availability — closing
+        the open-ended-suffix footgun."""
+
+        class BogusIn(BaseModel):
+            n: int = 0
+            wrongprefix__exhaustion_reason: str = ""
+
+        r = Retry[_ResolverState, _ResolverState](
+            max_attempts=1,
+            until=lambda s: False,
+            body=_resolver_body(),
+            on_max_attempts_resolver=FunctionAction[BogusIn, _ResolverState](
+                function=lambda m: _ResolverState()
+            ),
+        )
+        with pytest.raises(TypeMismatchError, match="resolver input"):
+            validate_primitive(r)
+
 
 # ======================================================================
 # Conditional Validation

@@ -7,11 +7,12 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-# Suffixes for the namespaced exhaustion-metadata channels the compiler writes
-# into outer state before a Retry's resolver node. A resolver input model that
-# declares fields ending in these suffixes consumes the corresponding channel.
-EXHAUSTION_REASON_SUFFIX = "__exhaustion_reason"
-ATTEMPT_FAILURES_SUFFIX = "__attempt_failures"
+# Fixed, resolver-knowable field names for the exhaustion-metadata channels the
+# compiler writes into a Retry's scope before its resolver node. A resolver
+# input model declares these exact names to read the corresponding value; they
+# are not prefix-namespaced because a resolver author cannot know the Retry's
+# compile prefix.
+WELL_KNOWN_METADATA_FIELDS: frozenset[str] = frozenset({"exhaustion_reason", "attempt_failures"})
 
 
 class AttemptOutcome(StrEnum):
