@@ -169,6 +169,11 @@ def _validate_retry(retry: Retry) -> None:
 
     validate_primitive(retry.body)
 
+    if retry.on_max_attempts_resolver is not None:
+        resolver_in, _ = get_type_args(retry.on_max_attempts_resolver)
+        _fields_available(resolver_in, set(retry_in.model_fields), "Retry resolver input")
+        validate_primitive(retry.on_max_attempts_resolver)
+
 
 def _validate_conditional(cond: Conditional) -> None:
     cond_in, cond_out = get_type_args(cond)

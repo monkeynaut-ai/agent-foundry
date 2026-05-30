@@ -302,6 +302,67 @@ class TestRetryValidation:
             validate_primitive(retry)
 
 
+class _ResolverState(BaseModel):
+    n: int = 0
+    verdict: str = ""
+
+
+def _resolver_body():
+    return FunctionAction[_ResolverState, _ResolverState](
+        function=lambda s: _ResolverState(n=s.n + 1)
+    )
+
+
+class TestRetryResolverValidation:
+    def test_validate_retry_with_function_resolver_ok(self):
+        r = Retry[_ResolverState, _ResolverState](
+            max_attempts=1,
+            until=lambda s: False,
+            body=_resolver_body(),
+            on_max_attempts_resolver=FunctionAction[_ResolverState, _ResolverState](
+                function=lambda s: s
+            ),
+        )
+        validate_primitive(r)  # no raise
+
+    def test_validate_retry_resolver_field_not_available(self):
+        class Extra(BaseModel):
+            n: int = 0
+            unknown: str = ""
+
+        r = Retry[_ResolverState, _ResolverState](
+            max_attempts=1,
+            until=lambda s: False,
+            body=_resolver_body(),
+            on_max_attempts_resolver=FunctionAction[Extra, _ResolverState](
+                function=lambda e: _ResolverState()
+            ),
+        )
+        with pytest.raises(TypeMismatchError, match="resolver input"):
+            validate_primitive(r)
+
+    def test_validate_retry_recurses_into_gate_resolver(self):
+        bad_gate = GateAction[_ResolverState, _ResolverState](
+            interaction="stdin", prompt_key="not_a_field"
+        )
+        r = Retry[_ResolverState, _ResolverState](
+            max_attempts=1,
+            until=lambda s: False,
+            body=_resolver_body(),
+            on_max_attempts_resolver=bad_gate,
+        )
+        with pytest.raises(InvalidPromptKeyError):
+            validate_primitive(r)
+
+    def test_validate_retry_no_resolver_unchanged(self):
+        r = Retry[_ResolverState, _ResolverState](
+            max_attempts=2,
+            until=lambda s: s.n >= 2,
+            body=_resolver_body(),
+        )
+        validate_primitive(r)  # existing behaviour, no raise
+
+
 # ======================================================================
 # Conditional Validation
 # ======================================================================
