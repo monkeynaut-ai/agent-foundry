@@ -26,14 +26,26 @@ from agent_foundry.primitives.models import (
     Sequence,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.primitives.retry_types import (
+    AttemptFailure,
+    AttemptOutcome,
+    DispositionKind,
+    ResolverDidNotConvergeError,
+    ResolverDisposition,
+    RetryAborted,
+    RetryExhaustionReason,
+)
 from agent_foundry.primitives.validators import register_validator, validate_primitive
 
 __all__ = [
     "AgentAction",
+    "AttemptFailure",
+    "AttemptOutcome",
     "ClaudeEffort",
     "ClaudeModel",
     "Conditional",
     "ContainerReusePolicy",
+    "DispositionKind",
     "FunctionAction",
     "GateAction",
     "InvalidPromptKeyError",
@@ -44,7 +56,11 @@ __all__ = [
     "PrimitiveCompilationError",
     "PrimitivePlan",
     "PrimitiveValidationError",
+    "ResolverDidNotConvergeError",
+    "ResolverDisposition",
     "Retry",
+    "RetryAborted",
+    "RetryExhaustionReason",
     "Sequence",
     "StdioMcpServer",
     "StreamableHttpMcpServer",

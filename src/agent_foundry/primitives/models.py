@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agent_foundry.agents.lifecycle import ContainerConfig
 from agent_foundry.primitives.mcp import McpServer
@@ -32,6 +32,8 @@ class Primitive[I: BaseModel, O: BaseModel](BaseModel):
     keys the primitive reads from and writes back to its parent scope.
     Type information is accessible at runtime via ``get_type_args()``.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
     def _require_parameterization(self) -> Primitive:
@@ -90,14 +92,20 @@ class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):
     body: Primitive
     exception_policy: RetryExceptionPolicy = RetryExceptionPolicy.PROPAGATE
     """Exception handling policy for body failures. Defaults to PROPAGATE (existing behaviour)."""
-    on_exhaustion: Callable[..., O | Awaitable[O]] | None = None
-    """Optional hook called when all attempts are consumed without until() returning True.
+    on_max_attempts_resolver: Primitive | None = None
+    """Primitive consulted when the automated loop exhausts max_attempts without until() passing.
 
-    Receives a ``RetryExhaustion`` instance. May be sync or async. When None,
-    Retry exits silently with the current accumulated state (today's behaviour).
-    When set, its return value (an instance of ``O``) replaces the accumulated
-    state, enabling the parent Conditional to route on a structured failure output.
-    """
+    The resolver runs as a normal outer-graph node and merges its output into graph state
+    like any other node. Its output model must declare a ``disposition: ResolverDisposition``
+    field; the compiler reads that field's ``kind`` (ACCEPT/ABORT/RETRY) to route and uses the
+    resolver node's own output state as the continue/accept state. The disposition is a pure
+    routing signal — it carries no state. A GateAction resolver satisfies this by having its
+    parser set ``kind`` and write findings into existing state fields. When None, exhaustion is
+    fail-closed (ABORT)."""
+
+    resolver_max_reentries: int = Field(default=50, ge=1)
+    """Safety backstop: max consecutive RETRY re-entries before raising
+    ResolverDidNotConvergeError. A safety invariant, not a budget the resolver reasons about."""
 
 
 class Conditional[I: BaseModel, O: BaseModel](Primitive[I, O]):

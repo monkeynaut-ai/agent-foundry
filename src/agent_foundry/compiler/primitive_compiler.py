@@ -34,8 +34,7 @@ from agent_foundry.primitives.models import (
 from agent_foundry.primitives.plan import PrimitivePlan
 from agent_foundry.primitives.retry_types import (
     AttemptFailure,
-    RetryExhaustion,
-    RetryExhaustionReason,
+    RetryAborted,
 )
 from agent_foundry.telemetry.spans import emit_span
 
@@ -482,17 +481,12 @@ def _compile_retry(
     treat_body_exception_as_failure = (
         retry.exception_policy == RetryExceptionPolicy.CATCH_AND_CONTINUE
     )
-    on_exhaustion_fn = retry.on_exhaustion
-    on_exhaustion_is_async = on_exhaustion_fn is not None and _is_async_callable(on_exhaustion_fn)
-
     # Wrapper node: retry loop with scoped body execution
     node_id = f"{ctx.prefix}_retry"
 
     async def retry_node(state: dict[str, Any]) -> dict[str, Any]:
         ctx_opt = current_run_context.get()
         current_state = dict(state)
-        attempt_failures: list[AttemptFailure] = []
-        successful_completions = 0
 
         for attempt_num in range(max_attempts):
             snapshot = copy.deepcopy(current_state)
@@ -502,7 +496,6 @@ def _compile_retry(
                 model = _validate_scoped_input(current_state, retry_in, node_id)
                 if until_fn(model):
                     return _scope_out(current_state, retry_out)
-                successful_completions += 1
             except Exception as exc:
                 if not treat_body_exception_as_failure:
                     raise
@@ -513,7 +506,6 @@ def _compile_retry(
                     exception_message=str(exc),
                     timestamp=datetime.now(UTC),
                 )
-                attempt_failures.append(failure)
                 if ctx_opt is not None:
                     ctx_opt.lifecycle_writer.append(
                         LifecycleEvent.RETRY_ATTEMPT_FAILED,
@@ -524,38 +516,12 @@ def _compile_retry(
                     )
                 current_state = snapshot  # discard partial mutations
 
-        # All attempts exhausted without until() returning True.
-        if on_exhaustion_fn is not None:
-            if not attempt_failures:
-                reason = RetryExhaustionReason.CONDITION_NOT_MET
-            elif successful_completions == 0:
-                reason = RetryExhaustionReason.BODY_EXCEPTIONS
-            else:
-                reason = RetryExhaustionReason.MIXED
-
-            last_state_model = retry_in.model_validate(
-                {k: current_state[k] for k in retry_in.model_fields if k in current_state}
-            )
-            exhaustion = RetryExhaustion(
-                max_attempts=max_attempts,
-                reason=reason,
-                attempt_failures=attempt_failures,
-                last_state=last_state_model,
-            )
-            if on_exhaustion_is_async:
-                output = await on_exhaustion_fn(exhaustion)
-            else:
-                output = on_exhaustion_fn(exhaustion)
-            if not isinstance(output, retry_out):
-                raise PrimitiveCompilationError(
-                    f"Retry {node_id}: on_exhaustion returned "
-                    f"{type(output).__name__}, expected {retry_out.__name__}",
-                    primitive_type=node_id,
-                )
-            return output.model_dump()
-
-        # on_exhaustion is None: silent exit with accumulated state (existing behaviour)
-        return _scope_out(current_state, retry_out)
+        # Interim fail-closed behaviour: the automated loop exhausted max_attempts
+        # without until() passing. The resolver-seat task replaces this raise with the
+        # resolver cycle (consult on_max_attempts_resolver, route on its disposition).
+        raise RetryAborted(
+            f"Retry {node_id}: exhausted {max_attempts} attempts without until() passing"
+        )
 
     graph.add_node(node_id, retry_node)  # type: ignore[arg-type]
     return CompileResult(node_id, node_id)

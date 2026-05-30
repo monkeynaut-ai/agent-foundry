@@ -227,6 +227,78 @@ class TestLoop:
 # ======================================================================
 
 
+class _ResolverState(BaseModel):
+    n: int = 0
+    verdict: str = ""
+
+
+def _resolver_seat_body():
+    return FunctionAction[_ResolverState, _ResolverState](
+        function=lambda s: _ResolverState(n=s.n + 1)
+    )
+
+
+class TestRetryResolverSeat:
+    """Retry exposes a resolver seat consulted on max-attempts exhaustion."""
+
+    def test_retry_resolver_seat_defaults_none(self):
+        r = Retry[_ResolverState, _ResolverState](
+            max_attempts=3, until=lambda s: s.n >= 3, body=_resolver_seat_body()
+        )
+        assert r.on_max_attempts_resolver is None
+        assert r.resolver_max_reentries == 50
+
+    def test_retry_accepts_resolver_primitive(self):
+        resolver = FunctionAction[_ResolverState, _ResolverState](function=lambda s: s)
+        r = Retry[_ResolverState, _ResolverState](
+            max_attempts=1,
+            until=lambda s: False,
+            body=_resolver_seat_body(),
+            on_max_attempts_resolver=resolver,
+        )
+        assert r.on_max_attempts_resolver is resolver
+
+    def test_resolver_max_reentries_ge_1(self):
+        with pytest.raises(ValidationError):
+            Retry[_ResolverState, _ResolverState](
+                max_attempts=1,
+                until=lambda s: False,
+                body=_resolver_seat_body(),
+                resolver_max_reentries=0,
+            )
+
+    def test_retry_backwards_compatible_without_resolver(self):
+        r = Retry[_ResolverState, _ResolverState](
+            max_attempts=2, until=lambda s: s.n >= 2, body=_resolver_seat_body()
+        )
+        assert r.on_max_attempts_resolver is None
+
+    def test_on_exhaustion_field_removed(self):
+        assert "on_exhaustion" not in Retry.model_fields
+        with pytest.raises(ValidationError):
+            Retry[_ResolverState, _ResolverState](
+                max_attempts=1,
+                until=lambda s: False,
+                body=_resolver_seat_body(),
+                on_exhaustion=lambda ex: _ResolverState(),
+            )
+
+    def test_disposition_types_exported_from_package(self):
+        from agent_foundry.primitives import (
+            AttemptOutcome,
+            DispositionKind,
+            ResolverDidNotConvergeError,
+            ResolverDisposition,
+            RetryAborted,
+        )
+
+        assert ResolverDisposition is not None
+        assert DispositionKind is not None
+        assert RetryAborted is not None
+        assert ResolverDidNotConvergeError is not None
+        assert AttemptOutcome is not None
+
+
 class TestRetry:
     """Retry primitive repeats body until condition met or exhausted."""
 
