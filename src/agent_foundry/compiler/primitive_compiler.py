@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, NamedTuple, TypedDict, cast
 
+from langgraph._internal._runnable import RunnableCallable
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ValidationError
 
@@ -34,6 +35,10 @@ from agent_foundry.primitives.models import (
 from agent_foundry.primitives.plan import PrimitivePlan
 from agent_foundry.primitives.retry_types import (
     AttemptFailure,
+    AttemptOutcome,
+    DispositionKind,
+    ResolverDidNotConvergeError,
+    ResolverDisposition,
     RetryAborted,
 )
 from agent_foundry.telemetry.spans import emit_span
@@ -119,6 +124,55 @@ def _derive_state_type(input_type: type[BaseModel], output_type: type[BaseModel]
     return TypedDict("PrimitiveState", fields, total=False)  # type: ignore[call-overload]
 
 
+def _retry_channels(prefix: str) -> dict[str, Any]:
+    """Outer-state channel names a single Retry at ``prefix`` needs.
+
+    These cannot be discovered during compilation: LangGraph fixes the state
+    schema at ``StateGraph(state_type)`` construction and drops keys a node
+    returns that the schema did not declare. So a pre-pass declares them.
+    """
+    return {
+        f"{prefix}__resolver_reentries": Any,  # backstop counter (loop-carried)
+        f"{prefix}__exhaustion_reason": Any,  # Task 4b
+        f"{prefix}__attempt_failures": Any,  # Task 4b
+        f"{prefix}__retry_route": Any,  # automated-phase routing signal
+        f"{prefix}__reentry_route": Any,  # re-entry routing signal
+    }
+
+
+def _collect_retry_channels(prim: Primitive, prefix: str) -> dict[str, Any]:
+    """Walk the plan tree and collect outer-state channels every Retry needs.
+
+    Prefix derivation mirrors each compiler's ``ctx.child(...)`` scheme exactly;
+    diverging here means a nested Retry writes to undeclared keys that LangGraph
+    silently drops. Confirmed against the per-type compilers:
+      - Sequence step i -> f"{prefix}_step_{i}"
+      - Conditional then/else -> f"{prefix}_then" / f"{prefix}_else"
+      - Loop body / Retry body -> f"{prefix}_body"
+      - Retry resolver seat -> f"{prefix}_resolver"
+    """
+    channels: dict[str, Any] = {}
+
+    if isinstance(prim, Retry):
+        channels.update(_retry_channels(prefix))
+        channels.update(_collect_retry_channels(prim.body, f"{prefix}_body"))
+        if prim.on_max_attempts_resolver is not None:
+            channels.update(
+                _collect_retry_channels(prim.on_max_attempts_resolver, f"{prefix}_resolver")
+            )
+    elif isinstance(prim, Sequence):
+        for i, step in enumerate(prim.steps):
+            channels.update(_collect_retry_channels(step, f"{prefix}_step_{i}"))
+    elif isinstance(prim, Conditional):
+        channels.update(_collect_retry_channels(prim.then_branch, f"{prefix}_then"))
+        if prim.else_branch is not None:
+            channels.update(_collect_retry_channels(prim.else_branch, f"{prefix}_else"))
+    elif isinstance(prim, Loop):
+        channels.update(_collect_retry_channels(prim.body, f"{prefix}_body"))
+
+    return channels
+
+
 def _scope_in(parent_state: dict[str, Any], child_input_type: type[BaseModel]) -> dict[str, Any]:
     """Scope parent state down to child's input fields. Validates required fields."""
     fields = set(child_input_type.model_fields.keys())
@@ -194,6 +248,10 @@ def compile_runtime_plan(plan: PrimitivePlan) -> Any:
     root = plan.root
     root_in, root_out = get_type_args(root)
     state_type = _derive_state_type(root_in, root_out)
+    extra = _collect_retry_channels(root, "root")
+    if extra:
+        merged = {**dict.fromkeys(state_type.__annotations__, Any), **extra}
+        state_type = TypedDict("PrimitiveState", merged, total=False)  # type: ignore[call-overload]
     graph = StateGraph(state_type)
 
     ctx = CompileContext(prefix="root")
@@ -459,8 +517,17 @@ def _compile_retry(
     retry: Retry,
     ctx: CompileContext,
 ) -> CompileResult:
+    """Compile Retry as the resolver-cycle topology.
+
+    The automated phase runs in one node (no checkpointer needed — its body
+    subgraph has no gate). Exhaustion has exactly one path: a cycle of real
+    outer-graph nodes (resolver / re-entry / abort), so a GateAction resolver can
+    pause and resume as an outer-graph node and the backstop counter lives in a
+    declared state channel rather than Python locals.
+    """
     retry_in, retry_out = get_type_args(retry)
     body_in, body_out = get_type_args(retry.body)
+    prefix = ctx.prefix
 
     # Compile body subgraph — state includes retry I/O + body I/O for accumulated context
     all_types = [retry_in, retry_out, body_in, body_out]
@@ -470,61 +537,215 @@ def _compile_retry(
             fields[name] = Any
     body_state_type = TypedDict("RetryBodyState", fields, total=False)  # type: ignore[call-overload]
     body_graph = StateGraph(body_state_type)
-    body_entry, body_exit = _compile_node(body_graph, retry.body, ctx.child(f"{ctx.prefix}_body"))
+    body_entry, body_exit = _compile_node(body_graph, retry.body, ctx.child(f"{prefix}_body"))
     body_graph.set_entry_point(body_entry)
     body_graph.add_edge(body_exit, END)
     compiled_body = body_graph.compile()
 
     until_fn = retry.until
     max_attempts = retry.max_attempts
+    max_reentries = retry.resolver_max_reentries
     # Precompute as a bool so the closure captures a plain value, not the enum class.
     treat_body_exception_as_failure = (
         retry.exception_policy == RetryExceptionPolicy.CATCH_AND_CONTINUE
     )
-    # Wrapper node: retry loop with scoped body execution
-    node_id = f"{ctx.prefix}_retry"
 
-    async def retry_node(state: dict[str, Any]) -> dict[str, Any]:
+    retry_id = f"{prefix}_retry"
+    resolver_id = f"{prefix}_resolver"
+    reentry_id = f"{prefix}_reentry"
+    abort_id = f"{prefix}_abort"
+    merge_id = f"{prefix}_merge"
+    reentries_key = f"{prefix}__resolver_reentries"
+    retry_route_key = f"{prefix}__retry_route"
+    reentry_route_key = f"{prefix}__reentry_route"
+
+    def _outcome_from_body(
+        state: dict[str, Any], body_result: dict[str, Any]
+    ) -> tuple[dict[str, Any], AttemptOutcome]:
+        merged = dict(state)
+        merged.update(_scope_out(body_result, body_out))
+        model = _validate_scoped_input(merged, retry_in, retry_id)
+        return merged, (AttemptOutcome.PASSED if until_fn(model) else AttemptOutcome.NOT_PASSED)
+
+    def _handle_body_exception(
+        snapshot: dict[str, Any], exc: Exception, attempt_num: int
+    ) -> tuple[dict[str, Any], AttemptOutcome]:
+        """Map a body raise per exception_policy. PROPAGATE re-raises; otherwise
+        record the failure, restore the pre-attempt state, return NOT_PASSED."""
+        if not treat_body_exception_as_failure:
+            raise exc
+        failure = AttemptFailure(
+            attempt_num=attempt_num,
+            exception_type=type(exc).__name__,
+            exception_message=str(exc),
+            timestamp=datetime.now(UTC),
+        )
         ctx_opt = current_run_context.get()
+        if ctx_opt is not None:
+            ctx_opt.lifecycle_writer.append(
+                LifecycleEvent.RETRY_ATTEMPT_FAILED,
+                node_id=retry_id,
+                attempt_num=failure.attempt_num,
+                exception_type=failure.exception_type,
+                exception_message=failure.exception_message,
+            )
+        return snapshot, AttemptOutcome.NOT_PASSED
+
+    # Shared body-execution + outcome logic, used by BOTH the automated loop and
+    # the re-entry node so there is no separate guided-exception path.
+    def _run_body_once_sync(
+        state: dict[str, Any], attempt_num: int
+    ) -> tuple[dict[str, Any], AttemptOutcome]:
+        snapshot = copy.deepcopy(state)
+        try:
+            result = compiled_body.invoke(dict(state))  # type: ignore[arg-type]
+            return _outcome_from_body(state, result)
+        except Exception as exc:
+            return _handle_body_exception(snapshot, exc, attempt_num)
+
+    async def _run_body_once_async(
+        state: dict[str, Any], attempt_num: int
+    ) -> tuple[dict[str, Any], AttemptOutcome]:
+        snapshot = copy.deepcopy(state)
+        try:
+            result = await compiled_body.ainvoke(dict(state))  # type: ignore[arg-type]
+            return _outcome_from_body(state, result)
+        except Exception as exc:
+            return _handle_body_exception(snapshot, exc, attempt_num)
+
+    def _retry_exhausted(state: dict[str, Any]) -> dict[str, Any]:
+        state[retry_route_key] = "exhausted"
+        state[reentries_key] = 0
+        return state
+
+    def _retry_passed(state: dict[str, Any]) -> dict[str, Any]:
+        out = _scope_out(state, retry_out)
+        out[retry_route_key] = "pass"
+        return out
+
+    def retry_node_sync(state: dict[str, Any]) -> dict[str, Any]:
         current_state = dict(state)
-
         for attempt_num in range(max_attempts):
-            snapshot = copy.deepcopy(current_state)
-            try:
-                result = await compiled_body.ainvoke(dict(current_state))  # type: ignore[arg-type]
-                current_state.update(_scope_out(result, body_out))
-                model = _validate_scoped_input(current_state, retry_in, node_id)
-                if until_fn(model):
-                    return _scope_out(current_state, retry_out)
-            except Exception as exc:
-                if not treat_body_exception_as_failure:
-                    raise
-                # TREAT_AS_FAILURE: record failure, restore pre-attempt state, continue
-                failure = AttemptFailure(
-                    attempt_num=attempt_num + 1,
-                    exception_type=type(exc).__name__,
-                    exception_message=str(exc),
-                    timestamp=datetime.now(UTC),
-                )
-                if ctx_opt is not None:
-                    ctx_opt.lifecycle_writer.append(
-                        LifecycleEvent.RETRY_ATTEMPT_FAILED,
-                        node_id=node_id,
-                        attempt_num=failure.attempt_num,
-                        exception_type=failure.exception_type,
-                        exception_message=failure.exception_message,
-                    )
-                current_state = snapshot  # discard partial mutations
+            current_state, outcome = _run_body_once_sync(current_state, attempt_num + 1)
+            if outcome is AttemptOutcome.PASSED:
+                return _retry_passed(current_state)
+        return _retry_exhausted(current_state)
 
-        # Interim fail-closed behaviour: the automated loop exhausted max_attempts
-        # without until() passing. The resolver-seat task replaces this raise with the
-        # resolver cycle (consult on_max_attempts_resolver, route on its disposition).
-        raise RetryAborted(
-            f"Retry {node_id}: exhausted {max_attempts} attempts without until() passing"
+    async def retry_node_async(state: dict[str, Any]) -> dict[str, Any]:
+        current_state = dict(state)
+        for attempt_num in range(max_attempts):
+            current_state, outcome = await _run_body_once_async(current_state, attempt_num + 1)
+            if outcome is AttemptOutcome.PASSED:
+                return _retry_passed(current_state)
+        return _retry_exhausted(current_state)
+
+    # -- Resolver node: emits a ResolverDisposition into state --
+    if retry.on_max_attempts_resolver is None:
+
+        def unset_resolver_node(state: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "disposition": ResolverDisposition(
+                    kind=DispositionKind.ABORT, reason="no resolver configured"
+                ).model_dump()
+            }
+
+        graph.add_node(resolver_id, unset_resolver_node)  # type: ignore[arg-type]
+        resolver_entry = resolver_id
+        resolver_exit = resolver_id
+    else:
+        resolver_entry, resolver_exit = _compile_node(
+            graph, retry.on_max_attempts_resolver, ctx.child(resolver_id)
         )
 
-    graph.add_node(node_id, retry_node)  # type: ignore[arg-type]
-    return CompileResult(node_id, node_id)
+    def retry_router(state: dict[str, Any]) -> str:
+        return merge_id if state.get(retry_route_key) == "pass" else resolver_entry
+
+    graph.add_node(
+        retry_id,
+        RunnableCallable(retry_node_sync, retry_node_async, name=retry_id, trace=False),
+    )
+    graph.add_conditional_edges(retry_id, retry_router, [merge_id, resolver_entry])
+
+    def _coerce_disposition(raw: Any) -> ResolverDisposition:
+        if isinstance(raw, ResolverDisposition):
+            return raw
+        return ResolverDisposition.model_validate(raw)
+
+    def disposition_router(state: dict[str, Any]) -> str:
+        raw = state.get("disposition")
+        if raw is None:
+            raise PrimitiveCompilationError(
+                f"Retry {retry_id}: resolver produced no 'disposition' field",
+                primitive_type=retry_id,
+            )
+        try:
+            disposition = _coerce_disposition(raw)
+        except ValidationError as exc:
+            raise PrimitiveCompilationError(
+                f"Retry {retry_id}: 'disposition' is not a ResolverDisposition: {exc}",
+                primitive_type=retry_id,
+            ) from exc
+        if disposition.kind is DispositionKind.ACCEPT:
+            return merge_id
+        if disposition.kind is DispositionKind.ABORT:
+            return abort_id
+        return reentry_id  # RETRY
+
+    graph.add_conditional_edges(resolver_exit, disposition_router, [merge_id, abort_id, reentry_id])
+
+    # -- Re-entry node: increment backstop, run body once, re-evaluate until() --
+    def _reentry_check_backstop(state: dict[str, Any]) -> int:
+        reentries = int(state.get(reentries_key, 0)) + 1
+        if reentries > max_reentries:
+            raise ResolverDidNotConvergeError(max_reentries)
+        return reentries
+
+    def _reentry_finish(
+        current_state: dict[str, Any], reentries: int, outcome: AttemptOutcome
+    ) -> dict[str, Any]:
+        current_state[reentries_key] = reentries
+        if outcome is AttemptOutcome.PASSED:
+            out = _scope_out(current_state, retry_out)
+            out[reentry_route_key] = "pass"
+            return out
+        current_state[reentry_route_key] = "not_passed"
+        return current_state
+
+    def reentry_node_sync(state: dict[str, Any]) -> dict[str, Any]:
+        reentries = _reentry_check_backstop(state)
+        current_state = dict(state)
+        current_state[reentries_key] = reentries
+        current_state, outcome = _run_body_once_sync(current_state, reentries)
+        return _reentry_finish(current_state, reentries, outcome)
+
+    async def reentry_node_async(state: dict[str, Any]) -> dict[str, Any]:
+        reentries = _reentry_check_backstop(state)
+        current_state = dict(state)
+        current_state[reentries_key] = reentries
+        current_state, outcome = await _run_body_once_async(current_state, reentries)
+        return _reentry_finish(current_state, reentries, outcome)
+
+    def reentry_router(state: dict[str, Any]) -> str:
+        return merge_id if state.get(reentry_route_key) == "pass" else resolver_entry
+
+    graph.add_node(
+        reentry_id,
+        RunnableCallable(reentry_node_sync, reentry_node_async, name=reentry_id, trace=False),
+    )
+    graph.add_conditional_edges(reentry_id, reentry_router, [merge_id, resolver_entry])
+
+    # -- Abort node: raise RetryAborted carrying the reason --
+    def abort_node(state: dict[str, Any]) -> dict[str, Any]:
+        raw = state.get("disposition")
+        reason = _coerce_disposition(raw).reason if raw is not None else ""
+        raise RetryAborted(reason)
+
+    graph.add_node(abort_id, abort_node)  # type: ignore[arg-type]
+
+    # -- Merge / exit node: fed by the automated pass path and the ACCEPT path --
+    graph.add_node(merge_id, lambda state: state)  # type: ignore[arg-type]
+
+    return CompileResult(entry_id=retry_id, exit_id=merge_id)
 
 
 register_compiler(Retry, _compile_retry)
