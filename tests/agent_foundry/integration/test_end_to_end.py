@@ -115,7 +115,7 @@ class _UnusedResponder(Responder):
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_end_to_end_real_claude_code(tmp_path: Path) -> None:
+async def test_end_to_end_real_claude_code(tmp_path: Path, cleanup_volumes) -> None:
     # Fail loudly — not skip — when the OAuth token is missing.
     oauth_token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
     assert oauth_token  # used implicitly by ``run_primitive_plan`` via os.environ
@@ -131,6 +131,7 @@ async def test_end_to_end_real_claude_code(tmp_path: Path) -> None:
 
     base_image = os.environ.get("AGENT_BASE_IMAGE", "agent-worker:latest")
     workspace_volume = f"plan2-e2e-{uuid.uuid4().hex[:8]}"
+    cleanup_volumes.append(workspace_volume)
 
     # --- Build the plan ----------------------------------------------------
 
