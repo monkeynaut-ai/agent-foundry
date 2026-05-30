@@ -95,13 +95,14 @@ def base_image() -> str:
 
 
 @pytest.fixture
-def locked_down_container(docker_client, base_image):
+def locked_down_container(docker_client, base_image, cleanup_volumes):
     """Boot a container with /workspace/hidden locked down and
     /workspace/readonly read-only. Yields the handle; tears down after."""
     oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "test-token-for-lockdown")
 
     manager = ContainerManager(client=docker_client, default_image=base_image)
     workspace_volume = f"lockdown-{uuid.uuid4().hex[:8]}"
+    cleanup_volumes.append(workspace_volume)
 
     handle = manager.create_container(
         workspace_volume=workspace_volume,

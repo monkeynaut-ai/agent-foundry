@@ -36,7 +36,7 @@ class Ping(BaseModel):
 
 
 @pytest.mark.integration
-def test_foundation_smoke_real_claude_code() -> None:
+def test_foundation_smoke_real_claude_code(cleanup_volumes) -> None:
     # Fail loudly — not skip — when the OAuth token is missing.
     oauth_token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
 
@@ -51,6 +51,7 @@ def test_foundation_smoke_real_claude_code() -> None:
 
     base_image = os.environ.get("AGENT_BASE_IMAGE", "agent-worker:latest")
     workspace_volume = f"foundation-smoke-{uuid.uuid4().hex[:8]}"
+    cleanup_volumes.append(workspace_volume)
 
     manager = ContainerManager(client=client, default_image=base_image)
     schema = to_claude_code_schema(AgentTurnEnvelope[Ping])
