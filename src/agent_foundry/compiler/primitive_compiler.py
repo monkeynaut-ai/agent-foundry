@@ -647,7 +647,7 @@ def _compile_retry(
             timestamp=datetime.now(UTC),
         )
         _emit_lifecycle(
-            LifecycleEvent.RETRY_ATTEMPT_FAILED,
+            LifecycleEvent.RETRY_ATTEMPT_ERRORED,
             node_id=retry_id,
             attempt_num=failure.attempt_num,
             exception_type=failure.exception_type,
@@ -667,10 +667,11 @@ def _compile_retry(
             result = compiled_body.invoke(dict(state))  # type: ignore[arg-type]
             merged, outcome = _outcome_from_body(state, result)
             _emit_lifecycle(
-                LifecycleEvent.RETRY_ATTEMPT_COMPLETED,
+                LifecycleEvent.RETRY_ATTEMPT_PASSED
+                if outcome is AttemptOutcome.PASSED
+                else LifecycleEvent.RETRY_ATTEMPT_NOT_PASSED,
                 node_id=retry_id,
                 attempt_num=attempt_num,
-                outcome=outcome.value,
             )
             return merged, outcome, None
         except Exception as exc:
@@ -684,10 +685,11 @@ def _compile_retry(
             result = await compiled_body.ainvoke(dict(state))  # type: ignore[arg-type]
             merged, outcome = _outcome_from_body(state, result)
             _emit_lifecycle(
-                LifecycleEvent.RETRY_ATTEMPT_COMPLETED,
+                LifecycleEvent.RETRY_ATTEMPT_PASSED
+                if outcome is AttemptOutcome.PASSED
+                else LifecycleEvent.RETRY_ATTEMPT_NOT_PASSED,
                 node_id=retry_id,
                 attempt_num=attempt_num,
-                outcome=outcome.value,
             )
             return merged, outcome, None
         except Exception as exc:

@@ -372,17 +372,18 @@ async def test_resolver_abort_raises_without_reentry() -> None:
 
 # ---------------------------------------------------------------------------
 # Observability — attempt outcomes and resolver dispositions are recorded in the
-# lifecycle stream (RETRY_ATTEMPT_COMPLETED / RESOLVER_DISPOSITION), so an
-# operator's decision and each attempt's result are first-class audit entries.
+# lifecycle stream (RETRY_ATTEMPT_PASSED / _NOT_PASSED / RESOLVER_DISPOSITION),
+# so an operator's decision and each attempt's result are first-class audit
+# entries.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_attempt_outcomes_and_disposition_are_logged() -> None:
-    """Each non-raising attempt emits RETRY_ATTEMPT_COMPLETED carrying its
-    outcome; each resolver decision emits RESOLVER_DISPOSITION carrying its kind
-    + reason. Drives one automated NOT_PASSED attempt, a RETRY disposition, then
-    a passing re-entry."""
+    """Each non-raising attempt emits its per-outcome event
+    (RETRY_ATTEMPT_PASSED / RETRY_ATTEMPT_NOT_PASSED); each resolver decision
+    emits RESOLVER_DISPOSITION carrying its kind + reason. Drives one automated
+    NOT_PASSED attempt, a RETRY disposition, then a passing re-entry."""
     writer = _CapturingWriter()
     body_sink = {"runs": 0}
     resolver_sink = {"resolver_visits": 0}
@@ -395,10 +396,18 @@ async def test_attempt_outcomes_and_disposition_are_logged() -> None:
     )
     await _compile_and_run(retry, W(), writer=writer)
 
-    completed = [e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_COMPLETED]
+    attempt_events = [
+        e
+        for e in writer.events
+        if e["type"]
+        in (LifecycleEvent.RETRY_ATTEMPT_PASSED, LifecycleEvent.RETRY_ATTEMPT_NOT_PASSED)
+    ]
     # One automated attempt (NOT_PASSED) then one passing re-entry (PASSED).
-    assert [e["outcome"] for e in completed] == ["not_passed", "passed"]
-    assert all(e["node_id"].endswith("_retry") for e in completed)
+    assert [e["type"] for e in attempt_events] == [
+        LifecycleEvent.RETRY_ATTEMPT_NOT_PASSED,
+        LifecycleEvent.RETRY_ATTEMPT_PASSED,
+    ]
+    assert all(e["node_id"].endswith("_retry") for e in attempt_events)
 
     dispositions = [e for e in writer.events if e["type"] == LifecycleEvent.RESOLVER_DISPOSITION]
     # The resolver was consulted once and chose RETRY, with its reason recorded.

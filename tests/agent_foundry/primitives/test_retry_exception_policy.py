@@ -251,14 +251,14 @@ class TestStateRollback:
 
 
 # ---------------------------------------------------------------------------
-# A5 — RETRY_ATTEMPT_FAILED lifecycle events emitted per failure
+# A5 — RETRY_ATTEMPT_ERRORED lifecycle events emitted per failure
 # ---------------------------------------------------------------------------
 
 
 class TestLifecycleEvents:
     @pytest.mark.asyncio
     async def test_attempt_failed_event_emitted_per_exception(self) -> None:
-        """A5: RETRY_ATTEMPT_FAILED emitted with attempt_num, exception_type, exception_message."""
+        """A5: RETRY_ATTEMPT_ERRORED emitted with attempt_num, exception_type, exception_message."""
         writer = _CapturingWriter()
 
         retry = Retry[_S, _S](
@@ -270,7 +270,7 @@ class TestLifecycleEvents:
         await _compile_and_run(retry, _S(), writer=writer)
 
         failed_events = [
-            e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_FAILED
+            e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_ERRORED
         ]
         assert len(failed_events) == 2  # attempts 1 and 2 failed; attempt 3 succeeded
 
@@ -283,7 +283,7 @@ class TestLifecycleEvents:
 
     @pytest.mark.asyncio
     async def test_no_events_emitted_under_propagate(self) -> None:
-        """Under PROPAGATE policy no RETRY_ATTEMPT_FAILED events are emitted."""
+        """Under PROPAGATE policy no RETRY_ATTEMPT_ERRORED events are emitted."""
         writer = _CapturingWriter()
 
         retry = Retry[_S, _S](
@@ -295,6 +295,6 @@ class TestLifecycleEvents:
             await _compile_and_run(retry, _S(), writer=writer)
 
         failed_events = [
-            e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_FAILED
+            e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_ERRORED
         ]
         assert failed_events == []
