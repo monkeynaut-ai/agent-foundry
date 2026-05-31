@@ -1,4 +1,8 @@
-"""Types for Retry exhaustion reporting passed to the on_exhaustion hook."""
+"""Types for Retry exhaustion reporting.
+
+``RetryExhaustion`` is currently unused — the on_exhaustion hook it described was
+removed; nothing wires it into the Retry path.
+"""
 
 from __future__ import annotations
 
@@ -29,9 +33,9 @@ class RetryExhaustionReason(StrEnum):
     """Why a Retry primitive exhausted all attempts without until() returning True.
 
     - CONDITION_NOT_MET: all attempts ran to completion; until() never returned True.
-    - BODY_EXCEPTIONS: every attempt raised under the TREAT_AS_FAILURE policy;
+    - BODY_EXCEPTIONS: every attempt raised under the CATCH_AND_CONTINUE policy;
       no attempt completed normally.
-    - MIXED: at least one attempt raised (and was tolerated under TREAT_AS_FAILURE)
+    - MIXED: at least one attempt raised (and was tolerated under CATCH_AND_CONTINUE)
       and at least one attempt completed normally with until() returning False.
     """
 
@@ -48,7 +52,9 @@ class AttemptFailure(BaseModel):
 
 
 class RetryExhaustion[I: BaseModel](BaseModel):
-    """Passed to Retry.on_exhaustion when all attempts are consumed.
+    """Exhaustion report describing a Retry that consumed all attempts.
+
+    Currently unused: no longer wired to a hook after on_exhaustion was removed.
 
     ``last_state`` is the accumulated state at the moment of exhaustion —
     specifically, the state after all rollbacks complete. Under

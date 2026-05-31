@@ -153,8 +153,9 @@ def _retry_channels(prefix: str) -> dict[str, Any]:
 # the resolver node; a resolver input model declares matching fields to read
 # them. Fixed (not prefix-namespaced) because a resolver author cannot know the
 # Retry's compile prefix. v1 limitation: a Retry whose resolver or body itself
-# contains another Retry could collide on these names — acceptable for the
-# realistic single / sequential-retry cases (write-once-read-immediately).
+# contains another Retry could collide on these names (and on the flat
+# ``disposition`` key) — acceptable for the realistic single / sequential-retry
+# cases (write-once-read-immediately).
 WELL_KNOWN_EXHAUSTION_REASON = "exhaustion_reason"
 WELL_KNOWN_ATTEMPT_FAILURES = "attempt_failures"
 WELL_KNOWN_METADATA_CHANNELS: dict[str, Any] = dict.fromkeys(WELL_KNOWN_METADATA_FIELDS, Any)
@@ -610,7 +611,8 @@ def _compile_retry(
     # Resolver-read metadata uses fixed names a resolver can declare without
     # knowing this compile prefix. Write-once-read-immediately by the resolver
     # that runs right after the automated loop. v1 limitation: a nested Retry in
-    # this Retry's resolver or body could collide on these names.
+    # this Retry's resolver or body could collide on these names (and on the flat
+    # ``disposition`` key).
     exhaustion_reason_key = WELL_KNOWN_EXHAUSTION_REASON
     attempt_failures_key = WELL_KNOWN_ATTEMPT_FAILURES
 

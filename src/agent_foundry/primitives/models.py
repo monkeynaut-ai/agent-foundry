@@ -82,9 +82,9 @@ class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Execute body, evaluate condition, repeat up to max_attempts times.
 
     The ``until`` callable checks a condition on the state — when it returns
-    True, the retry stops.  If max_attempts is exhausted, Retry exits normally
-    with domain state intact.  The parent reads the output and routes accordingly
-    (e.g. via a Conditional to a GateAction for human escalation).
+    True, the retry stops.  Exhausting max_attempts is fail-closed: the
+    ``on_max_attempts_resolver`` seat is consulted to decide ACCEPT/ABORT/RETRY,
+    and when no resolver is set Retry ABORTs (raises RetryAborted).
     """
 
     max_attempts: int = Field(ge=1)
