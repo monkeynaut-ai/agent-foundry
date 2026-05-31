@@ -34,6 +34,8 @@ class LifecycleEvent(StrEnum):
     AI_CALL_COMPLETED = "ai_call_completed"
     AI_CALL_FAILED = "ai_call_failed"
     RETRY_ATTEMPT_FAILED = "retry_attempt_failed"
+    RETRY_ATTEMPT_COMPLETED = "retry_attempt_completed"
+    RESOLVER_DISPOSITION = "resolver_disposition"
     GATE_ENTERED = "gate_entered"
     GATE_RESUMED = "gate_resumed"
     DOMAIN = "domain"

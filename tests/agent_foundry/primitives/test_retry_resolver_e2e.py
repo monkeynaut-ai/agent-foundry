@@ -368,3 +368,70 @@ async def test_resolver_abort_raises_without_reentry() -> None:
     with pytest.raises(RetryAborted, match="cannot-converge"):
         await _compile_and_run(retry, W())
     assert body_sink["runs"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Observability — attempt outcomes and resolver dispositions are recorded in the
+# lifecycle stream (RETRY_ATTEMPT_COMPLETED / RESOLVER_DISPOSITION), so an
+# operator's decision and each attempt's result are first-class audit entries.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_attempt_outcomes_and_disposition_are_logged() -> None:
+    """Each non-raising attempt emits RETRY_ATTEMPT_COMPLETED carrying its
+    outcome; each resolver decision emits RESOLVER_DISPOSITION carrying its kind
+    + reason. Drives one automated NOT_PASSED attempt, a RETRY disposition, then
+    a passing re-entry."""
+    writer = _CapturingWriter()
+    body_sink = {"runs": 0}
+    resolver_sink = {"resolver_visits": 0}
+
+    retry = Retry[W, W](
+        max_attempts=1,
+        until=lambda s: s.automated_verdict == "pass",
+        body=_designer_body(body_sink),
+        on_max_attempts_resolver=_function_resolver(resolver_sink),
+    )
+    await _compile_and_run(retry, W(), writer=writer)
+
+    completed = [e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_COMPLETED]
+    # One automated attempt (NOT_PASSED) then one passing re-entry (PASSED).
+    assert [e["outcome"] for e in completed] == ["not_passed", "passed"]
+    assert all(e["node_id"].endswith("_retry") for e in completed)
+
+    dispositions = [e for e in writer.events if e["type"] == LifecycleEvent.RESOLVER_DISPOSITION]
+    # The resolver was consulted once and chose RETRY, with its reason recorded.
+    assert [(e["kind"], e["reason"]) for e in dispositions] == [("retry", "guided")]
+
+
+@pytest.mark.asyncio
+async def test_abort_disposition_is_logged_before_raise() -> None:
+    """An ABORT disposition is recorded (with its reason) before RetryAborted
+    propagates — so a terminated session still leaves the operator's decision in
+    the lifecycle stream."""
+    writer = _CapturingWriter()
+    body_sink = {"runs": 0}
+
+    def _abort(s: W) -> W:
+        return W(
+            artifact=s.artifact,
+            automated_verdict=s.automated_verdict,
+            guidance=s.guidance,
+            body_runs=s.body_runs,
+            disposition=ResolverDisposition(kind=DispositionKind.ABORT, reason="operator-declined"),
+        )
+
+    retry = Retry[W, W](
+        max_attempts=1,
+        until=lambda s: s.automated_verdict == "pass",
+        body=_designer_body(body_sink),
+        on_max_attempts_resolver=FunctionAction[W, W](function=_abort),
+    )
+    with pytest.raises(RetryAborted):
+        await _compile_and_run(retry, W(), writer=writer)
+
+    dispositions = [e for e in writer.events if e["type"] == LifecycleEvent.RESOLVER_DISPOSITION]
+    assert len(dispositions) == 1
+    assert dispositions[0]["kind"] == "abort"
+    assert dispositions[0]["reason"] == "operator-declined"

@@ -560,6 +560,14 @@ def _compile_loop(
 register_compiler(Loop, _compile_loop)
 
 
+def _emit_lifecycle(event: LifecycleEvent, **fields: Any) -> None:
+    """Append a lifecycle event when a run context is active; no-op otherwise
+    (e.g. unit tests that compile/invoke nodes without an installed run)."""
+    ctx_opt = current_run_context.get()
+    if ctx_opt is not None:
+        ctx_opt.lifecycle_writer.append(event, **fields)
+
+
 def _compile_retry(
     graph: StateGraph,
     retry: Retry,
@@ -638,15 +646,13 @@ def _compile_retry(
             exception_message=str(exc),
             timestamp=datetime.now(UTC),
         )
-        ctx_opt = current_run_context.get()
-        if ctx_opt is not None:
-            ctx_opt.lifecycle_writer.append(
-                LifecycleEvent.RETRY_ATTEMPT_FAILED,
-                node_id=retry_id,
-                attempt_num=failure.attempt_num,
-                exception_type=failure.exception_type,
-                exception_message=failure.exception_message,
-            )
+        _emit_lifecycle(
+            LifecycleEvent.RETRY_ATTEMPT_FAILED,
+            node_id=retry_id,
+            attempt_num=failure.attempt_num,
+            exception_type=failure.exception_type,
+            exception_message=failure.exception_message,
+        )
         return snapshot, AttemptOutcome.NOT_PASSED, failure
 
     # Shared body-execution + outcome logic, used by BOTH the automated loop and
@@ -660,6 +666,12 @@ def _compile_retry(
         try:
             result = compiled_body.invoke(dict(state))  # type: ignore[arg-type]
             merged, outcome = _outcome_from_body(state, result)
+            _emit_lifecycle(
+                LifecycleEvent.RETRY_ATTEMPT_COMPLETED,
+                node_id=retry_id,
+                attempt_num=attempt_num,
+                outcome=outcome.value,
+            )
             return merged, outcome, None
         except Exception as exc:
             return _handle_body_exception(snapshot, exc, attempt_num)
@@ -671,6 +683,12 @@ def _compile_retry(
         try:
             result = await compiled_body.ainvoke(dict(state))  # type: ignore[arg-type]
             merged, outcome = _outcome_from_body(state, result)
+            _emit_lifecycle(
+                LifecycleEvent.RETRY_ATTEMPT_COMPLETED,
+                node_id=retry_id,
+                attempt_num=attempt_num,
+                outcome=outcome.value,
+            )
             return merged, outcome, None
         except Exception as exc:
             return _handle_body_exception(snapshot, exc, attempt_num)
@@ -774,6 +792,12 @@ def _compile_retry(
                 f"Retry {retry_id}: 'disposition' is not a ResolverDisposition: {exc}",
                 primitive_type=retry_id,
             ) from exc
+        _emit_lifecycle(
+            LifecycleEvent.RESOLVER_DISPOSITION,
+            node_id=retry_id,
+            kind=disposition.kind.value,
+            reason=disposition.reason,
+        )
         if disposition.kind is DispositionKind.ACCEPT:
             return merge_id
         if disposition.kind is DispositionKind.ABORT:
