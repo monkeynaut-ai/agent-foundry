@@ -28,6 +28,7 @@ from agent_foundry.orchestration.lifecycle_writer import (
     LifecycleWriter,
     NoOpLifecycleWriter,
 )
+from agent_foundry.orchestration.run_outcome import RunOutcome
 from agent_foundry.telemetry.config import TelemetryConfig
 
 __all__ = [
@@ -219,19 +220,30 @@ class RunEndedEvent(BaseModel):
     signal handler removal, ``lifecycle.close()``, TracerProvider
     shutdown). The ``RunContext`` is still bound at this point.
 
-    The two nullable fields together encode the run's terminal state:
+    ``outcome`` is the typed terminal classification; ``exception`` and
+    ``output`` remain for hooks that read them directly. The three fields
+    encode the terminal state as:
 
-    +----------------+-----------------+----------------+
-    | exception      | output          | meaning        |
-    +================+=================+================+
-    | ``None``       | a ``BaseModel`` | clean success  |
-    +----------------+-----------------+----------------+
-    | exception inst | ``None``        | failure        |
-    +----------------+-----------------+----------------+
+    +-----------------------+----------------+-----------------+
+    | outcome               | exception      | output          |
+    +=======================+================+=================+
+    | ``RunCompleted``      | ``None``       | a ``BaseModel`` |
+    +-----------------------+----------------+-----------------+
+    | ``RunAborted``        | ``None``       | ``None``        |
+    +-----------------------+----------------+-----------------+
+    | ``RunFailed`` backstop| exception inst | ``None``        |
+    +-----------------------+----------------+-----------------+
+    | ``RunFailed`` crash   | exception inst | ``None``        |
+    +-----------------------+----------------+-----------------+
+
+    Abort is not an error: ``exception`` is ``None`` and the abort is
+    legible only via ``outcome`` (a ``RunAborted``). The live
+    traceback-bearing exception reaches failure hooks via ``exception``.
 
     Forward-compatible: new fields can be added without breaking
-    existing hooks. Read fields by name (``event.exception``,
-    ``event.output``) so the meaning is never ambiguous.
+    existing hooks. Read fields by name (``event.outcome``,
+    ``event.exception``, ``event.output``) so the meaning is never
+    ambiguous.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
@@ -239,6 +251,7 @@ class RunEndedEvent(BaseModel):
     run_context: RunContext
     exception: BaseException | None = None
     output: BaseModel | None = None
+    outcome: RunOutcome | None = None
 
 
 OnRunStartingHook = Callable[[RunStartingEvent], None]

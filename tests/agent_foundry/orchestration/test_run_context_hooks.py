@@ -15,6 +15,7 @@ from agent_foundry.orchestration.run_context import (
     RunEndedEvent,
     RunStartingEvent,
 )
+from agent_foundry.orchestration.run_outcome import RunAborted
 
 
 def _ctx(tmp_path: Path, **overrides) -> RunContext:
@@ -29,6 +30,22 @@ def _ctx(tmp_path: Path, **overrides) -> RunContext:
     )
     kwargs.update(overrides)
     return RunContext(**kwargs)
+
+
+def test_run_ended_event_defaults_no_outcome(tmp_path: Path) -> None:
+    ev = RunEndedEvent(run_context=_ctx(tmp_path))
+    assert ev.outcome is None
+    assert ev.exception is None
+    assert ev.output is None
+
+
+def test_run_ended_event_carries_aborted_outcome(tmp_path: Path) -> None:
+    ev = RunEndedEvent(
+        run_context=_ctx(tmp_path),
+        outcome=RunAborted(reason="declined"),
+    )
+    assert isinstance(ev.outcome, RunAborted)
+    assert ev.outcome.reason == "declined"
 
 
 def test_run_context_on_run_starting_default_empty(tmp_path: Path) -> None:
