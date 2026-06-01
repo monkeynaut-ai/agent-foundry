@@ -109,6 +109,31 @@ class TestValidatorRegistry:
         validate_primitive(child)
         assert calls == ["parent"]
 
+    def test_dispatcher_recurses_via_child_specs(self):
+        """The dispatcher walks child_specs after the per-type validator, so a
+        composite's children are validated through the shared seam — even for a
+        custom composite whose own validator does not recurse."""
+        visited: list[Primitive] = []
+
+        class _Child[I: BaseModel, O: BaseModel](Primitive[I, O]):
+            def child_specs(self) -> list[tuple[Primitive, str]]:
+                return []
+
+        class _Parent[I: BaseModel, O: BaseModel](Primitive[I, O]):
+            inner: Primitive
+
+            def child_specs(self) -> list[tuple[Primitive, str]]:
+                return [(self.inner, "inner")]
+
+        register_validator(_Child, lambda p: visited.append(p))
+        register_validator(_Parent, lambda p: visited.append(p))
+
+        child = _Child[_RegInput, _RegOutput]()
+        parent = _Parent[_RegInput, _RegOutput](inner=child)
+        validate_primitive(parent)
+
+        assert visited == [parent, child]
+
     def test_duplicate_registration_raises(self):
         """Re-registering for the same type is a footgun; raise instead of clobbering."""
 

@@ -72,7 +72,12 @@ def validate_primitive(prim: Primitive) -> None:
     for cls in prim_type.__mro__:
         fn = _validator_registry.get(cls)
         if fn is not None:
+            # Validator-first, then children: per-type validators do their
+            # type-compatibility checks, then the dispatcher recurses into the
+            # primitive's declared children via the shared child_specs seam.
             fn(prim)
+            for child, _ in prim.child_specs():
+                validate_primitive(child)
             return
     raise UnregisteredPrimitiveError(
         f"No validator registered for {prim_type.__name__}; "
@@ -121,13 +126,11 @@ def _validate_sequence(seq: Sequence) -> None:
 
     _fields_available(seq_out, accumulated_fields, "Sequence output")
 
-    for step in seq.steps:
-        validate_primitive(step)
 
-
-def _validate_loop(loop: Loop) -> None:
+def _validate_loop(_loop: Loop) -> None:
     # Loop body type compatibility is deferred to the compiler (CS3).
-    validate_primitive(loop.body)
+    # Child recursion is owned by the validate_primitive dispatcher.
+    return
 
 
 def _validate_retry(retry: Retry) -> None:
@@ -168,8 +171,6 @@ def _validate_retry(retry: Retry) -> None:
             position="Retry body re-entry",
         )
 
-    validate_primitive(retry.body)
-
     if retry.on_max_attempts_resolver is not None:
         resolver_in, _ = get_type_args(retry.on_max_attempts_resolver)
         # The compiler writes the exhaustion metadata into the Retry's scope
@@ -189,7 +190,6 @@ def _validate_retry(retry: Retry) -> None:
                 actual=resolver_in,
                 position="Retry resolver input",
             )
-        validate_primitive(retry.on_max_attempts_resolver)
 
 
 def _validate_conditional(cond: Conditional) -> None:
@@ -275,10 +275,6 @@ def _validate_conditional(cond: Conditional) -> None:
                 actual=else_out,
                 position="Conditional else_branch output",
             )
-
-        validate_primitive(cond.else_branch)
-
-    validate_primitive(cond.then_branch)
 
 
 def _validate_gate_action(gate: GateAction) -> None:
