@@ -328,3 +328,67 @@ def test_render_summary_includes_failure_cause(tmp_path: Path) -> None:
     assert "implementer/1" in text
     assert "api_error_status=500" in text
     assert "exit_code=1" in text
+
+
+def _run_aborted(run_id: str, ts: str) -> dict:
+    return {
+        "type": LifecycleEvent.RUN_ABORTED.value,
+        "ts": ts,
+        "run_id": run_id,
+    }
+
+
+def _resolver_disposition(run_id: str, ts: str, *, kind: str, reason: str) -> dict:
+    return {
+        "type": LifecycleEvent.RESOLVER_DISPOSITION.value,
+        "ts": ts,
+        "run_id": run_id,
+        "kind": kind,
+        "reason": reason,
+    }
+
+
+def test_summary_reports_aborted_outcome(tmp_path: Path) -> None:
+    run_id = "run-aborted"
+    run_dir = tmp_path / run_id
+    _write_jsonl(
+        run_dir / "lifecycle.jsonl",
+        [
+            _run_started(run_id, "2026-04-15T10:00:00+00:00"),
+            _resolver_disposition(
+                run_id, "2026-04-15T10:00:04+00:00", kind="abort", reason="declined"
+            ),
+            _run_aborted(run_id, "2026-04-15T10:00:05+00:00"),
+        ],
+    )
+
+    render_summary(run_dir)
+
+    text = (run_dir / "summary.txt").read_text()
+    assert "aborted" in text
+    assert "declined" in text
+    assert "failed" not in text
+    assert "(incomplete)" not in text
+
+
+def test_summary_reports_failed_with_error_kind(tmp_path: Path) -> None:
+    run_id = "run-failed-kind"
+    run_dir = tmp_path / run_id
+    _write_jsonl(
+        run_dir / "lifecycle.jsonl",
+        [
+            _run_started(run_id, "2026-04-15T10:00:00+00:00"),
+            {
+                "type": LifecycleEvent.RUN_FAILED.value,
+                "ts": "2026-04-15T10:00:05+00:00",
+                "run_id": run_id,
+                "error_kind": "backstop",
+            },
+        ],
+    )
+
+    render_summary(run_dir)
+
+    text = (run_dir / "summary.txt").read_text()
+    assert "failed" in text
+    assert "backstop" in text
