@@ -115,7 +115,8 @@ class TestCompilerRegistry:
         # A custom Primitive subclass with a registered validator (no-op) but
         # no compiler registered — exercises the compiler's unknown-type path.
         class _UncompiledPrim[I: BaseModel, O: BaseModel](Primitive[I, O]):
-            pass
+            def child_specs(self) -> list[tuple[Primitive, str]]:
+                return []
 
         register_validator(_UncompiledPrim, lambda p: None)
 
@@ -130,7 +131,8 @@ class TestCompilerRegistry:
         from agent_foundry.primitives.models import Primitive
 
         class _DuplicateCompilerPrim[I: BaseModel, O: BaseModel](Primitive[I, O]):
-            pass
+            def child_specs(self) -> list[tuple[Primitive, str]]:
+                return []
 
         def _first(graph, prim, prefix, gate_ids):
             return ("", "")

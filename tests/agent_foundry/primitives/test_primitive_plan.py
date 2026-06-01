@@ -22,29 +22,37 @@ class Out(BaseModel):
     result: str
 
 
+class _LeafStub[I: BaseModel, O: BaseModel](Primitive[I, O]):
+    """Concrete leaf placeholder — implements the structural contract so the
+    abstract ``Primitive`` base permits instantiation."""
+
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        return []
+
+
 class TestPrimitivePlan:
     """PrimitivePlan holds a root primitive and provides graph introspection."""
 
     def test_given_root_primitive_when_created_then_accessible(self):
-        root = Primitive[In, Out]()
+        root = _LeafStub[In, Out]()
         plan = PrimitivePlan(root=root)
         assert plan.root is root
 
     def test_all_primitives_returns_single_root(self):
-        root = Primitive[In, Out]()
+        root = _LeafStub[In, Out]()
         plan = PrimitivePlan(root=root)
         assert len(plan.all_primitives()) == 1
         assert plan.all_primitives()[0] is root
 
     def test_all_primitives_finds_sequence_children(self):
-        a = Primitive[In, Out]()
-        b = Primitive[In, Out]()
+        a = _LeafStub[In, Out]()
+        b = _LeafStub[In, Out]()
         seq = Sequence[In, Out](steps=[a, b])
         plan = PrimitivePlan(root=seq)
         assert len(plan.all_primitives()) == 3
 
     def test_all_primitives_finds_deeply_nested(self):
-        deep = Primitive[In, Out]()
+        deep = _LeafStub[In, Out]()
         inner_seq = Sequence[In, Out](steps=[deep])
         loop = Loop[In, Out](
             over=lambda s: [],
@@ -58,7 +66,7 @@ class TestPrimitivePlan:
         assert deep in all_prims
 
     def test_all_primitives_walks_retry_body(self):
-        inner = Primitive[In, Out]()
+        inner = _LeafStub[In, Out]()
         retry = Retry[In, Out](
             max_attempts=2,
             until=lambda s: True,
@@ -69,8 +77,8 @@ class TestPrimitivePlan:
         assert inner in plan.all_primitives()
 
     def test_all_primitives_walks_conditional_branches(self):
-        then = Primitive[In, Out]()
-        else_ = Primitive[In, Out]()
+        then = _LeafStub[In, Out]()
+        else_ = _LeafStub[In, Out]()
         cond = Conditional[In, Out](
             condition=lambda s: True,
             then_branch=then,
@@ -83,7 +91,7 @@ class TestPrimitivePlan:
         assert else_ in all_prims
 
     def test_all_primitives_skips_none_else_branch(self):
-        then = Primitive[In, Out]()
+        then = _LeafStub[In, Out]()
         cond = Conditional[In, Out](
             condition=lambda s: True,
             then_branch=then,

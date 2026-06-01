@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 
@@ -24,7 +25,7 @@ class ContainerReusePolicy(StrEnum):
     REUSE_NEW_SESSION = "reuse_new_session"
 
 
-class Primitive[I: BaseModel, O: BaseModel](BaseModel):
+class Primitive[I: BaseModel, O: BaseModel](BaseModel, ABC):
     """Base class for all plan primitives.
 
     Every primitive is parameterized with input (I) and output (O) state
@@ -45,11 +46,23 @@ class Primitive[I: BaseModel, O: BaseModel](BaseModel):
             )
         return self
 
+    @abstractmethod
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        """Return child primitives paired with their local compile-prefix suffix.
+
+        Leaves return ``[]``. The suffix is a local label (``"step_0"``,
+        ``"then"``, ``"body"``, ``"resolver"``); callers compose the full
+        prefix.
+        """
+
 
 class Sequence[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Execute steps in order, passing state between them."""
 
     steps: list[Primitive] = Field(min_length=1)
+
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        return [(step, f"step_{i}") for i, step in enumerate(self.steps)]
 
 
 class Loop[I: BaseModel, O: BaseModel](Primitive[I, O]):
@@ -64,6 +77,9 @@ class Loop[I: BaseModel, O: BaseModel](Primitive[I, O]):
     item_key: str = Field(min_length=1)
     body: Primitive
     max_iterations: int = Field(default=100, ge=1)
+
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        return [(self.body, "body")]
 
 
 class RetryExceptionPolicy(StrEnum):
@@ -107,6 +123,14 @@ class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Safety backstop: max consecutive RETRY re-entries before raising
     ResolverDidNotConvergeError. A safety invariant, not a budget the resolver reasons about."""
 
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        # Ordering is load-bearing: body first, resolver second. Channel
+        # collection composes the merged channel dict in this order.
+        specs: list[tuple[Primitive, str]] = [(self.body, "body")]
+        if self.on_max_attempts_resolver is not None:
+            specs.append((self.on_max_attempts_resolver, "resolver"))
+        return specs
+
 
 class Conditional[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Branch based on a state condition.
@@ -119,6 +143,12 @@ class Conditional[I: BaseModel, O: BaseModel](Primitive[I, O]):
     condition: Callable[[I], bool]
     then_branch: Primitive
     else_branch: Primitive | None = None
+
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        specs: list[tuple[Primitive, str]] = [(self.then_branch, "then")]
+        if self.else_branch is not None:
+            specs.append((self.else_branch, "else"))
+        return specs
 
 
 class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
@@ -149,6 +179,9 @@ class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     or lookup. Optional — when None the compiler falls back to the positional
     node_id."""
 
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        return []
+
 
 class GateAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Block execution until external input is received.
@@ -161,6 +194,9 @@ class GateAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
 
     interaction: str = Field(min_length=1)
     prompt_key: str = Field(min_length=1)
+
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        return []
 
 
 class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
@@ -248,6 +284,9 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     # The dict key is the server name Claude Code uses in tool calls:
     # ``mcp__<server_name>__<tool_name>``.
     mcp_servers: dict[str, McpServer] = Field(default_factory=dict)
+
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        return []
 
 
 def get_type_args(prim: Primitive) -> tuple[type[BaseModel], type[BaseModel]]:
