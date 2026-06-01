@@ -22,15 +22,22 @@ from pydantic import BaseModel
 
 from agent_foundry.orchestration import container_executor
 from agent_foundry.orchestration.container_executor import run_agent_in_container
-from agent_foundry.orchestration.errors import AgentFailedError
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+from agent_foundry.orchestration.run_outcome import (
+    FailureKind,
+    RunAborted,
+    RunCompleted,
+    RunFailed,
+)
 from agent_foundry.primitives.models import (
     AgentAction,
     ContainerReusePolicy,
     FunctionAction,
+    Retry,
     Sequence,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.primitives.retry_types import DispositionKind, ResolverDisposition
 from agent_foundry.responders.protocol import static_provider
 
 from ..orchestration.fakes import (
@@ -149,6 +156,95 @@ def _plan_sequence() -> PrimitivePlan:
     return PrimitivePlan(root=seq)
 
 
+# --- Resolver/crash plan builders (no container needed) ---------------------
+
+
+class _RetryState(BaseModel):
+    """State for the resolver Retry plans: the automated reviewer never passes
+    until() so the resolver seat is always consulted."""
+
+    verdict: str = "fail"
+    disposition: ResolverDisposition | None = None
+
+
+def _never_passing_body() -> FunctionAction:
+    def _fn(s: _RetryState) -> _RetryState:
+        return _RetryState(verdict="fail", disposition=s.disposition)
+
+    return FunctionAction[_RetryState, _RetryState](function=_fn)
+
+
+def _plan_with_abort_resolver(reason: str) -> PrimitivePlan:
+    """A Retry whose resolver ABORTs on the first consult."""
+
+    def _abort(s: _RetryState) -> _RetryState:
+        return _RetryState(
+            verdict=s.verdict,
+            disposition=ResolverDisposition(kind=DispositionKind.ABORT, reason=reason),
+        )
+
+    retry = Retry[_RetryState, _RetryState](
+        max_attempts=1,
+        until=lambda s: s.verdict == "pass",
+        body=_never_passing_body(),
+        on_max_attempts_resolver=FunctionAction[_RetryState, _RetryState](function=_abort),
+    )
+    return PrimitivePlan(root=retry)
+
+
+def _plan_that_never_converges() -> PrimitivePlan:
+    """A Retry whose resolver always RETRYs and whose body never passes until(),
+    with a small backstop ceiling so ResolverDidNotConvergeError trips."""
+
+    def _always_retry(s: _RetryState) -> _RetryState:
+        return _RetryState(
+            verdict=s.verdict,
+            disposition=ResolverDisposition(kind=DispositionKind.RETRY, reason="more"),
+        )
+
+    retry = Retry[_RetryState, _RetryState](
+        max_attempts=1,
+        until=lambda s: s.verdict == "pass",
+        body=_never_passing_body(),
+        on_max_attempts_resolver=FunctionAction[_RetryState, _RetryState](function=_always_retry),
+        resolver_max_reentries=3,
+    )
+    return PrimitivePlan(root=retry)
+
+
+class _CrashOut(BaseModel):
+    ok: bool = True
+
+
+def _plan_with_raising_action(message: str) -> PrimitivePlan:
+    def _boom(_: PlanInput) -> _CrashOut:
+        raise RuntimeError(message)
+
+    action = FunctionAction[PlanInput, _CrashOut](function=_boom)
+    return PrimitivePlan(root=action)
+
+
+def _lifecycle_types(run_dir: Path) -> list[str]:
+    jsonl = run_dir / "lifecycle.jsonl"
+    return [json.loads(line)["type"] for line in jsonl.read_text().splitlines() if line.strip()]
+
+
+async def _run_resolver_plan(plan: PrimitivePlan, *, run_id: str, artifacts_dir: Path, **kwargs):
+    """Run a resolver/crash plan (no container) via run_primitive_plan."""
+    from agent_foundry.orchestration.runner import run_primitive_plan
+
+    return await run_primitive_plan(
+        plan,
+        initial_state=_RetryState() if not kwargs.pop("crash", False) else PlanInput(task="x"),
+        artifacts_dir=artifacts_dir,
+        workspace_volume="vol",
+        base_image_tag="img",
+        responder_provider=static_provider(FakeResponder(answers=[])),
+        run_id=run_id,
+        **kwargs,
+    )
+
+
 # --- Tests -----------------------------------------------------------------
 
 
@@ -179,8 +275,9 @@ async def test_happy_path_runs_end_to_end(
         run_id="run-happy",
     )
 
-    assert isinstance(result, PlanOutput)
-    assert result.x == 2
+    assert isinstance(result, RunCompleted)
+    assert isinstance(result.output, PlanOutput)
+    assert result.output.x == 2
 
     run_dir = artifacts_dir / "run-happy"
     assert run_dir.is_dir()
@@ -307,16 +404,20 @@ async def test_cancel_mid_run_propagates_and_cleans_up(
 
     monkeypatch.setattr(registry_mod.AgentContainerRegistry, "get_or_create", _cancelling_get)
 
-    with pytest.raises(AgentFailedError, match="cancelled"):
-        await run_primitive_plan(
-            _plan_sequence(),
-            initial_state=PlanInput(task="hi"),
-            artifacts_dir=artifacts_dir,
-            workspace_volume="vol",
-            base_image_tag="base:test",
-            responder_provider=static_provider(FakeResponder(answers=[])),
-            run_id="run-cancel",
-        )
+    result = await run_primitive_plan(
+        _plan_sequence(),
+        initial_state=PlanInput(task="hi"),
+        artifacts_dir=artifacts_dir,
+        workspace_volume="vol",
+        base_image_tag="base:test",
+        responder_provider=static_provider(FakeResponder(answers=[])),
+        run_id="run-cancel",
+    )
+
+    assert isinstance(result, RunFailed)
+    assert result.error_kind is FailureKind.CRASH
+    assert result.error_type == "AgentFailedError"
+    assert "cancelled" in result.message
 
     run_dir = artifacts_dir / "run-cancel"
     # Summary still written even after cancel.
@@ -335,8 +436,9 @@ async def test_exception_mid_run_propagates_and_cleans_up(
     install_driver,
     patch_registry_manager,
 ):
-    """Executor raises (FailureOutcome) → AgentFailedError propagates;
-    teardown still runs: registry destroyed + summary.txt written.
+    """Executor raises (FailureOutcome) → AgentFailedError becomes
+    RunFailed(CRASH) (no re-raise); teardown still runs: registry handled
+    + summary.txt written.
     """
     from agent_foundry.orchestration.runner import run_primitive_plan
 
@@ -346,16 +448,18 @@ async def test_exception_mid_run_propagates_and_cleans_up(
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
 
-    with pytest.raises(AgentFailedError):
-        await run_primitive_plan(
-            _plan_sequence(),
-            initial_state=PlanInput(task="hi"),
-            artifacts_dir=artifacts_dir,
-            workspace_volume="vol",
-            base_image_tag="base:test",
-            responder_provider=static_provider(FakeResponder(answers=[])),
-            run_id="run-fail",
-        )
+    result = await run_primitive_plan(
+        _plan_sequence(),
+        initial_state=PlanInput(task="hi"),
+        artifacts_dir=artifacts_dir,
+        workspace_volume="vol",
+        base_image_tag="base:test",
+        responder_provider=static_provider(FakeResponder(answers=[])),
+        run_id="run-fail",
+    )
+
+    assert isinstance(result, RunFailed)
+    assert result.error_kind is FailureKind.CRASH
 
     run_dir = artifacts_dir / "run-fail"
     assert (run_dir / "summary.txt").is_file()
@@ -363,3 +467,140 @@ async def test_exception_mid_run_propagates_and_cleans_up(
     assert patch_registry_manager.destroyed_ids == [], (
         "default pause_on_failure=True should retain the failed container"
     )
+
+
+# --- Terminal-outcome classification (RunOutcome envelope) ------------------
+
+
+@pytest.mark.asyncio
+async def test_completed_returns_run_completed(
+    tmp_path: Path,
+    install_driver,
+    patch_registry_manager,
+) -> None:
+    install_driver(FakeClaudeCodeDriver(turn_script=[_success_env(x=1)]))
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+
+    from agent_foundry.orchestration.runner import run_primitive_plan
+
+    result = await run_primitive_plan(
+        _plan_sequence(),
+        initial_state=PlanInput(task="hello"),
+        artifacts_dir=artifacts_dir,
+        workspace_volume="vol",
+        base_image_tag="img",
+        responder_provider=static_provider(FakeResponder(answers=[])),
+        run_id="run-completed",
+    )
+
+    assert isinstance(result, RunCompleted)
+    assert isinstance(result.output, PlanOutput)
+    assert result.output.x == 2
+    types = _lifecycle_types(artifacts_dir / "run-completed")
+    assert LifecycleEvent.RUN_ENDED.value in types
+    assert LifecycleEvent.RUN_ABORTED.value not in types
+    assert LifecycleEvent.RUN_FAILED.value not in types
+
+
+@pytest.mark.asyncio
+async def test_resolver_abort_returns_run_aborted(tmp_path: Path) -> None:
+    """ABORT -> RunAborted (does NOT raise); terminal event RUN_ABORTED."""
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+
+    result = await _run_resolver_plan(
+        _plan_with_abort_resolver("cannot-converge"),
+        run_id="run-aborted",
+        artifacts_dir=artifacts_dir,
+    )
+
+    assert isinstance(result, RunAborted)
+    assert result.reason == "cannot-converge"
+    types = _lifecycle_types(artifacts_dir / "run-aborted")
+    assert LifecycleEvent.RUN_ABORTED.value in types
+    assert LifecycleEvent.RUN_FAILED.value not in types
+    assert LifecycleEvent.RUN_ENDED.value not in types
+
+
+@pytest.mark.asyncio
+async def test_abort_on_run_ended_hook_sees_outcome(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    captured: list = []
+
+    await _run_resolver_plan(
+        _plan_with_abort_resolver("cannot-converge"),
+        run_id="run-aborted-hook",
+        artifacts_dir=artifacts_dir,
+        on_run_ended=[captured.append],
+    )
+
+    (ev,) = captured
+    assert isinstance(ev.outcome, RunAborted)
+    assert ev.outcome.reason == "cannot-converge"
+    assert ev.exception is None
+    assert ev.output is None
+
+
+@pytest.mark.asyncio
+async def test_backstop_returns_run_failed_backstop(tmp_path: Path) -> None:
+    """ResolverDidNotConvergeError -> RunFailed(BACKSTOP), does NOT raise;
+    terminal event RUN_FAILED."""
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+
+    result = await _run_resolver_plan(
+        _plan_that_never_converges(),
+        run_id="run-backstop",
+        artifacts_dir=artifacts_dir,
+    )
+
+    assert isinstance(result, RunFailed)
+    assert result.error_kind is FailureKind.BACKSTOP
+    assert result.error_type == "ResolverDidNotConvergeError"
+    types = _lifecycle_types(artifacts_dir / "run-backstop")
+    assert LifecycleEvent.RUN_FAILED.value in types
+    assert LifecycleEvent.RUN_ABORTED.value not in types
+
+
+@pytest.mark.asyncio
+async def test_backstop_run_failed_record_carries_error_kind(tmp_path: Path) -> None:
+    """The RUN_FAILED lifecycle record carries error_kind so render_summary
+    reads one field (D7a)."""
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+
+    await _run_resolver_plan(
+        _plan_that_never_converges(),
+        run_id="run-backstop-rec",
+        artifacts_dir=artifacts_dir,
+    )
+
+    jsonl = artifacts_dir / "run-backstop-rec" / "lifecycle.jsonl"
+    records = [json.loads(line) for line in jsonl.read_text().splitlines() if line.strip()]
+    failed = [r for r in records if r["type"] == LifecycleEvent.RUN_FAILED.value]
+    assert failed
+    assert failed[-1]["error_kind"] == FailureKind.BACKSTOP.value
+
+
+@pytest.mark.asyncio
+async def test_crash_returns_run_failed_crash(tmp_path: Path) -> None:
+    """A FunctionAction that raises RuntimeError -> RunFailed(CRASH),
+    does NOT raise; terminal event RUN_FAILED."""
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+
+    result = await _run_resolver_plan(
+        _plan_with_raising_action("boom"),
+        run_id="run-crash",
+        artifacts_dir=artifacts_dir,
+        crash=True,
+    )
+
+    assert isinstance(result, RunFailed)
+    assert result.error_kind is FailureKind.CRASH
+    assert result.error_type == "RuntimeError"
+    assert "boom" in result.message
+    types = _lifecycle_types(artifacts_dir / "run-crash")
+    assert LifecycleEvent.RUN_FAILED.value in types
