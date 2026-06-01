@@ -31,6 +31,21 @@ class StubOutput(BaseModel):
     result: str
 
 
+class _LeafStubGeneric[I: BaseModel, O: BaseModel](Primitive[I, O]):
+    """Concrete placeholder leaf for composition tests. Implements the
+    structural contract so it can stand in as a child primitive.
+
+    Generic because ``Primitive`` rejects construction unless its type args
+    flow through ``__pydantic_generic_metadata__``; binding the args on the
+    class line (``Primitive[StubInput, StubOutput]``) leaves that empty."""
+
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        return []
+
+
+_LeafStub = _LeafStubGeneric[StubInput, StubOutput]
+
+
 # ======================================================================
 # Primitive Base
 # ======================================================================
@@ -126,15 +141,15 @@ class TestSequence:
     """Sequence primitive executes steps in order."""
 
     def test_given_valid_steps_when_created_then_succeeds(self):
-        inner = Primitive[StubInput, StubOutput]()
+        inner = _LeafStub()
         seq = Sequence[StubInput, StubOutput](steps=[inner])
         assert len(seq.steps) == 1
         assert isinstance(seq.steps[0], Primitive)
 
     def test_given_multiple_steps_when_created_then_succeeds(self):
-        a = Primitive[StubInput, StubOutput]()
-        b = Primitive[StubInput, StubOutput]()
-        c = Primitive[StubInput, StubOutput]()
+        a = _LeafStub()
+        b = _LeafStub()
+        c = _LeafStub()
         seq = Sequence[StubInput, StubOutput](steps=[a, b, c])
         assert len(seq.steps) == 3
 
@@ -147,7 +162,7 @@ class TestSequence:
             Sequence[StubInput, StubOutput]()
 
     def test_type_args_preserved(self):
-        inner = Primitive[StubInput, StubOutput]()
+        inner = _LeafStub()
         seq = Sequence[StubInput, StubOutput](steps=[inner])
         input_type, output_type = get_type_args(seq)
         assert input_type is StubInput
@@ -163,7 +178,7 @@ class TestLoop:
     """Loop primitive iterates over a collection in state."""
 
     def test_given_valid_config_when_created_then_succeeds(self):
-        body = Primitive[StubInput, StubOutput]()
+        body = _LeafStub()
         loop = Loop[LoopInput, LoopOutput](
             over=lambda state: state.change_sets,
             item_key="current_change_set",
@@ -173,7 +188,7 @@ class TestLoop:
         assert loop.max_iterations == 100
 
     def test_given_custom_max_iterations_when_created_then_stored(self):
-        body = Primitive[StubInput, StubOutput]()
+        body = _LeafStub()
         loop = Loop[LoopInput, LoopOutput](
             over=lambda state: state.change_sets,
             item_key="current_change_set",
@@ -183,7 +198,7 @@ class TestLoop:
         assert loop.max_iterations == 50
 
     def test_given_zero_max_iterations_when_created_then_raises(self):
-        body = Primitive[StubInput, StubOutput]()
+        body = _LeafStub()
         with pytest.raises(ValidationError):
             Loop[LoopInput, LoopOutput](
                 over=lambda state: state.change_sets,
@@ -193,7 +208,7 @@ class TestLoop:
             )
 
     def test_given_empty_item_key_when_created_then_raises(self):
-        body = Primitive[StubInput, StubOutput]()
+        body = _LeafStub()
         with pytest.raises(ValidationError):
             Loop[LoopInput, LoopOutput](
                 over=lambda state: state.change_sets,
@@ -202,7 +217,7 @@ class TestLoop:
             )
 
     def test_given_missing_over_when_created_then_raises(self):
-        body = Primitive[StubInput, StubOutput]()
+        body = _LeafStub()
         with pytest.raises(ValidationError):
             Loop[LoopInput, LoopOutput](
                 item_key="item",
@@ -210,7 +225,7 @@ class TestLoop:
             )
 
     def test_over_callable_is_invocable(self):
-        body = Primitive[StubInput, StubOutput]()
+        body = _LeafStub()
         loop = Loop[LoopInput, LoopOutput](
             over=lambda state: state.change_sets,
             item_key="current_change_set",
@@ -303,7 +318,7 @@ class TestRetry:
     """Retry primitive repeats body until condition met or exhausted."""
 
     def test_given_valid_config_when_created_then_succeeds(self):
-        body = Primitive[StubInput, StubOutput]()
+        body = _LeafStub()
         retry = Retry[RetryInput, RetryOutput](
             max_attempts=2,
             until=lambda state: state.no_must_fix,
@@ -312,7 +327,7 @@ class TestRetry:
         assert retry.max_attempts == 2
 
     def test_until_callable_is_invocable(self):
-        body = Primitive[StubInput, StubOutput]()
+        body = _LeafStub()
         retry = Retry[RetryInput, RetryOutput](
             max_attempts=2,
             until=lambda state: state.no_must_fix,
@@ -322,7 +337,7 @@ class TestRetry:
         assert retry.until(state) is True
 
     def test_given_zero_max_attempts_when_created_then_raises(self):
-        body = Primitive[StubInput, StubOutput]()
+        body = _LeafStub()
         with pytest.raises(ValidationError):
             Retry[RetryInput, RetryOutput](
                 max_attempts=0,
@@ -340,8 +355,8 @@ class TestConditional:
     """Conditional primitive branches based on state."""
 
     def test_given_both_branches_when_created_then_succeeds(self):
-        then = Primitive[StubInput, StubOutput]()
-        else_ = Primitive[StubInput, StubOutput]()
+        then = _LeafStub()
+        else_ = _LeafStub()
         cond = Conditional[CondInput, CondOutput](
             condition=lambda state: state.has_findings,
             then_branch=then,
@@ -351,7 +366,7 @@ class TestConditional:
         assert isinstance(cond.else_branch, Primitive)
 
     def test_given_no_else_branch_when_created_then_none(self):
-        then = Primitive[StubInput, StubOutput]()
+        then = _LeafStub()
         cond = Conditional[CondInput, CondOutput](
             condition=lambda state: state.has_findings,
             then_branch=then,
@@ -359,7 +374,7 @@ class TestConditional:
         assert cond.else_branch is None
 
     def test_condition_callable_is_invocable(self):
-        then = Primitive[StubInput, StubOutput]()
+        then = _LeafStub()
         cond = Conditional[CondInput, CondOutput](
             condition=lambda state: state.has_findings,
             then_branch=then,
@@ -374,7 +389,7 @@ class TestConditional:
             )
 
     def test_given_missing_condition_when_created_then_raises(self):
-        then = Primitive[StubInput, StubOutput]()
+        then = _LeafStub()
         with pytest.raises(ValidationError):
             Conditional[CondInput, CondOutput](
                 then_branch=then,
@@ -455,7 +470,7 @@ class TestRecursiveNesting:
     """Primitives can be nested recursively via direct object references."""
 
     def test_sequence_containing_loop(self):
-        body = Primitive[StubInput, StubOutput]()
+        body = _LeafStub()
         loop = Loop[LoopInput, LoopOutput](
             over=lambda state: state.change_sets,
             item_key="current",
@@ -465,8 +480,8 @@ class TestRecursiveNesting:
         assert isinstance(seq.steps[0], Loop)
 
     def test_retry_containing_sequence(self):
-        a = Primitive[StubInput, StubOutput]()
-        b = Primitive[StubInput, StubOutput]()
+        a = _LeafStub()
+        b = _LeafStub()
         inner_seq = Sequence[StubInput, StubOutput](steps=[a, b])
         retry = Retry[RetryInput, RetryOutput](
             max_attempts=2,
@@ -476,7 +491,7 @@ class TestRecursiveNesting:
         assert isinstance(retry.body, Sequence)
 
     def test_sequence_containing_conditional_containing_loop(self):
-        body = Primitive[StubInput, StubOutput]()
+        body = _LeafStub()
         loop = Loop[LoopInput, LoopOutput](
             over=lambda state: state.change_sets,
             item_key="current",
