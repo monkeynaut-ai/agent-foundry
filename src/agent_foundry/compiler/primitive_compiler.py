@@ -164,38 +164,19 @@ WELL_KNOWN_METADATA_CHANNELS: dict[str, Any] = dict.fromkeys(WELL_KNOWN_METADATA
 def _collect_retry_channels(prim: Primitive, prefix: str) -> dict[str, Any]:
     """Walk the plan tree and collect outer-state channels every Retry needs.
 
-    Prefix derivation mirrors each compiler's ``ctx.child(...)`` scheme exactly;
-    diverging here means a nested Retry writes to undeclared keys that LangGraph
-    silently drops. Confirmed against the per-type compilers:
-      - Sequence step i -> f"{prefix}_step_{i}"
-      - Conditional then/else -> f"{prefix}_then" / f"{prefix}_else"
-      - Loop body / Retry body -> f"{prefix}_body"
-      - Retry resolver seat -> f"{prefix}_resolver"
-
-    Returns both the prefix-namespaced internal channels and the fixed
-    well-known metadata channels so any graph whose schema owns a Retry's nodes
-    declares the keys that Retry writes.
+    A Retry contributes its prefix-namespaced internal channels and the fixed
+    well-known metadata channels; child enumeration recurses through
+    ``child_specs`` so the per-child prefixes match the compilers' scheme by
+    construction (a divergence would make a nested Retry write to undeclared
+    keys that LangGraph silently drops). Leaves return no children, so they add
+    nothing.
     """
     channels: dict[str, Any] = {}
-
     if isinstance(prim, Retry):
         channels.update(_retry_channels(prefix))
         channels.update(WELL_KNOWN_METADATA_CHANNELS)
-        channels.update(_collect_retry_channels(prim.body, f"{prefix}_body"))
-        if prim.on_max_attempts_resolver is not None:
-            channels.update(
-                _collect_retry_channels(prim.on_max_attempts_resolver, f"{prefix}_resolver")
-            )
-    elif isinstance(prim, Sequence):
-        for i, step in enumerate(prim.steps):
-            channels.update(_collect_retry_channels(step, f"{prefix}_step_{i}"))
-    elif isinstance(prim, Conditional):
-        channels.update(_collect_retry_channels(prim.then_branch, f"{prefix}_then"))
-        if prim.else_branch is not None:
-            channels.update(_collect_retry_channels(prim.else_branch, f"{prefix}_else"))
-    elif isinstance(prim, Loop):
-        channels.update(_collect_retry_channels(prim.body, f"{prefix}_body"))
-
+    for child, suffix in prim.child_specs():
+        channels.update(_collect_retry_channels(child, f"{prefix}_{suffix}"))
     return channels
 
 
