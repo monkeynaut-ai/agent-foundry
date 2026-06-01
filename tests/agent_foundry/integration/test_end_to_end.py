@@ -44,6 +44,7 @@ from agent_foundry import runtime
 from agent_foundry.models.markers import AgentFilePath
 from agent_foundry.orchestration.container_executor import run_agent_in_container
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+from agent_foundry.orchestration.run_outcome import RunCompleted
 from agent_foundry.orchestration.runner import run_primitive_plan
 from agent_foundry.primitives.models import (
     AgentAction,
@@ -198,9 +199,11 @@ async def test_end_to_end_real_claude_code(tmp_path: Path, cleanup_volumes) -> N
 
     # --- Final state ------------------------------------------------------
 
-    assert isinstance(result, StateC)
-    assert result.verified is True
-    assert result.headline.strip()
+    assert isinstance(result, RunCompleted)
+    output = result.output
+    assert isinstance(output, StateC)
+    assert output.verified is True
+    assert output.headline.strip()
 
     run_dir = artifacts_dir / run_id
     assert run_dir.is_dir()

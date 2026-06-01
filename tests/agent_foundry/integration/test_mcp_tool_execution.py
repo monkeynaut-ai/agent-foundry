@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from agent_foundry.orchestration.container_executor import run_agent_in_container
+from agent_foundry.orchestration.run_outcome import RunCompleted
 from agent_foundry.orchestration.runner import run_primitive_plan
 from agent_foundry.primitives.mcp import StdioMcpServer
 from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
@@ -128,5 +129,7 @@ async def test_agent_calls_stdio_mcp_tool_and_returns_result(
         responder_provider=static_provider(_FailResponder()),
     )
 
-    assert isinstance(result, _Output)
-    assert result.echoed_word == _ECHO_WORD
+    assert isinstance(result, RunCompleted)
+    output = result.output
+    assert isinstance(output, _Output)
+    assert output.echoed_word == _ECHO_WORD

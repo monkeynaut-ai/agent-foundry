@@ -39,6 +39,15 @@ class EvalResponderInvokedError(RuntimeError):
     """Raised when an agent under eval triggers a responder interaction."""
 
 
+class EvalRunNotCompletedError(RuntimeError):
+    """Raised when an eval run ends aborted or failed.
+
+    The Inspect ``Task`` contract is exception-based; an eval case that
+    does not complete must surface as a per-case failure, so the
+    non-completed ``RunOutcome`` is re-introduced as an exception here.
+    """
+
+
 class RaiseOnInvokeResponder(Responder):
     """Responder that raises on every invocation.
 
@@ -71,17 +80,26 @@ def build_run_primitive_plan_task(
     :class:`RaiseOnInvokeResponder` is installed; a case that triggers
     a responder interaction raises and surfaces as a per-case failure
     in the runner's report.
+
+    ``run_primitive_plan`` returns a ``RunOutcome``; the Inspect ``Task``
+    contract is exception-based, so a completed run unwraps to its
+    product output and a failed or aborted run raises.
     """
     # Deferred imports — orchestration pulls in heavy dependencies
     # (Docker SDK, telemetry) that we don't want at import time.
-    from agent_foundry.orchestration.runner import run_primitive_plan
+    from agent_foundry.orchestration import runner as runner_mod
+    from agent_foundry.orchestration.run_outcome import (
+        RunAborted,
+        RunCompleted,
+        RunFailed,
+    )
     from agent_foundry.responders.protocol import static_provider
 
     plan = PrimitivePlan(root=agent)
     responder_provider = static_provider(RaiseOnInvokeResponder())
 
     async def task(input_state: Any) -> BaseModel:
-        return await run_primitive_plan(
+        outcome = await runner_mod.run_primitive_plan(
             plan,
             initial_state=input_state,
             artifacts_dir=artifacts_dir,
@@ -89,6 +107,15 @@ def build_run_primitive_plan_task(
             base_image_tag=base_image_tag,
             responder_provider=responder_provider,
         )
+        if isinstance(outcome, RunCompleted):
+            return outcome.output
+        if isinstance(outcome, RunAborted):
+            raise EvalRunNotCompletedError(f"run aborted: {outcome.reason}")
+        if isinstance(outcome, RunFailed):
+            raise EvalRunNotCompletedError(
+                f"run failed ({outcome.error_kind.value}): {outcome.error_type}: {outcome.message}"
+            )
+        raise EvalRunNotCompletedError(f"unexpected run outcome: {outcome!r}")
 
     return task
 
