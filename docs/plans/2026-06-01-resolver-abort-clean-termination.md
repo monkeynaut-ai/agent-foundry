@@ -1,194 +1,320 @@
-# Plan: Clean run-termination signal for resolver ABORT (#70)
+# Plan: Unified typed terminal-outcome envelope (`RunOutcome`) for #70
 
 **Branch:** `markn/gh-70-resolver-abort-termination`
-**Goal:** Make a resolver `ABORT` end a run as a deliberate, non-error terminal
-outcome — distinguishable at the outcome layer from a genuine crash — without
-forcing callers to pattern-match a raised exception. The runaway backstop
-(`ResolverDidNotConvergeError`) stays an *error* terminal.
+**Goal:** Replace the runner's untyped terminal seam (return `BaseModel` on
+success, re-raise on failure, no abort concept) with a single **typed
+terminal-outcome envelope**, `RunOutcome`. Every run ends by returning exactly
+one `RunOutcome` variant:
+
+- **completed** — the validated product output,
+- **aborted** — a deliberate operator ABORT (NOT an error),
+- **failed** — a safety backstop trip or an unexpected crash, distinguished by a
+  typed `error_kind`.
+
+A resolver `ABORT` becomes a first-class, non-error terminal outcome that callers
+read off the envelope — never by pattern-matching a raised exception. The runaway
+backstop (`ResolverDidNotConvergeError`) and any other crash become
+`RunFailed`, distinguished by `error_kind`, not by which exception escaped.
 
 ---
 
-## Critical pre-condition — branch base (READ FIRST)
+## Substrate is already present (READ FIRST — supersedes the old rebase plan)
 
-This worktree branch (`markn/gh-70-resolver-abort-termination`) was cut from an
-**older `main`** that predates the operator-guided-retry resolver-seat work. The
-machinery #70 builds on does **not exist on this branch**:
+The previous revision of this plan opened with a "Task 0 rebase" because it was
+written against an older base that lacked the resolver/ABORT machinery. **That is
+no longer true on this branch.** Verified by reading the live tree:
 
-- `src/agent_foundry/primitives/retry_types.py` here still describes the removed
-  `on_exhaustion` hook and `TREAT_AS_FAILURE` policy. It has **no**
-  `DispositionKind`, `ResolverDisposition`, `RetryAborted`, or
-  `ResolverDidNotConvergeError`.
-- `src/agent_foundry/compiler/primitive_compiler.py` here has **no** resolver
-  cycle (`_compile_retry` resolver/abort/re-entry nodes, `disposition_router`,
-  `abort_node`).
-- `src/agent_foundry/orchestration/lifecycle_events.py` here has **no**
-  `RESOLVER_DISPOSITION`, `RETRY_ATTEMPT_PASSED/_NOT_PASSED/_ERRORED` members.
+- `src/agent_foundry/primitives/retry_types.py` already defines `DispositionKind`,
+  `ResolverDisposition`, `RetryAborted`, and `ResolverDidNotConvergeError`.
+- `src/agent_foundry/orchestration/lifecycle_events.py` already defines
+  `RESOLVER_DISPOSITION`, `RETRY_ATTEMPT_PASSED`, `RETRY_ATTEMPT_NOT_PASSED`,
+  `RETRY_ATTEMPT_ERRORED`.
+- The compiler already raises `RetryAborted` out of `abort_node` and
+  `ResolverDidNotConvergeError` at the backstop ceiling.
 
-That work currently lives **only** on the unmerged branch
-`feat/operator-guided-retry-resolver-seat` (commits `0a9bcf6`, `61b2e29`,
-`3fa8fad`, etc.); it is **not** on `origin/main` (HEAD `6cee11d`, PR #58).
+**There is no rebase task.** Tasks below extend the live tree directly.
 
-**Decision (assumption A1):** Task 0 below rebases this branch onto the resolver
-work so #70 has a substrate to extend. Every file path and symbol in Tasks 1–6
-refers to the **post-rebase** tree (i.e. the state of
-`feat/operator-guided-retry-resolver-seat`), which is what the code excerpts in
-this plan were read from. If the team would rather land the resolver branch to
-`main` first and re-cut this branch, the Task 1–6 work is unchanged — only Task 0
-differs. This is logged in Open Questions.
-
-The single integration point that *is* identical on both bases is the runner's
-terminal-event line:
+The runner's terminal seam today
+(`src/agent_foundry/orchestration/runner.py` ~lines 189–229):
 
 ```python
-# src/agent_foundry/orchestration/runner.py:204
-terminal = LifecycleEvent.RUN_FAILED if caught_exc is not None else LifecycleEvent.RUN_ENDED
+caught_exc: BaseException | None = None
+final_output: BaseModel | None = None
+try:
+    graph = compile_runtime_plan(plan)
+    result_dict = await graph.ainvoke(initial_state.model_dump())
+    final_output = root_out.model_validate(result_dict)
+    return final_output
+except BaseException as exc:
+    caught_exc = exc
+    raise
+finally:
+    terminal = LifecycleEvent.RUN_FAILED if caught_exc is not None else LifecycleEvent.RUN_ENDED
+    lifecycle.append(terminal, run_id=resolved_run_id)
+    ...
+    RunEndedEvent(run_context=run_ctx, exception=caught_exc, output=final_output)
 ```
 
-That line is where the "operator abort looks like a crash" defect lives.
+This is the single seam we replace. Return type is currently `-> BaseModel`.
 
 ---
 
 ## Design decisions
 
-**Mechanism (assumption A2): keep `RetryAborted` as the in-graph propagation
-vehicle; classify it in the runner; swallow it into a clean terminal outcome.**
+### D1 — `RunOutcome` discriminated union (the envelope)
 
-The issue lists four candidate mechanisms. Rationale for this one:
+A tagged discriminated union, per the repo's data-model conventions (StrEnum
+discriminator, tagged wrappers, `Annotated[Union[...], Field(discriminator=...)]`,
+no `Literal` for the routing value).
 
-- The compiler already raises `RetryAborted` out of `abort_node`, and it
-  propagates **raw** through `graph.ainvoke` (verified: `test_retry_resolver_e2e`
-  catches it directly with `pytest.raises(RetryAborted, ...)`). A sentinel return
-  value or a LangGraph-level signal would require reworking the compiled graph's
-  exit semantics and the resolver cycle — more platform churn for no added
-  product capability. Per the platform's "push complexity into the platform, not
-  onto products" rule, the smallest change that gives products a clean,
-  non-error terminal outcome wins.
-- The runner already has the exact seam: a single `finally` block with
-  `caught_exc` in scope that decides the terminal event. Classifying there is
-  local and testable.
+```python
+class RunOutcomeKind(StrEnum):
+    COMPLETED = "completed"
+    ABORTED = "aborted"
+    FAILED = "failed"
 
-So: the runner catches `RetryAborted` **separately**, records it as a deliberate
-abort (new `RUN_ABORTED` terminal event + reason carried on `RunEndedEvent`),
-and **does not re-raise** it — `run_primitive_plan` returns normally. All other
-exceptions (including `ResolverDidNotConvergeError`) keep the existing
-re-raise + `RUN_FAILED` path.
 
-**Terminal lifecycle taxonomy (assumption A3):** add one new wire-stable event,
-`RUN_ABORTED = "run_aborted"`, to `LifecycleEvent`. The issue asks the terminal
-event to distinguish "completed / operator-aborted / safety-backstop-tripped /
-crashed". Mapping:
+class FailureKind(StrEnum):
+    BACKSTOP = "backstop"   # ResolverDidNotConvergeError — safety invariant trip
+    CRASH = "crash"         # any other escaped exception
 
-| Outcome | Caught exception | Terminal event |
-|---|---|---|
-| clean success | `None` | `RUN_ENDED` |
-| operator abort | `RetryAborted` | `RUN_ABORTED` |
-| safety backstop | `ResolverDidNotConvergeError` | `RUN_FAILED` |
-| crash | any other | `RUN_FAILED` |
 
-The backstop and a crash both map to `RUN_FAILED`; they remain distinguishable
-by the exception payload on `RunEndedEvent` and (already today) by the absence of
-a `RESOLVER_DISPOSITION(kind="abort")` record. Adding a *separate*
-`RUN_BACKSTOP_TRIPPED` event is **not** in this plan — the issue explicitly wants
-the backstop to "remain an *error* terminal", and a distinct error event is a
-nice-to-have not required by the desired behavior. Logged in Open Questions.
+class RunCompleted(BaseModel):
+    kind: RunOutcomeKind = RunOutcomeKind.COMPLETED
+    output: BaseModel       # the validated product output (root_out instance)
 
-**Return value of `run_primitive_plan` on abort (assumption A4):** on
-`RetryAborted` the graph never produced a validated `root_out`, so there is no
-`final_output` to return. `run_primitive_plan` is annotated `-> BaseModel`.
-Rather than widen the signature to `BaseModel | None` (ripples to every caller)
-or invent a synthetic output model (a product decision the platform must not
-make), the runner **re-raises is avoided but the function still cannot fabricate
-output**. Chosen: introduce a typed terminal-outcome carrier.
 
-`run_primitive_plan` keeps returning `BaseModel` on success. On abort it returns
-the **pre-abort accumulated state coerced to `root_out` is not available**, so
-instead the abort path returns a new lightweight typed model
-`RunAbortedOutcome(reason: str)` — and the signature widens to
-`BaseModel` (unchanged) because `RunAbortedOutcome` *is* a `BaseModel`. Callers
-that want to distinguish abort from success check
-`isinstance(result, RunAbortedOutcome)` **or** read the new field on
-`RunEndedEvent` (preferred). The abort reason is thereby available without
-catching a raised exception — satisfying the issue's third bullet. `RetryAborted`
-remains importable for any caller that still wants the type. Logged in Open
-Questions as the main reviewable design choice.
+class RunAborted(BaseModel):
+    kind: RunOutcomeKind = RunOutcomeKind.ABORTED
+    reason: str = ""        # operator's ABORT explanation
 
-**`RunEndedEvent` carries the reason (assumption A5):** add
-`aborted: bool = False` and `abort_reason: str | None = None` to
-`RunEndedEvent`. Today the event encodes terminal state as the (exception,
-output) pair; the docstring table is extended with the abort row. This is the
-hook-facing channel for the abort reason and is forward-compatible (new fields,
-existing hooks unaffected).
 
-**Summary classification (assumption A6):** `render_summary` currently derives
-`status` from `RUN_FAILED` presence (`"failed"` vs `"completed"`). Extend it to a
-three-way classification (`completed` / `aborted` / `failed`) keyed off the new
-`RUN_ABORTED` event, and surface the abort reason line. This satisfies #69's
-dependency on #70 (summary reports the terminal *outcome*).
+class RunFailed(BaseModel):
+    kind: RunOutcomeKind = RunOutcomeKind.FAILED
+    error_kind: FailureKind
+    error_type: str         # exception class __name__, for reporting
+    message: str            # str(exc)
 
-**Interaction with #66 (GateAction interrupt/resume):** out of scope here. #66
-touches resume semantics; #70 only touches terminal classification. No shared
-edit in this plan. Noted in Open Questions for the reviewer to confirm no merge
-collision on `runner.py`.
+
+RunOutcome = Annotated[
+    Union[RunCompleted, RunAborted, RunFailed],
+    Field(discriminator="kind"),
+]
+```
+
+> **Discriminator-typing note (assumption D1a):** the convention prefers
+> `kind: RunOutcomeKind = RunOutcomeKind.VARIANT`. If the pinned Pydantic version
+> rejects a `StrEnum`-typed discriminator on a tagged union, fall back to the
+> sanctioned form `kind: Literal[RunOutcomeKind.VARIANT] = RunOutcomeKind.VARIANT`
+> on each wrapper. Decide at GREEN by running `pdm run typecheck` + a round-trip
+> test; pick whichever the version accepts. Logged in Open Questions.
+
+> **`RunCompleted.output` typing (assumption D1b):** typed `BaseModel` (not
+> generic). `run_primitive_plan` is itself non-generic (`root_out` is resolved at
+> runtime via `get_type_args`), so a parameterized `RunCompleted[O]` would not buy
+> static typing at the call site. Callers narrow with `isinstance(result.output, ...)`
+> exactly as they do today against the bare return. Logged in Open Questions.
+
+> **`RunFailed` payload (assumption D1c):** carries `error_kind` + `error_type` +
+> `message` (string-reconstructable report) rather than the live `BaseException`
+> object. Rationale: `RunOutcome` is a Pydantic model intended to round-trip;
+> embedding a live exception forces `arbitrary_types_allowed` and breaks JSON
+> serialization. The live exception is still delivered to `on_run_ended` hooks via
+> `RunEndedEvent.exception` (unchanged), so nothing loses the traceback-bearing
+> object. Logged in Open Questions.
+
+### D2 — Module placement: `orchestration/run_outcome.py` (CRITICAL)
+
+`RunOutcome`, `RunOutcomeKind`, `FailureKind`, and the three wrappers live in a
+**new module `src/agent_foundry/orchestration/run_outcome.py`** — NOT in
+`src/agent_foundry/primitives/retry_types.py`.
+
+**Why this matters (issue-disjointness constraint):** issue #62 ("centralize
+`child_specs`") is actively reshaping `primitives/` and
+`compiler/primitive_compiler.py`. Putting the terminal-outcome vocabulary in
+`primitives/retry_types.py` would couple #70's edits to #62's churn and create
+avoidable merge conflicts. The terminal envelope is an **orchestration** concept
+(it is what the runner returns), so it belongs in `orchestration/`. This keeps
+#70's writable surface entirely inside `orchestration/` (+ its tests), disjoint
+from #62. `retry_types.py` is consumed **read-only** by #70 (the runner imports
+`RetryAborted` and `ResolverDidNotConvergeError` for `except` clauses; it adds
+nothing there).
+
+### D3 — Mechanism: `RetryAborted` stays an internal unwind signal; the runner is the single typed boundary
+
+Keep `RetryAborted` raising out of `abort_node` and propagating raw through
+`graph.ainvoke` (unchanged — the in-graph resolver e2e tests still
+`pytest.raises(RetryAborted)`). The runner's except/finally seam is the **single
+place** that converts the four terminal conditions into one `RunOutcome` variant:
+
+| Terminal condition                | Caught in runner                | `RunOutcome` returned                 |
+|-----------------------------------|---------------------------------|---------------------------------------|
+| graph returns, output validates   | (none)                          | `RunCompleted(output=…)`              |
+| operator abort                    | `RetryAborted`                  | `RunAborted(reason=…)`                |
+| safety backstop                   | `ResolverDidNotConvergeError`   | `RunFailed(error_kind=BACKSTOP, …)`   |
+| any other crash                   | `BaseException`                 | `RunFailed(error_kind=CRASH, …)`      |
+
+`RetryAborted` and `ResolverDidNotConvergeError` are **internal unwind signals**
+that never escape `run_primitive_plan`. After this change the function does not
+re-raise — every path returns a `RunOutcome`. (See D6 for the re-raise
+behavior-change and its test blast radius.)
+
+> **Not through the compiler (DEFERRED to #66):** the approved design explicitly
+> keeps the typed boundary in the *runner*, not a compiled terminal node. Routing
+> a typed terminal node through the compiler is **out of scope for #70** and
+> deferred to issue #66 (GateAction interrupt/resume, which reworks compiled-graph
+> exit semantics). Stated here so #70 does not collide with #62's
+> `primitive_compiler.py` work or over-build. `runner.py` is the only behavioral
+> edit; the compiler is untouched.
+
+### D4 — Lifecycle taxonomy: add `RUN_ABORTED`
+
+Add one wire-stable event `RUN_ABORTED = "run_aborted"`. Terminal mapping:
+
+| `RunOutcome`                       | Terminal lifecycle event |
+|------------------------------------|--------------------------|
+| `RunCompleted`                     | `RUN_ENDED`              |
+| `RunAborted`                       | `RUN_ABORTED`            |
+| `RunFailed(BACKSTOP)`              | `RUN_FAILED`             |
+| `RunFailed(CRASH)`                 | `RUN_FAILED`             |
+
+The backstop/crash distinction is carried by the typed `RunFailed.error_kind`
+field, **not** a separate wire event. No `RUN_BACKSTOP_TRIPPED` event is added —
+the typed field is the source of truth and a distinct wire event would duplicate
+it. Logged in Open Questions.
+
+### D5 — `RunEndedEvent` carries the typed outcome
+
+Add `outcome: RunOutcome | None = None` to `RunEndedEvent`. The hook now reads the
+terminal classification (completed / aborted / failed+error_kind + abort reason)
+off one typed field.
+
+**Back-compat for `exception` / `output`:** keep both existing fields.
+
+- `output`: set to the product `BaseModel` on completion; `None` otherwise
+  (unchanged contract for existing success/failure hooks).
+- `exception`: set to the live `BaseException` on a CRASH/BACKSTOP failure; `None`
+  on completion **and on abort** (abort is not an error). This preserves every
+  existing hook that reads `event.exception` / `event.output`, while
+  `event.outcome` is the new richer channel. The docstring's two-row terminal
+  table grows to four rows (completed / aborted / backstop / crash).
+
+> **Assumption D5a:** on `RunAborted`, `output` is `None` and `exception` is
+> `None`; the abort is legible only via `event.outcome` (a `RunAborted`). This is
+> the one case where the legacy (exception, output) pair `(None, None)` is
+> ambiguous with "never ran" — but a hook only ever fires post-run, so `(None,
+> None)` + `outcome=RunAborted` is unambiguous. Logged in Open Questions.
+
+### D6 — `run_primitive_plan` no longer re-raises (behavior change)
+
+Today the runner **re-raises** on any exception. Under the envelope it **returns
+`RunFailed`** instead. This is the deliberate point of the unified envelope:
+callers branch on `RunOutcome.kind`, never on `try/except`.
+
+This changes the contract for the FAILED path and touches every test that asserts
+the runner propagates an exception. Enumerated in the blast radius (Task 6) and
+flagged as the primary reviewable decision in Open Questions (D6 alternative:
+keep re-raising CRASH/BACKSTOP and only return for COMPLETED/ABORTED — rejected
+because it leaves callers pattern-matching exceptions for failures, defeating the
+"single typed terminal envelope" goal).
+
+### D7 — `render_summary`: three-way classification
+
+`render_summary` currently derives `status` as `"failed" if run_failed else
+"completed"`. Extend to three-way `completed` / `aborted` / `failed`, keyed off
+`RUN_ABORTED` / `RUN_FAILED` presence, and surface:
+
+- the **abort reason** (read from the existing
+  `RESOLVER_DISPOSITION(kind="abort", reason=…)` record — already emitted by the
+  compiler), and
+- the **failure `error_kind`** when failed.
+
+Where does `error_kind` come from in the jsonl? Two options (assumption D7a):
+(a) read it off an enriched `RUN_FAILED` record if Task 4 writes `error_kind`
+into the terminal event payload; (b) infer backstop by the presence of a
+`ResolverDidNotConvergeError`-shaped record. **Chosen: (a)** — Task 4 attaches
+`error_kind` to the `RUN_FAILED` lifecycle record so the summary reads one field
+instead of inferring. Logged in Open Questions. This labeled terminal outcome
+also satisfies issue **#69**'s dependency on a classified terminal result.
+
+### D8 — Interaction with #62 / #66
+
+- **#62** reshapes `primitives/` + `primitive_compiler.py` child-enumeration.
+  #70 edits none of that (D2 keeps the envelope in `orchestration/`; the compiler
+  is read-only for #70). No line-level overlap expected.
+- **#66** reworks compiled-graph exit/resume semantics. #70's typed-terminal-node-
+  in-compiler is explicitly deferred to #66 (D3). #70's only `runner.py` edit is
+  the terminal-classification block; reviewer should confirm no collision if #66
+  lands first.
 
 ---
 
-## Task 0 — Establish the resolver substrate (rebase)
+## Task 1 — `RunOutcome` envelope module
 
-**Goal:** Make the resolver/ABORT machinery present on this branch so Tasks 1–6
-have something to extend.
+**New file:** `src/agent_foundry/orchestration/run_outcome.py`
+**New test:** `tests/agent_foundry/orchestration/test_run_outcome.py`
 
-### 0a. Rebase
+### 1a. RED
+
+```python
+def test_run_completed_round_trips():
+    out = RunCompleted(output=_SomeModel(x=1))
+    assert out.kind is RunOutcomeKind.COMPLETED
+
+def test_run_aborted_carries_reason():
+    out = RunAborted(reason="cannot-converge")
+    assert out.kind is RunOutcomeKind.ABORTED
+    assert out.reason == "cannot-converge"
+
+def test_run_failed_carries_error_kind():
+    out = RunFailed(error_kind=FailureKind.BACKSTOP, error_type="ResolverDidNotConvergeError", message="…")
+    assert out.kind is RunOutcomeKind.FAILED
+    assert out.error_kind is FailureKind.BACKSTOP
+
+def test_discriminated_union_dispatches_on_kind():
+    # validate a RunOutcome-typed adapter routes by kind
+    from pydantic import TypeAdapter
+    ta = TypeAdapter(RunOutcome)
+    got = ta.validate_python({"kind": "aborted", "reason": "r"})
+    assert isinstance(got, RunAborted)
+```
+
+### 1b. GREEN
+
+Implement `RunOutcomeKind`, `FailureKind`, the three wrappers, and the
+`RunOutcome` alias exactly as in D1. Resolve the discriminator-typing fork (D1a)
+to whatever pyright + Pydantic accept. Add `__all__`.
+
+### 1c. Verify
 
 ```
-git rebase feat/operator-guided-retry-resolver-seat
-```
-
-(Equivalently, once that branch merges, rebase onto `origin/main`.)
-
-### 0b. Verify substrate present and green
-
-```
-pdm run test-unit -- tests/agent_foundry/primitives/test_retry_resolver.py tests/agent_foundry/primitives/test_retry_resolver_e2e.py -q
+pdm run test-unit -- tests/agent_foundry/orchestration/test_run_outcome.py -q
 pdm run typecheck
 ```
 
-Both must pass before proceeding. Confirm these symbols now resolve:
-`RetryAborted`, `ResolverDidNotConvergeError`, `DispositionKind`,
-`ResolverDisposition` in `src/agent_foundry/primitives/retry_types.py`, and
-`LifecycleEvent.RESOLVER_DISPOSITION`.
-
-> If the rebase is declined for process reasons, STOP and escalate — Tasks 1–6
-> cannot be implemented against the current (pre-resolver) base.
-
 ---
 
-## Task 1 — Add `RUN_ABORTED` lifecycle event
+## Task 2 — `RUN_ABORTED` lifecycle event
 
 **File:** `src/agent_foundry/orchestration/lifecycle_events.py`
+**Test:** `tests/agent_foundry/orchestration/test_lifecycle_events.py`
 
-### 1a. Write failing test (RED)
-
-**File:** `tests/agent_foundry/orchestration/test_lifecycle_events.py`
-
-Add a test asserting the new member exists with its wire value:
+### 2a. RED
 
 ```python
 def test_run_aborted_event_value():
     assert LifecycleEvent.RUN_ABORTED.value == "run_aborted"
 ```
 
-### 1b. Implement (GREEN)
+### 2b. GREEN
 
-Add after `RUN_FAILED` in `LifecycleEvent`:
+Add after `RUN_FAILED`:
 
 ```python
     RUN_ABORTED = "run_aborted"
 ```
 
-(Wire-stable string per the module docstring's "treat the string as a wire
-format" rule.)
-
-### 1c. Verify
+### 2c. Verify
 
 ```
 pdm run test-unit -- tests/agent_foundry/orchestration/test_lifecycle_events.py -q
@@ -196,206 +322,191 @@ pdm run test-unit -- tests/agent_foundry/orchestration/test_lifecycle_events.py 
 
 ---
 
-## Task 2 — Add `RunAbortedOutcome` typed terminal model
-
-**File:** `src/agent_foundry/primitives/retry_types.py`
-
-### 2a. Write failing test (RED)
-
-**File:** `tests/agent_foundry/primitives/test_retry_types.py`
-
-```python
-def test_run_aborted_outcome_carries_reason():
-    outcome = RunAbortedOutcome(reason="operator-declined")
-    assert outcome.reason == "operator-declined"
-    # round-trips as a pydantic model
-    assert RunAbortedOutcome.model_validate(outcome.model_dump()).reason == "operator-declined"
-```
-
-### 2b. Implement (GREEN)
-
-Add to `retry_types.py`:
-
-```python
-class RunAbortedOutcome(BaseModel):
-    """Terminal outcome returned by ``run_primitive_plan`` when a resolver ABORT
-    ended the run deliberately. ``reason`` is the operator's ABORT explanation."""
-
-    reason: str = ""
-```
-
-> Placement assumption (A7): co-located with `RetryAborted` / `ResolverDisposition`
-> because it is the non-exception twin of the abort reason already carried by
-> `RetryAborted`. An alternative home is `run_context.py` next to `RunEndedEvent`;
-> chose `retry_types.py` to keep all resolver-abort vocabulary in one module.
-
-### 2c. Verify
-
-```
-pdm run test-unit -- tests/agent_foundry/primitives/test_retry_types.py -q
-pdm run typecheck
-```
-
----
-
-## Task 3 — Carry abort reason on `RunEndedEvent`
+## Task 3 — `RunEndedEvent` carries `outcome: RunOutcome`
 
 **File:** `src/agent_foundry/orchestration/run_context.py`
+**Test:** `tests/agent_foundry/orchestration/test_run_context_hooks.py`
+(where `RunEndedEvent` is already exercised)
 
-### 3a. Write failing test (RED)
-
-**File:** `tests/agent_foundry/orchestration/test_run_context.py` (or
-`test_run_context_hooks.py` — match where `RunEndedEvent` is already exercised)
+### 3a. RED
 
 ```python
-def test_run_ended_event_defaults_not_aborted(run_context):
+def test_run_ended_event_defaults_no_outcome(run_context):
     ev = RunEndedEvent(run_context=run_context)
-    assert ev.aborted is False
-    assert ev.abort_reason is None
+    assert ev.outcome is None
+    assert ev.exception is None
+    assert ev.output is None
 
-def test_run_ended_event_can_record_abort(run_context):
-    ev = RunEndedEvent(run_context=run_context, aborted=True, abort_reason="declined")
-    assert ev.aborted is True
-    assert ev.abort_reason == "declined"
+def test_run_ended_event_carries_aborted_outcome(run_context):
+    ev = RunEndedEvent(run_context=run_context, outcome=RunAborted(reason="declined"))
+    assert isinstance(ev.outcome, RunAborted)
+    assert ev.outcome.reason == "declined"
 ```
 
-### 3b. Implement (GREEN)
+### 3b. GREEN
 
-Add the two fields to `RunEndedEvent` (after `output`):
+Add the field (after `output`):
 
 ```python
-    aborted: bool = False
-    abort_reason: str | None = None
+    outcome: RunOutcome | None = None
 ```
 
-Extend the class docstring's terminal-state table with the abort row
-(exception=`None`, output=a `RunAbortedOutcome`, aborted=`True`).
+Import `RunOutcome` from `agent_foundry.orchestration.run_outcome`. Extend the
+class docstring's terminal-state table from two rows to four (completed / aborted
+/ backstop / crash) describing the `(exception, output, outcome)` triple per D5.
+
+> Watch the import direction: `run_context.py` importing `run_outcome.py` is a
+> sibling import within `orchestration/`. `run_outcome.py` must NOT import
+> `run_context.py` (it imports only `pydantic` + stdlib), so no cycle. Confirm at
+> GREEN.
 
 ### 3c. Verify
 
 ```
-pdm run test-unit -- tests/agent_foundry/orchestration/test_run_context.py tests/agent_foundry/orchestration/test_run_context_hooks.py -q
+pdm run test-unit -- tests/agent_foundry/orchestration/test_run_context_hooks.py -q
 pdm run typecheck
 ```
 
 ---
 
-## Task 4 — Classify `RetryAborted` in the runner (core change)
+## Task 4 — Runner returns `RunOutcome` (core change)
 
 **File:** `src/agent_foundry/orchestration/runner.py`
+**Test:** `tests/agent_foundry/compiler/test_run_primitive_plan.py`
 
-This is the defect site. Today (line ~196 and ~204):
+### 4a. RED
 
-```python
-    except BaseException as exc:
-        caught_exc = exc
-        raise
-    finally:
-        ...
-        terminal = LifecycleEvent.RUN_FAILED if caught_exc is not None else LifecycleEvent.RUN_ENDED
-        lifecycle.append(terminal, run_id=resolved_run_id)
-```
-
-### 4a. Write failing tests (RED)
-
-**File:** `tests/agent_foundry/compiler/test_run_primitive_plan.py`
-(this is where the terminal-event behavior is already tested —
-`test_exception_mid_run_propagates_and_cleans_up`, `test_happy_path...`).
-
-Add three tests using a plan whose root is a `Retry` with an ABORT resolver
-(reuse the `W` / `_designer_body` / ABORT `FunctionAction` fixtures from
-`tests/agent_foundry/primitives/test_retry_resolver_e2e.py` — lift the minimal
-fixture into the test or import it):
+Add tests covering all four terminal conditions. Reuse the ABORT/never-converge
+`Retry` fixtures from `tests/agent_foundry/primitives/test_retry_resolver_e2e.py`
+(lift the minimal plan builder, or import it).
 
 ```python
-async def test_resolver_abort_terminates_clean_not_failed(tmp_path, ...):
-    """ABORT -> run_primitive_plan returns RunAbortedOutcome (does NOT raise);
-    lifecycle terminal event is RUN_ABORTED, not RUN_FAILED."""
+async def test_completed_returns_run_completed(...):
+    result = await run_primitive_plan(_plan_sequence(), ...)
+    assert isinstance(result, RunCompleted)
+    assert isinstance(result.output, PlanOutput)
+    assert result.output.x == 2
+    types = _lifecycle_types(run_dir)
+    assert LifecycleEvent.RUN_ENDED.value in types
+
+async def test_resolver_abort_returns_run_aborted(...):
+    """ABORT -> RunAborted (does NOT raise); terminal event RUN_ABORTED."""
     result = await run_primitive_plan(_plan_with_abort_resolver("cannot-converge"), ...)
-    assert isinstance(result, RunAbortedOutcome)
+    assert isinstance(result, RunAborted)
     assert result.reason == "cannot-converge"
-    types = [json.loads(l)["type"] for l in (run_dir / "lifecycle.jsonl").read_text().splitlines()]
+    types = _lifecycle_types(run_dir)
     assert LifecycleEvent.RUN_ABORTED.value in types
     assert LifecycleEvent.RUN_FAILED.value not in types
 
-async def test_resolver_abort_on_run_ended_hook_sees_reason(tmp_path, ...):
-    """on_run_ended hook receives aborted=True and the reason; exception is None."""
+async def test_abort_on_run_ended_hook_sees_outcome(...):
     captured = []
-    await run_primitive_plan(..., on_run_ended=[lambda e: captured.append(e)])
+    await run_primitive_plan(..., on_run_ended=[captured.append])
     (ev,) = captured
-    assert ev.aborted is True
-    assert ev.abort_reason == "cannot-converge"
+    assert isinstance(ev.outcome, RunAborted)
+    assert ev.outcome.reason == "cannot-converge"
     assert ev.exception is None
 
-async def test_backstop_did_not_converge_is_still_run_failed(tmp_path, ...):
-    """ResolverDidNotConvergeError keeps the error terminal: it propagates AND
-    the terminal event is RUN_FAILED (not RUN_ABORTED)."""
-    with pytest.raises(ResolverDidNotConvergeError):
-        await run_primitive_plan(_plan_that_never_converges(), ...)
-    types = [...]
+async def test_backstop_returns_run_failed_backstop(...):
+    """ResolverDidNotConvergeError -> RunFailed(BACKSTOP), does NOT raise;
+    terminal event RUN_FAILED."""
+    result = await run_primitive_plan(_plan_that_never_converges(), ...)
+    assert isinstance(result, RunFailed)
+    assert result.error_kind is FailureKind.BACKSTOP
+    types = _lifecycle_types(run_dir)
     assert LifecycleEvent.RUN_FAILED.value in types
     assert LifecycleEvent.RUN_ABORTED.value not in types
+
+async def test_crash_returns_run_failed_crash(...):
+    """A FunctionAction that raises RuntimeError -> RunFailed(CRASH),
+    does NOT raise; terminal event RUN_FAILED."""
+    result = await run_primitive_plan(_plan_with_raising_action("boom"), ...)
+    assert isinstance(result, RunFailed)
+    assert result.error_kind is FailureKind.CRASH
+    assert result.error_type == "RuntimeError"
+    assert "boom" in result.message
 ```
 
-> Fixture assumption (A8): `_plan_that_never_converges()` is a `Retry` whose
-> resolver always returns RETRY and whose body never passes `until`, with
-> `resolver_max_reentries` small, so the backstop trips. Confirm the field name
-> `resolver_max_reentries` against the rebased `Retry` model when writing.
+> **Fixture assumption (D4a):** `_plan_that_never_converges()` is a `Retry` whose
+> resolver always returns RETRY and whose body never passes `until`, with a small
+> backstop ceiling so `ResolverDidNotConvergeError` trips. Confirm the actual
+> field name on the `Retry` model (e.g. `resolver_max_reentries`) when writing.
 
-### 4b. Implement (GREEN)
+### 4b. GREEN
 
-Replace the single-catch with abort-aware classification. Capture the abort
-separately so it is **not** re-raised and the terminal event differs:
+Replace the seam with full outcome classification — no re-raise on any path:
 
 ```python
-    caught_exc: BaseException | None = None
-    abort_reason: str | None = None
-    final_output: BaseModel | None = None
-    try:
-        graph = compile_runtime_plan(plan)
-        result_dict = await graph.ainvoke(initial_state.model_dump())
-        final_output = root_out.model_validate(result_dict)
-        return final_output
-    except RetryAborted as aborted:
-        # Deliberate operator abort: a clean, non-error terminal outcome.
-        abort_reason = aborted.reason
-        final_output = RunAbortedOutcome(reason=aborted.reason)
-        return final_output
-    except BaseException as exc:
-        caught_exc = exc
-        raise
-    finally:
-        if abort_reason is not None:
-            terminal = LifecycleEvent.RUN_ABORTED
-        elif caught_exc is not None:
-            terminal = LifecycleEvent.RUN_FAILED
-        else:
-            terminal = LifecycleEvent.RUN_ENDED
-        lifecycle.append(terminal, run_id=resolved_run_id)
-        ...
-        _safe_invoke_hooks(
-            run_ctx.on_run_ended,
-            RunEndedEvent(
-                run_context=run_ctx,
-                exception=caught_exc,
-                output=final_output,
-                aborted=abort_reason is not None,
-                abort_reason=abort_reason,
-            ),
-            label="on_run_ended",
-        )
+caught_exc: BaseException | None = None
+final_output: BaseModel | None = None
+outcome: RunOutcome
+try:
+    graph = compile_runtime_plan(plan)
+    result_dict = await graph.ainvoke(initial_state.model_dump())
+    final_output = root_out.model_validate(result_dict)
+    outcome = RunCompleted(output=final_output)
+except RetryAborted as aborted:
+    outcome = RunAborted(reason=aborted.reason)
+except ResolverDidNotConvergeError as backstop:
+    caught_exc = backstop
+    outcome = RunFailed(
+        error_kind=FailureKind.BACKSTOP,
+        error_type=type(backstop).__name__,
+        message=str(backstop),
+    )
+except BaseException as exc:
+    caught_exc = exc
+    outcome = RunFailed(
+        error_kind=FailureKind.CRASH,
+        error_type=type(exc).__name__,
+        message=str(exc),
+    )
+finally:
+    if isinstance(outcome, RunAborted):
+        terminal = LifecycleEvent.RUN_ABORTED
+    elif isinstance(outcome, RunFailed):
+        terminal = LifecycleEvent.RUN_FAILED
+    else:
+        terminal = LifecycleEvent.RUN_ENDED
+    # error_kind rides the RUN_FAILED record so render_summary reads one field (D7a).
+    lifecycle.append(
+        terminal,
+        run_id=resolved_run_id,
+        **({"error_kind": outcome.error_kind.value} if isinstance(outcome, RunFailed) else {}),
+    )
+    ...  # registry.shutdown_all, render_summary (unchanged ordering)
+    _safe_invoke_hooks(
+        run_ctx.on_run_ended,
+        RunEndedEvent(
+            run_context=run_ctx,
+            exception=caught_exc,
+            output=final_output,
+            outcome=outcome,
+        ),
+        label="on_run_ended",
+    )
+    ...  # signal-handler removal, ContextVar reset, lifecycle.close, provider shutdown
+return outcome
 ```
 
-Add imports: `RetryAborted`, `RunAbortedOutcome` from
-`agent_foundry.primitives.retry_types`.
+Notes:
+- `return outcome` is placed **after** the `try/finally` (not inside `try`), so
+  every terminal path returns the classified envelope and the finally block runs
+  exactly once before the return.
+- Clause ordering is load-bearing: `RetryAborted` and `ResolverDidNotConvergeError`
+  must precede the broad `except BaseException`, else they fall into CRASH.
+- Verify `lifecycle.append` accepts arbitrary kwargs for the `error_kind` payload
+  (check `JsonlLifecycleWriter.append` signature); if it does not, add `error_kind`
+  via whatever mechanism the writer uses for event fields, or fall back to D7a
+  option (b) and drop the kwarg.
 
-Update the `run_primitive_plan` docstring teardown paragraph (lines ~101–108) to
-describe the three-way terminal classification and that `RetryAborted` is caught
-(not propagated) and surfaced as `RunAbortedOutcome` + `RunEndedEvent.aborted`.
+Change the signature: `-> BaseModel` becomes `-> RunOutcome`. Import
+`RunOutcome`, `RunCompleted`, `RunAborted`, `RunFailed`, `FailureKind` from
+`agent_foundry.orchestration.run_outcome`; import `RetryAborted` and
+`ResolverDidNotConvergeError` from `agent_foundry.primitives.retry_types`.
 
-> Ordering note (load-bearing): the `except RetryAborted` clause must precede the
-> broad `except BaseException` clause, else the abort is swallowed by the generic
-> handler and re-raised as a failure.
+Rewrite the `run_primitive_plan` docstring teardown paragraph (~lines 100–109) to
+describe: returns one `RunOutcome`; never re-raises; the four-way terminal
+classification and its lifecycle-event mapping.
 
 ### 4c. Verify
 
@@ -406,49 +517,49 @@ pdm run typecheck
 
 ---
 
-## Task 5 — Classify outcome in `render_summary`
+## Task 5 — `render_summary` three-way classification
 
 **File:** `src/agent_foundry/orchestration/summary.py`
+**Test:** `tests/agent_foundry/orchestration/test_summary.py`
 
-### 5a. Write failing test (RED)
-
-**File:** `tests/agent_foundry/orchestration/test_summary.py`
+### 5a. RED
 
 ```python
 def test_summary_reports_aborted_outcome(tmp_path):
-    """A lifecycle stream ending in RUN_ABORTED renders status 'aborted'
-    (not 'failed', not 'completed')."""
-    # write a minimal jsonl: RUN_STARTED ... RESOLVER_DISPOSITION(kind=abort) ... RUN_ABORTED
-    ...
+    # jsonl: RUN_STARTED ... RESOLVER_DISPOSITION(kind=abort, reason="declined") ... RUN_ABORTED
     render_summary(run_dir)
     text = (run_dir / "summary.txt").read_text()
     assert "aborted" in text
+    assert "declined" in text          # abort reason surfaced
     assert "failed" not in text
+
+def test_summary_reports_failed_with_error_kind(tmp_path):
+    # jsonl: RUN_STARTED ... RUN_FAILED(error_kind="backstop")
+    render_summary(run_dir)
+    text = (run_dir / "summary.txt").read_text()
+    assert "failed" in text
+    assert "backstop" in text          # error_kind surfaced
 ```
 
-(Mirror the existing `test_summary.py` jsonl-fixture style.)
+(Mirror the existing jsonl-fixture style in `test_summary.py`.)
 
-### 5b. Implement (GREEN)
+### 5b. GREEN
 
 In `render_summary`:
 
-- Add a `run_aborted = False` accumulator alongside `run_failed`.
-- Add a branch handling `LifecycleEvent.RUN_ABORTED.value`: set
-  `run_ended_at = ts` and `run_aborted = True`.
-- Replace the two-way `status = "failed" if run_failed else "completed"` with a
-  three-way: `"aborted"` if `run_aborted`, else `"failed"` if `run_failed`, else
+- Add `run_aborted = False`, `abort_reason: str | None = None`,
+  `failure_kind: str | None = None` accumulators.
+- Branch on `LifecycleEvent.RUN_ABORTED.value`: set `run_ended_at = ts`,
+  `run_aborted = True`.
+- On `LifecycleEvent.RUN_FAILED.value`: also capture
+  `failure_kind = record.get("error_kind")` (D7a).
+- On `LifecycleEvent.RESOLVER_DISPOSITION.value` with `kind == "abort"`: capture
+  `abort_reason = record.get("reason")`.
+- Replace the two-way status with three-way:
+  `"aborted"` if `run_aborted`, else `"failed"` if `run_failed`, else
   `"completed"`.
-- Surface the abort reason when present: read it from the
-  `RESOLVER_DISPOSITION` record whose `kind == "abort"` (the
-  `reason` field is already emitted there by the compiler's
-  `disposition_router`). Append an `Abort reason: <reason>` line near the header.
-
-> Assumption (A9): the summary reads the abort reason from the existing
-> `RESOLVER_DISPOSITION(kind="abort", reason=...)` record rather than adding a
-> `reason` field to the `RUN_ABORTED` event. Keeps `RUN_ABORTED` a pure terminal
-> marker and avoids duplicating the reason on the wire. If the reviewer prefers
-> the reason on `RUN_ABORTED` itself, that's a one-line change in Task 4's
-> `lifecycle.append(terminal, ...)` plus this reader. Logged in Open Questions.
+- When aborted and `abort_reason`, append an `Abort reason: <reason>` line.
+- When failed and `failure_kind`, append a `Failure kind: <failure_kind>` line.
 
 ### 5c. Verify
 
@@ -458,100 +569,169 @@ pdm run test-unit -- tests/agent_foundry/orchestration/test_summary.py -q
 
 ---
 
-## Task 6 — Refresh docstrings and full-suite regression
+## Task 6 — Update callers + full-suite regression
 
-### 6a. Docstring corrections (REFACTOR)
+### 6a. Production caller: `evals/agent_foundry_tasks.py`
 
-- `RetryAborted` docstring in `retry_types.py` currently says *"Terminates the
-  run via the raise path (clean-signal variant deferred)."* — update to state the
-  runner now classifies it into a clean `RUN_ABORTED` terminal and surfaces
-  `RunAbortedOutcome` / `RunEndedEvent.aborted`. (Per the comment-discipline
-  rule, keep it about *this* type's contract; do not restate the runner's
-  internals beyond the load-bearing fact that the raise is caught, not fatal.)
-- Confirm the `run_primitive_plan` docstring edit from Task 4b reads correctly.
+**File:** `src/agent_foundry/evals/agent_foundry_tasks.py` (`build_run_primitive_plan_task`)
 
-### 6b. Full unit + typecheck regression
+The inner `task` returns `await run_primitive_plan(...)` and is typed
+`-> BaseModel`. Under the envelope it returns `RunOutcome`. Decide unwrapping
+behavior for the eval task (assumption D6a):
+
+- On `RunCompleted`: return `outcome.output` (the eval expects the product model).
+- On `RunFailed`: raise — evals must surface a failed case as a failure. Map back
+  to an exception here (e.g. `raise RuntimeError(outcome.message)` or re-raise a
+  reconstructed error). The envelope removed the runner's re-raise; the *eval
+  boundary* re-introduces it because the Inspect `Task` contract is exception-based.
+- On `RunAborted`: an eval case should not abort; treat as a failure (raise) or
+  surface as an explicit failed result. Chosen: raise with the abort reason.
+
+Add a focused test in the evals test module asserting the task unwraps
+`RunCompleted.output` and raises on `RunFailed`. (Locate via the existing evals
+task tests; if none cover this path, add one mirroring the module's style.)
+
+> This is the only **production** caller. `mlflow_adapter`, `evals/cli.py`,
+> `telemetry`, `registry` reference `run_primitive_plan` only in docstrings — no
+> code edit.
+
+### 6b. Test callers that consume the return value (unwrap `RunCompleted.output`)
+
+Each of these asserts on the *bare* return today and must unwrap:
+
+- `tests/agent_foundry/compiler/test_run_primitive_plan.py`
+  - `test_happy_path...` (~line 182): `assert isinstance(result, PlanOutput)` →
+    `assert isinstance(result, RunCompleted); assert isinstance(result.output, PlanOutput); assert result.output.x == 2`.
+- `tests/agent_foundry/integration/test_end_to_end.py`
+  - ~line 201–203: `isinstance(result, StateC)` / `result.verified` /
+    `result.headline` → unwrap via `result.output`. (Integration test; gated, but
+    update for type-correctness.)
+- `tests/agent_foundry/integration/test_mcp_tool_execution.py`
+  - ~line 131–132: `isinstance(result, _Output)` / `result.echoed_word` →
+    unwrap via `result.output`.
+
+### 6c. Test callers that assert the runner RE-RAISES (behavior change, D6)
+
+These currently wrap the call in `pytest.raises(...)`. Under D6 the runner returns
+`RunFailed` instead. Update each to assert on the returned `RunFailed`:
+
+- `tests/agent_foundry/orchestration/test_run_context_hooks.py`
+  - `test_..._on_run_ended_with_exception_and_none_output_on_failure` (~line 151):
+    drop `pytest.raises`; assert `isinstance(result, RunFailed)`,
+    `result.error_kind is FailureKind.CRASH`, and the hook event still carries
+    `exception` (a `RuntimeError`) + `output is None` + `outcome` a `RunFailed`.
+  - `test_..._writes_run_failed_lifecycle_event` (~line 186): drop `pytest.raises`;
+    keep the `RUN_FAILED` jsonl assertion.
+  - Audit the rest of this file for other `pytest.raises` around
+    `run_primitive_plan`.
+- `tests/agent_foundry/orchestration/test_runner_telemetry.py`
+  - `test_..._cleans_up_run_dir_when_build_tracer_provider_raises` (~line 177):
+    this raises **before** the try/except seam (during `build_tracer_provider`, in
+    the pre-graph setup), so it still propagates — **leave it raising**. Confirm
+    the raise origin is pre-seam when updating; do not convert this one.
+
+> **Audit step (load-bearing):** before finishing, grep the test tree for
+> `pytest.raises(` within ~5 lines of `run_primitive_plan(` and classify each as
+> pre-seam (still raises: telemetry-setup failures) vs. in-graph (now returns
+> `RunFailed`). Only in-graph ones change.
+
+### 6d. Full unit + typecheck regression
 
 ```
 pdm run test-unit
 pdm run typecheck
 ```
 
-All unit tests green and zero pyright errors before the plan is complete. Pay
-attention to the resolver e2e tests from Task 0 — `RetryAborted` still raises
-*inside the graph* (those tests use `_compile_and_run`, not
-`run_primitive_plan`, so they still expect the raise and must stay green
-unchanged).
+All unit tests green, zero pyright errors. The in-graph resolver e2e tests
+(`test_retry_resolver_e2e.py`) use `_compile_and_run` (not `run_primitive_plan`)
+and still expect `RetryAborted` / `ResolverDidNotConvergeError` to raise inside
+the graph — they must stay **green and unchanged**.
+
+---
+
+## Task 7 — Docstring refresh (REFACTOR)
+
+- `RetryAborted` docstring in `retry_types.py`: it currently says *"Terminates the
+  run via the raise path (clean-signal variant deferred)."* Update to: an internal
+  unwind signal the runner catches and converts to `RunAborted`; it does not
+  escape `run_primitive_plan`. (Keep it about *this* type's contract per the
+  comment-discipline rule; state only the load-bearing fact that it is caught, not
+  the runner's full internals.)
+- `ResolverDidNotConvergeError` docstring: note it is caught by the runner and
+  surfaced as `RunFailed(error_kind=BACKSTOP)` (one line; load-bearing).
+- Confirm the `run_primitive_plan` and `RunEndedEvent` docstring edits read
+  correctly.
 
 ---
 
 ## Completion criteria
 
-- [ ] Branch rebased onto resolver substrate; resolver tests green (Task 0).
+- [ ] `orchestration/run_outcome.py` defines `RunOutcome`, `RunOutcomeKind`,
+      `FailureKind`, `RunCompleted`, `RunAborted`, `RunFailed`; union round-trips.
 - [ ] `LifecycleEvent.RUN_ABORTED` exists (`"run_aborted"`).
-- [ ] `RunAbortedOutcome(reason)` pydantic model exists and round-trips.
-- [ ] `RunEndedEvent` carries `aborted` + `abort_reason`.
-- [ ] `run_primitive_plan` returns `RunAbortedOutcome` on ABORT, does **not**
-      raise, and writes `RUN_ABORTED` (not `RUN_FAILED`).
-- [ ] `ResolverDidNotConvergeError` still propagates and writes `RUN_FAILED`.
-- [ ] `render_summary` reports `aborted` vs `failed` vs `completed` and shows the
-      abort reason.
-- [ ] `RetryAborted` remains importable; in-graph resolver e2e tests unchanged.
-- [ ] `pdm run test-unit` and `pdm run typecheck` both clean.
+- [ ] `RunEndedEvent.outcome: RunOutcome | None` added; `exception`/`output`
+      back-compat preserved.
+- [ ] `run_primitive_plan` returns `RunOutcome`, never re-raises an in-graph
+      exception; writes the correct terminal event per outcome.
+- [ ] ABORT → `RunAborted` + `RUN_ABORTED`; backstop → `RunFailed(BACKSTOP)` +
+      `RUN_FAILED`; crash → `RunFailed(CRASH)` + `RUN_FAILED`; success →
+      `RunCompleted` + `RUN_ENDED`.
+- [ ] `render_summary` reports completed / aborted / failed, with abort reason and
+      failure `error_kind` surfaced.
+- [ ] `evals/agent_foundry_tasks.py` unwraps `RunCompleted.output` and raises on
+      `RunFailed`.
+- [ ] All return-consuming and re-raise-asserting tests updated; pre-seam telemetry
+      raise test left raising.
+- [ ] In-graph resolver e2e tests unchanged and green.
+- [ ] `pdm run test-unit` and `pdm run typecheck` clean.
 
 ---
 
 ## Open Questions / Decisions for Review
 
-1. **(A1) Branch base / rebase.** This branch lacks the resolver/ABORT
-   machinery #70 extends; that code is only on the unmerged
-   `feat/operator-guided-retry-resolver-seat` branch (not on `origin/main`,
-   HEAD #58). Task 0 rebases onto it. **Decision needed:** rebase onto the
-   resolver branch now, or wait for it to merge to `main` and re-cut? Tasks 1–6
-   are identical either way.
+1. **(D6) Runner no longer re-raises — primary decision.** The envelope makes the
+   FAILED path *return* `RunFailed` rather than propagate the exception. This is
+   what makes `RunOutcome` a true single terminal envelope, but it changes a
+   long-standing contract and touches several tests (Task 6c). Alternative: keep
+   re-raising CRASH/BACKSTOP and only return for COMPLETED/ABORTED — rejected
+   because callers would still pattern-match exceptions for failures. **Confirm the
+   no-re-raise contract.**
 
-2. **(A2) Mechanism.** Chosen: keep `RetryAborted` raising out of the graph,
-   catch+classify+swallow in the runner. The issue listed alternatives (sentinel
-   return, typed terminal-outcome from the graph, LangGraph-level signal). I
-   picked the lowest-churn option that still removes the caller's need to
-   type-match. Confirm this is the intended mechanism.
+2. **(D2) Module placement.** `RunOutcome` lives in
+   `orchestration/run_outcome.py` (NOT `primitives/retry_types.py`) to keep #70
+   disjoint from #62's `primitives/` + `primitive_compiler.py` churn. Confirm.
 
-3. **(A4) `run_primitive_plan` return type on abort.** On ABORT there is no
-   validated `root_out`. Chosen: return a new `RunAbortedOutcome(reason=...)`
-   (a `BaseModel`, so the `-> BaseModel` signature is unchanged) instead of
-   widening to `BaseModel | None` or fabricating a product output model. Callers
-   distinguish via `isinstance(result, RunAbortedOutcome)` or, preferred, the new
-   `RunEndedEvent.aborted` field. **This is the main reviewable design choice.**
-   Alternative: keep returning the pre-abort accumulated state coerced to
-   `root_out` — rejected because that state never passed `until` and coercing it
-   would be a misleading "success-shaped" return.
+3. **(D1a) Discriminator typing.** `kind: RunOutcomeKind = RunOutcomeKind.VARIANT`
+   vs. the `Literal[...]` fallback if the pinned Pydantic rejects StrEnum
+   discriminators. Resolved empirically at GREEN. Confirm the convention reading.
 
-4. **(A3) Backstop terminal event.** `ResolverDidNotConvergeError` maps to
-   `RUN_FAILED` (stays an error), distinguishable from a crash only by the
-   exception payload, not a dedicated event. Should the backstop get its own
-   `RUN_BACKSTOP_TRIPPED` wire event? The issue only requires it "remain an error
-   terminal", so I did not add one. Confirm.
+4. **(D1c / D5) Where the live exception lives.** `RunFailed` carries
+   string-reconstructable fields (`error_kind`, `error_type`, `message`), not the
+   live `BaseException`; the traceback-bearing object still reaches `on_run_ended`
+   via `RunEndedEvent.exception`. Confirm this split is acceptable (vs. e.g.
+   stashing the exception on `RunFailed` with `arbitrary_types_allowed`).
 
-5. **(A9) Where the abort reason lives on the wire.** The summary reads the
-   reason from the existing `RESOLVER_DISPOSITION(kind="abort")` record rather
-   than duplicating it onto the `RUN_ABORTED` event. If you prefer the reason on
-   the terminal event itself, it's a one-line change in Task 4 + Task 5. Confirm.
+5. **(D4) Backstop vs. crash on the wire.** Both map to `RUN_FAILED`; the
+   distinction is the typed `RunFailed.error_kind` and the `error_kind` field on
+   the `RUN_FAILED` record (D7a). No dedicated `RUN_BACKSTOP_TRIPPED` event.
+   Confirm.
 
-6. **(#66 interaction)** #66 (GateAction interrupt/resume) also touches
-   run-termination/outcome semantics and `runner.py`. This plan's only
-   `runner.py` edit is the terminal-classification block (lines ~196–229).
-   Reviewer should confirm no collision with in-flight #66 work on the same
-   block; if #66 lands first, re-check the `except`-clause ordering survives.
+6. **(D7a) `error_kind` on the lifecycle record.** Task 4 writes `error_kind` into
+   the `RUN_FAILED` jsonl record so `render_summary` reads one field. Requires the
+   lifecycle writer to accept the extra field; if it doesn't, fall back to
+   inferring backstop from a `ResolverDidNotConvergeError`-shaped record. Confirm
+   the writer's field-passing mechanism.
 
-7. **(#62 overlap — primitive_compiler.py)** #62 ("centralize `child_specs`")
-   refactors `primitive_compiler.py`: `_collect_retry_channels` (~164–197) and
-   each `_compile_*` / validator child-enumeration. **This plan touches
-   `primitive_compiler.py` essentially not at all** — #70's compiler dependency
-   (`abort_node` raising `RetryAborted`, `disposition_router`) is *consumed
-   unchanged*; #70 adds no edits there. Overlap risk between #70 and #62 on
-   `primitive_compiler.py` is therefore **low/none**: #62 reshapes
-   child-enumeration plumbing; #70 only adds runner/lifecycle/summary/types code.
-   The one shared *file* they both depend on (read-only for #70) is
-   `primitive_compiler.py`, but they edit disjoint regions. Sequencing is free in
-   either order; flagged so a reviewer can confirm no line-level merge conflict if
-   both land close together.
+7. **(D6a) Eval-boundary unwrapping.** `build_run_primitive_plan_task` unwraps
+   `RunCompleted.output` and **raises** on `RunFailed`/`RunAborted` (the Inspect
+   `Task` contract is exception-based). Confirm raising at the eval boundary is the
+   right adaptation.
+
+8. **(#66 / #62 collision)** #70's only behavioral edit is `runner.py`'s terminal
+   block + new `orchestration/` files. The typed-terminal-node-in-compiler is
+   deferred to #66. #62's `primitive_compiler.py` work is disjoint. Reviewer to
+   confirm no line-level conflict if these land close together.
+
+9. **(#69)** The labeled three-way summary outcome satisfies #69's dependency on a
+   classified terminal result. Confirm #69 needs nothing beyond
+   completed/aborted/failed + reason + error_kind.
