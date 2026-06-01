@@ -390,14 +390,15 @@ def _compile_sequence(
     for model in all_types:
         for name in model.model_fields:
             fields[name] = Any
-    step_children = [(step, f"{ctx.prefix}_step_{i}") for i, step in enumerate(seq.steps)]
+    specs = seq.child_specs()
+    step_children = [(step, f"{ctx.prefix}_{suffix}") for step, suffix in specs]
     sub_state_type = _state_type_with_retry_channels("SeqState", fields, step_children)
     sub_graph = StateGraph(sub_state_type)
 
     first_entry = None
     prev_exit = None
-    for i, step in enumerate(seq.steps):
-        entry, exit_ = _compile_node(sub_graph, step, ctx.child(f"{ctx.prefix}_step_{i}"))
+    for step, suffix in specs:
+        entry, exit_ = _compile_node(sub_graph, step, ctx.child(f"{ctx.prefix}_{suffix}"))
         if first_entry is None:
             first_entry = entry
         if prev_exit is not None:
@@ -444,22 +445,27 @@ def _compile_conditional(
     for model in all_types:
         for name in model.model_fields:
             fields[name] = Any
-    branch_children: list[tuple[Primitive, str]] = [(cond.then_branch, f"{ctx.prefix}_then")]
+    # then/else are role-specific for edge wiring, so child_specs drives only the
+    # prefix derivation; the suffix per branch is looked up by object identity.
+    suffix_for = {id(child): suffix for child, suffix in cond.child_specs()}
+    then_prefix = f"{ctx.prefix}_{suffix_for[id(cond.then_branch)]}"
+    branch_children: list[tuple[Primitive, str]] = [(cond.then_branch, then_prefix)]
     if cond.else_branch is not None:
-        branch_children.append((cond.else_branch, f"{ctx.prefix}_else"))
+        else_prefix = f"{ctx.prefix}_{suffix_for[id(cond.else_branch)]}"
+        branch_children.append((cond.else_branch, else_prefix))
     sub_state_type = _state_type_with_retry_channels("CondState", fields, branch_children)
     sub_graph = StateGraph(sub_state_type)
 
     router_id = f"{ctx.prefix}_router"
     merge_id = f"{ctx.prefix}_merge"
 
-    then_entry, then_exit = _compile_node(
-        sub_graph, cond.then_branch, ctx.child(f"{ctx.prefix}_then")
-    )
+    then_entry, then_exit = _compile_node(sub_graph, cond.then_branch, ctx.child(then_prefix))
 
     if cond.else_branch is not None:
         else_entry, else_exit = _compile_node(
-            sub_graph, cond.else_branch, ctx.child(f"{ctx.prefix}_else")
+            sub_graph,
+            cond.else_branch,
+            ctx.child(else_prefix),  # type: ignore[possibly-undefined]
         )
         targets = [then_entry, else_entry]
     else:
@@ -519,11 +525,13 @@ def _compile_loop(
     for model in all_types:
         for name in model.model_fields:
             fields[name] = Any
+    ((body, body_suffix),) = loop.child_specs()
+    body_prefix = f"{ctx.prefix}_{body_suffix}"
     body_state_type = _state_type_with_retry_channels(
-        "LoopBodyState", fields, [(loop.body, f"{ctx.prefix}_body")]
+        "LoopBodyState", fields, [(body, body_prefix)]
     )
     body_graph = StateGraph(body_state_type)
-    body_entry, body_exit = _compile_node(body_graph, loop.body, ctx.child(f"{ctx.prefix}_body"))
+    body_entry, body_exit = _compile_node(body_graph, body, ctx.child(body_prefix))
     body_graph.set_entry_point(body_entry)
     body_graph.add_edge(body_exit, END)
     compiled_body = body_graph.compile()
@@ -591,11 +599,18 @@ def _compile_retry(
     for model in all_types:
         for name in model.model_fields:
             fields[name] = Any
+    # child_specs drives prefix derivation; body is always first, resolver (when
+    # present) second. Role wiring below still references retry.body /
+    # retry.on_max_attempts_resolver directly.
+    specs = retry.child_specs()
+    body_suffix = specs[0][1]
+    resolver_suffix = specs[1][1] if len(specs) > 1 else "resolver"
+    body_prefix = f"{prefix}_{body_suffix}"
     body_state_type = _state_type_with_retry_channels(
-        "RetryBodyState", fields, [(retry.body, f"{prefix}_body")]
+        "RetryBodyState", fields, [(retry.body, body_prefix)]
     )
     body_graph = StateGraph(body_state_type)
-    body_entry, body_exit = _compile_node(body_graph, retry.body, ctx.child(f"{prefix}_body"))
+    body_entry, body_exit = _compile_node(body_graph, retry.body, ctx.child(body_prefix))
     body_graph.set_entry_point(body_entry)
     body_graph.add_edge(body_exit, END)
     compiled_body = body_graph.compile()
@@ -609,7 +624,7 @@ def _compile_retry(
     )
 
     retry_id = f"{prefix}_retry"
-    resolver_id = f"{prefix}_resolver"
+    resolver_id = f"{prefix}_{resolver_suffix}"
     reentry_id = f"{prefix}_reentry"
     abort_id = f"{prefix}_abort"
     merge_id = f"{prefix}_merge"
