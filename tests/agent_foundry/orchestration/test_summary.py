@@ -33,7 +33,7 @@ def _invocation_pair(
         "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
         "ts": start_ts,
         "run_id": run_id,
-        "agent": agent,
+        "agent_name": agent,
     }
     end_type = (
         LifecycleEvent.AGENT_INVOCATION_FAILED
@@ -44,7 +44,7 @@ def _invocation_pair(
         "type": end_type.value,
         "ts": end_ts,
         "run_id": run_id,
-        "agent": agent,
+        "agent_name": agent,
     }
     return [started, ended]
 
@@ -328,3 +328,63 @@ def test_render_summary_includes_failure_cause(tmp_path: Path) -> None:
     assert "implementer/1" in text
     assert "api_error_status=500" in text
     assert "exit_code=1" in text
+
+
+def test_render_summary_reads_correct_agent_name_field(tmp_path: Path) -> None:
+    """Parser must read agent_name field, not agent field, from invocation events."""
+    run_id = "run-agent-field"
+    run_dir = tmp_path / run_id
+    records: list[dict] = [_run_started(run_id, "2026-04-15T11:00:00+00:00")]
+
+    # Manually construct events with the correct agent_name field
+    # (as emitted by real event creators, not the fixture helper)
+    records.append(
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+            "ts": "2026-04-15T11:00:01+00:00",
+            "run_id": run_id,
+            "agent_name": "analyzer",
+        }
+    )
+    records.append(
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
+            "ts": "2026-04-15T11:00:02+00:00",
+            "run_id": run_id,
+            "agent_name": "analyzer",
+        }
+    )
+    records.append(
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+            "ts": "2026-04-15T11:00:03+00:00",
+            "run_id": run_id,
+            "agent_name": "analyzer",
+        }
+    )
+    records.append(
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
+            "ts": "2026-04-15T11:00:04+00:00",
+            "run_id": run_id,
+            "agent_name": "analyzer",
+        }
+    )
+    records.append(_run_ended(run_id, "2026-04-15T11:00:05+00:00"))
+
+    _write_jsonl(run_dir / "lifecycle.jsonl", records)
+
+    render_summary(run_dir)
+
+    summary = (run_dir / "summary.txt").read_text(encoding="utf-8")
+    # Verify the agent appears in the summary with correct counts
+    assert "analyzer" in summary, f"Agent 'analyzer' not found in summary:\n{summary}"
+    analyzer_line = next(
+        (line for line in summary.splitlines() if "analyzer" in line),
+        None,
+    )
+    assert analyzer_line is not None
+    # Should have 2 invocations, 2 successes, 0 failures
+    assert "2 invocation" in analyzer_line, f"Expected 2 invocations in: {analyzer_line}"
+    assert "2 success" in analyzer_line, f"Expected 2 successes in: {analyzer_line}"
+    assert "0 failure" in analyzer_line, f"Expected 0 failures in: {analyzer_line}"
