@@ -31,6 +31,7 @@ from agent_foundry.primitives.models import (
     Sequence,
     get_type_args,
 )
+from agent_foundry.primitives.retry_types import WELL_KNOWN_METADATA_FIELDS
 
 # -- Registry --
 
@@ -168,6 +169,27 @@ def _validate_retry(retry: Retry) -> None:
         )
 
     validate_primitive(retry.body)
+
+    if retry.on_max_attempts_resolver is not None:
+        resolver_in, _ = get_type_args(retry.on_max_attempts_resolver)
+        # The compiler writes the exhaustion metadata into the Retry's scope
+        # before the resolver node under fixed well-known names. A resolver may
+        # declare those exact names to consume them; everything else must come
+        # from accumulated state.
+        resolver_required = set(resolver_in.model_fields) - WELL_KNOWN_METADATA_FIELDS
+        missing = resolver_required - set(retry_in.model_fields)
+        if missing:
+            raise TypeMismatchError(
+                message=(
+                    f"Retry resolver input: {resolver_in.__name__} requires fields "
+                    f"{sorted(missing)} not available in accumulated state "
+                    f"(available: {sorted(retry_in.model_fields)})"
+                ),
+                expected=resolver_in,
+                actual=resolver_in,
+                position="Retry resolver input",
+            )
+        validate_primitive(retry.on_max_attempts_resolver)
 
 
 def _validate_conditional(cond: Conditional) -> None:

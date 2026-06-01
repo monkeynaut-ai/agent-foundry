@@ -14,15 +14,15 @@ Scenario:
 
   I1-a: The AICall's executor catches an underlying inference exception and
         returns a synthesized verdict. The Retry exception policy does NOT fire
-        for this path — no AttemptFailure is recorded, no RETRY_ATTEMPT_FAILED
+        for this path — no AttemptFailure is recorded, no RETRY_ATTEMPT_ERRORED
         event is emitted for the AICall step.
 
   I1-b: The FunctionAction raises on attempt 1. The Retry exception policy
-        fires — RETRY_ATTEMPT_FAILED is emitted, state is rolled back, and the
+        fires — RETRY_ATTEMPT_ERRORED is emitted, state is rolled back, and the
         next attempt succeeds.
 
   I1-c: Both behaviours hold together. Final verdict == "ok". Exactly one
-        RETRY_ATTEMPT_FAILED event in the lifecycle stream (from the
+        RETRY_ATTEMPT_ERRORED event in the lifecycle stream (from the
         FunctionAction, not from the AICall).
 """
 
@@ -217,10 +217,10 @@ class TestRetryAICallInteraction:
               the AICall step — the Sequence body raises only when the FunctionAction raises.
 
         I1-b: On attempt 1, the FunctionAction raises RuntimeError. The Retry policy
-              fires: RETRY_ATTEMPT_FAILED is emitted, state is rolled back. On attempt
+              fires: RETRY_ATTEMPT_ERRORED is emitted, state is rolled back. On attempt
               2 the FunctionAction succeeds with verdict="ok".
 
-        I1-c: Final verdict == "ok". Exactly one RETRY_ATTEMPT_FAILED event (from the
+        I1-c: Final verdict == "ok". Exactly one RETRY_ATTEMPT_ERRORED event (from the
               FunctionAction, not the AICall). The AICall executor was called on both
               attempts (once when the FunctionAction failed, once when it succeeded).
         """
@@ -231,9 +231,9 @@ class TestRetryAICallInteraction:
         assert result.verdict == "ok"
         assert result.fn_succeeded is True
 
-        # I1-b: exactly one RETRY_ATTEMPT_FAILED event — from the FunctionAction raise
+        # I1-b: exactly one RETRY_ATTEMPT_ERRORED event — from the FunctionAction raise
         failed_events = [
-            e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_FAILED
+            e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_ERRORED
         ]
         assert len(failed_events) == 1
         assert failed_events[0]["exception_type"] == "RuntimeError"
@@ -248,7 +248,7 @@ class TestRetryAICallInteraction:
         assert len(executor_calls) == 2
         assert raising_provider.call_count == 2  # provider raised both times; executor caught both
 
-        # I1-a: no RETRY_ATTEMPT_FAILED event has exception_type matching a provider error —
+        # I1-a: no RETRY_ATTEMPT_ERRORED event has exception_type matching a provider error —
         #        the AICall executor swallowed ValueError; only RuntimeError from fn_action reached Retry.
         for ev in failed_events:
             assert ev["exception_type"] != "ValueError", (

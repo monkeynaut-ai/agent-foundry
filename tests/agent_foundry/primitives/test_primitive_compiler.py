@@ -18,6 +18,7 @@ from agent_foundry.primitives.models import (
     Sequence,
 )
 from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.primitives.retry_types import RetryAborted
 
 
 async def compile_and_run(plan: PrimitivePlan, state: BaseModel | None = None) -> Any:
@@ -801,8 +802,8 @@ class TestCompileRetry:
         assert result.done is True
 
     @pytest.mark.asyncio
-    async def test_exhausted_exits_normally(self):
-        """When max_attempts exhausted, Retry exits with domain state intact."""
+    async def test_exhausted_is_fail_closed(self):
+        """When max_attempts exhausted without until() passing, Retry raises (interim fail-closed)."""
         body = FunctionAction[RetryState, RetryState](
             function=lambda s: RetryState(attempts=s.attempts + 1, done=False),
         )
@@ -812,12 +813,11 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
-        assert result.attempts == 2
-        assert result.done is False
+        with pytest.raises(RetryAborted):
+            await compile_and_run(plan, RetryState(attempts=0, done=False))
 
     @pytest.mark.asyncio
-    async def test_max_attempts_one(self):
+    async def test_max_attempts_one_exhaustion_is_fail_closed(self):
         body = FunctionAction[RetryState, RetryState](
             function=lambda s: RetryState(attempts=s.attempts + 1, done=False),
         )
@@ -827,9 +827,8 @@ class TestCompileRetry:
             body=body,
         )
         plan = PrimitivePlan(root=retry)
-        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
-        assert result.attempts == 1
-        assert result.done is False
+        with pytest.raises(RetryAborted):
+            await compile_and_run(plan, RetryState(attempts=0, done=False))
 
     @pytest.mark.asyncio
     async def test_retry_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
@@ -970,8 +969,8 @@ class TestNestedComposition:
         assert result.processed == ["A", "B"]
 
     @pytest.mark.asyncio
-    async def test_retry_then_conditional_escalation(self):
-        """Retry exhausts, parent Conditional routes to escalation based on domain state."""
+    async def test_retry_exhaustion_in_sequence_is_fail_closed(self):
+        """Retry exhaustion inside a Sequence raises (interim fail-closed) before downstream steps."""
 
         class S(BaseModel):
             n: int = 0
@@ -981,18 +980,13 @@ class TestNestedComposition:
             function=lambda s: S(n=s.n + 1, done=False),
         )
         retry = Retry[S, S](max_attempts=2, until=lambda s: s.done, body=body)
-        escalation = FunctionAction[S, S](
+        downstream = FunctionAction[S, S](
             function=lambda s: S(n=s.n, done=True),
         )
-        check_exhausted = Conditional[S, S](
-            condition=lambda s: not s.done,
-            then_branch=escalation,
-        )
-        seq = Sequence[S, S](steps=[retry, check_exhausted])
+        seq = Sequence[S, S](steps=[retry, downstream])
         plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, S(n=0, done=False))
-        assert result.n == 2
-        assert result.done is True
+        with pytest.raises(RetryAborted):
+            await compile_and_run(plan, S(n=0, done=False))
 
     @pytest.mark.asyncio
     async def test_sequence_containing_conditional(self):

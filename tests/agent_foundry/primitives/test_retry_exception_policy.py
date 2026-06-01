@@ -1,12 +1,10 @@
-"""Tests for Retry body-exception policy -- AC A1-A6.
+"""Tests for Retry body-exception policy.
 
 Covers:
   - PROPAGATE default: existing behaviour unchanged (A1)
   - CATCH_AND_CONTINUE: exception consumed, state rolled back, retry continues (A2, A4)
-  - Full exhaustion under CATCH_AND_CONTINUE: on_exhaustion called when set (A3)
+  - Interim exhaustion is fail-closed: the automated loop raises RetryAborted
   - Lifecycle events emitted per failed attempt (A5)
-  - Existing Retry tests pass unchanged (A6 verified by running the full suite)
-  - on_exhaustion: sync, async, CONDITION_NOT_MET, BODY_EXCEPTIONS, MIXED, None fallback
 """
 
 from __future__ import annotations
@@ -23,7 +21,7 @@ from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
 from agent_foundry.primitives.models import FunctionAction, Retry, RetryExceptionPolicy
 from agent_foundry.primitives.plan import PrimitivePlan
-from agent_foundry.primitives.retry_types import RetryExhaustion, RetryExhaustionReason
+from agent_foundry.primitives.retry_types import RetryAborted
 
 # ---------------------------------------------------------------------------
 # State model
@@ -124,16 +122,6 @@ def _counter_body(succeed_on_attempt: int) -> FunctionAction:
     return FunctionAction[_S, _S](function=_fn)
 
 
-def _mutating_then_raising_body() -> FunctionAction:
-    """Mutates value then raises — verifies rollback discards the mutation."""
-
-    def _fn(s: _S) -> _S:
-        # Simulate partial mutation before failure
-        raise RuntimeError(f"failed after mutating (value would have been {s.value + 99})")
-
-    return FunctionAction[_S, _S](function=_fn)
-
-
 def _always_succeed_body() -> FunctionAction:
     """Returns done=False always — used for CONDITION_NOT_MET exhaustion."""
     call_count = {"n": 0}
@@ -198,159 +186,34 @@ class TestTreatAsFailure:
         assert result.value == 1  # body incremented once on the successful attempt
 
     @pytest.mark.asyncio
-    async def test_all_attempts_raise_exits_silently_when_no_hook(self) -> None:
-        """CATCH_AND_CONTINUE + all raise + no on_exhaustion → silent exit with pre-Retry state."""
-        initial = _S(value=42, done=False)
+    async def test_all_attempts_raise_exhaustion_is_fail_closed(self) -> None:
+        """CATCH_AND_CONTINUE + all attempts raise + no until() pass → RetryAborted (fail-closed)."""
         retry = Retry[_S, _S](
             max_attempts=2,
             until=lambda s: s.done,
             body=_raising_body(RuntimeError("always")),
             exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
         )
-        result = await _compile_and_run(retry, initial)
-        # State unchanged from input (all rollbacks restored to initial)
-        assert result.value == 42
-        assert result.done is False
+        with pytest.raises(RetryAborted):
+            await _compile_and_run(retry, _S(value=42, done=False))
 
 
 # ---------------------------------------------------------------------------
-# A3 — on_exhaustion called when all attempts raise under CATCH_AND_CONTINUE
+# Exhaustion without until() satisfied — interim fail-closed
 # ---------------------------------------------------------------------------
 
 
-class TestOnExhaustionBodyExceptions:
+class TestExhaustionFailClosed:
     @pytest.mark.asyncio
-    async def test_sync_on_exhaustion_called_with_body_exceptions_reason(self) -> None:
-        """A3: on_exhaustion (sync) called when all attempts raise; reason=BODY_EXCEPTIONS."""
-        received: list[RetryExhaustion] = []
-
-        def handler(ex: RetryExhaustion) -> _S:
-            received.append(ex)
-            return _S(value=-1, done=False)
-
-        retry = Retry[_S, _S](
-            max_attempts=2,
-            until=lambda s: s.done,
-            body=_raising_body(RuntimeError("fail")),
-            exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
-            on_exhaustion=handler,
-        )
-        result = await _compile_and_run(retry, _S(value=10))
-
-        assert len(received) == 1
-        ex = received[0]
-        assert ex.reason == RetryExhaustionReason.BODY_EXCEPTIONS
-        assert ex.max_attempts == 2
-        assert len(ex.attempt_failures) == 2
-        assert ex.attempt_failures[0].attempt_num == 1
-        assert ex.attempt_failures[1].attempt_num == 2
-        assert ex.attempt_failures[0].exception_type == "RuntimeError"
-        # last_state is pre-Retry input (all rollbacks → initial state)
-        assert ex.last_state.value == 10
-        assert result.value == -1
-
-    @pytest.mark.asyncio
-    async def test_async_on_exhaustion_is_awaited(self) -> None:
-        """A3: async on_exhaustion is awaited."""
-        received: list[RetryExhaustion] = []
-
-        async def async_handler(ex: RetryExhaustion) -> _S:
-            received.append(ex)
-            return _S(value=-99, done=False)
-
-        retry = Retry[_S, _S](
-            max_attempts=1,
-            until=lambda s: s.done,
-            body=_raising_body(ValueError("async-fail")),
-            exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
-            on_exhaustion=async_handler,
-        )
-        result = await _compile_and_run(retry, _S())
-
-        assert len(received) == 1
-        assert result.value == -99
-
-
-# ---------------------------------------------------------------------------
-# A3 / CONDITION_NOT_MET — on_exhaustion called when until() never satisfied
-# ---------------------------------------------------------------------------
-
-
-class TestOnExhaustionConditionNotMet:
-    @pytest.mark.asyncio
-    async def test_on_exhaustion_called_for_condition_not_met(self) -> None:
-        """on_exhaustion fires even without any exceptions; reason=CONDITION_NOT_MET."""
-        received: list[RetryExhaustion] = []
-
-        def handler(ex: RetryExhaustion) -> _S:
-            received.append(ex)
-            return _S(value=999, done=False)
-
-        retry = Retry[_S, _S](
-            max_attempts=2,
-            until=lambda s: s.done,
-            body=_always_succeed_body(),
-            on_exhaustion=handler,
-        )
-        result = await _compile_and_run(retry, _S(value=0))
-
-        assert len(received) == 1
-        ex = received[0]
-        assert ex.reason == RetryExhaustionReason.CONDITION_NOT_MET
-        assert ex.attempt_failures == []
-        # last_state reflects last successful body output (value=2 after 2 attempts)
-        assert ex.last_state.value == 2
-        assert result.value == 999
-
-    @pytest.mark.asyncio
-    async def test_no_on_exhaustion_condition_not_met_exits_silently(self) -> None:
-        """No on_exhaustion + condition never met → silent exit with last-attempt state."""
+    async def test_condition_never_met_exhaustion_raises(self) -> None:
+        """Condition never met across all attempts → RetryAborted (fail-closed)."""
         retry = Retry[_S, _S](
             max_attempts=2,
             until=lambda s: s.done,
             body=_always_succeed_body(),
         )
-        result = await _compile_and_run(retry, _S(value=0))
-        assert result.value == 2  # body ran twice
-        assert result.done is False
-
-
-# ---------------------------------------------------------------------------
-# MIXED — some raised, some completed without until() True
-# ---------------------------------------------------------------------------
-
-
-class TestOnExhaustionMixed:
-    @pytest.mark.asyncio
-    async def test_mixed_reason_when_some_raised_some_completed(self) -> None:
-        """on_exhaustion reason=MIXED when some attempts raised and some completed normally."""
-        received: list[RetryExhaustion] = []
-
-        call_count = {"n": 0}
-
-        def mixed_body(s: _S) -> _S:
-            call_count["n"] += 1
-            if call_count["n"] == 2:
-                raise RuntimeError("attempt 2 fails")
-            return _S(value=s.value + 1, done=False)
-
-        def handler(ex: RetryExhaustion) -> _S:
-            received.append(ex)
-            return _S(value=-1, done=False)
-
-        retry = Retry[_S, _S](
-            max_attempts=3,
-            until=lambda s: s.done,
-            body=FunctionAction[_S, _S](function=mixed_body),
-            exception_policy=RetryExceptionPolicy.CATCH_AND_CONTINUE,
-            on_exhaustion=handler,
-        )
-        await _compile_and_run(retry, _S(value=0))
-
-        assert len(received) == 1
-        ex = received[0]
-        assert ex.reason == RetryExhaustionReason.MIXED
-        assert len(ex.attempt_failures) == 1
+        with pytest.raises(RetryAborted):
+            await _compile_and_run(retry, _S(value=0))
 
 
 # ---------------------------------------------------------------------------
@@ -388,14 +251,14 @@ class TestStateRollback:
 
 
 # ---------------------------------------------------------------------------
-# A5 — RETRY_ATTEMPT_FAILED lifecycle events emitted per failure
+# A5 — RETRY_ATTEMPT_ERRORED lifecycle events emitted per failure
 # ---------------------------------------------------------------------------
 
 
 class TestLifecycleEvents:
     @pytest.mark.asyncio
     async def test_attempt_failed_event_emitted_per_exception(self) -> None:
-        """A5: RETRY_ATTEMPT_FAILED emitted with attempt_num, exception_type, exception_message."""
+        """A5: RETRY_ATTEMPT_ERRORED emitted with attempt_num, exception_type, exception_message."""
         writer = _CapturingWriter()
 
         retry = Retry[_S, _S](
@@ -407,7 +270,7 @@ class TestLifecycleEvents:
         await _compile_and_run(retry, _S(), writer=writer)
 
         failed_events = [
-            e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_FAILED
+            e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_ERRORED
         ]
         assert len(failed_events) == 2  # attempts 1 and 2 failed; attempt 3 succeeded
 
@@ -420,7 +283,7 @@ class TestLifecycleEvents:
 
     @pytest.mark.asyncio
     async def test_no_events_emitted_under_propagate(self) -> None:
-        """Under PROPAGATE policy no RETRY_ATTEMPT_FAILED events are emitted."""
+        """Under PROPAGATE policy no RETRY_ATTEMPT_ERRORED events are emitted."""
         writer = _CapturingWriter()
 
         retry = Retry[_S, _S](
@@ -432,6 +295,6 @@ class TestLifecycleEvents:
             await _compile_and_run(retry, _S(), writer=writer)
 
         failed_events = [
-            e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_FAILED
+            e for e in writer.events if e["type"] == LifecycleEvent.RETRY_ATTEMPT_ERRORED
         ]
         assert failed_events == []
