@@ -196,6 +196,31 @@ def _state_type_with_retry_channels(
     return TypedDict(name, merged, total=False)  # type: ignore[call-overload]
 
 
+def _compile_body_subgraph(
+    state_type_name: str,
+    io_types: list[type[BaseModel]],
+    body: Primitive,
+    body_prefix: str,
+    ctx: CompileContext,
+) -> Any:
+    """Compile a single-body subgraph (entry -> body -> END) and return the
+    compiled graph. ``io_types`` are the models whose fields seed the subgraph
+    state schema (outer + body I/O); the body's retry channels are injected too.
+    Shared by Loop and Retry, whose bodies compile identically."""
+    fields: dict[str, Any] = {}
+    for model in io_types:
+        for name in model.model_fields:
+            fields[name] = Any
+    body_state_type = _state_type_with_retry_channels(
+        state_type_name, fields, [(body, body_prefix)]
+    )
+    body_graph = StateGraph(body_state_type)
+    body_entry, body_exit = _compile_node(body_graph, body, ctx.child(body_prefix))
+    body_graph.set_entry_point(body_entry)
+    body_graph.add_edge(body_exit, END)
+    return body_graph.compile()
+
+
 def _scope_in(parent_state: dict[str, Any], child_input_type: type[BaseModel]) -> dict[str, Any]:
     """Scope parent state down to child's input fields. Validates required fields."""
     fields = set(child_input_type.model_fields.keys())
@@ -500,22 +525,12 @@ def _compile_loop(
     loop_in, loop_out = get_type_args(loop)
     body_in, body_out = get_type_args(loop.body)
 
-    # Compile body subgraph — state includes loop I/O + body I/O for accumulated context
-    all_types = [loop_in, loop_out, body_in, body_out]
-    fields: dict[str, Any] = {}
-    for model in all_types:
-        for name in model.model_fields:
-            fields[name] = Any
     ((body, body_suffix),) = loop.child_specs()
     body_prefix = f"{ctx.prefix}_{body_suffix}"
-    body_state_type = _state_type_with_retry_channels(
-        "LoopBodyState", fields, [(body, body_prefix)]
+    # State includes loop I/O + body I/O for accumulated context.
+    compiled_body = _compile_body_subgraph(
+        "LoopBodyState", [loop_in, loop_out, body_in, body_out], body, body_prefix, ctx
     )
-    body_graph = StateGraph(body_state_type)
-    body_entry, body_exit = _compile_node(body_graph, body, ctx.child(body_prefix))
-    body_graph.set_entry_point(body_entry)
-    body_graph.add_edge(body_exit, END)
-    compiled_body = body_graph.compile()
 
     over_fn = loop.over
     item_key = loop.item_key
@@ -574,12 +589,6 @@ def _compile_retry(
     body_in, body_out = get_type_args(retry.body)
     prefix = ctx.prefix
 
-    # Compile body subgraph — state includes retry I/O + body I/O for accumulated context
-    all_types = [retry_in, retry_out, body_in, body_out]
-    fields: dict[str, Any] = {}
-    for model in all_types:
-        for name in model.model_fields:
-            fields[name] = Any
     # child_specs drives prefix derivation; body is always first, resolver (when
     # present) second. Role wiring below still references retry.body /
     # retry.on_max_attempts_resolver directly.
@@ -587,14 +596,10 @@ def _compile_retry(
     body_suffix = specs[0][1]
     resolver_suffix = specs[1][1] if len(specs) > 1 else "resolver"
     body_prefix = f"{prefix}_{body_suffix}"
-    body_state_type = _state_type_with_retry_channels(
-        "RetryBodyState", fields, [(retry.body, body_prefix)]
+    # State includes retry I/O + body I/O for accumulated context.
+    compiled_body = _compile_body_subgraph(
+        "RetryBodyState", [retry_in, retry_out, body_in, body_out], retry.body, body_prefix, ctx
     )
-    body_graph = StateGraph(body_state_type)
-    body_entry, body_exit = _compile_node(body_graph, retry.body, ctx.child(body_prefix))
-    body_graph.set_entry_point(body_entry)
-    body_graph.add_edge(body_exit, END)
-    compiled_body = body_graph.compile()
 
     until_fn = retry.until
     max_attempts = retry.max_attempts
