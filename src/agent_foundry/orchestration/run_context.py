@@ -148,16 +148,17 @@ class RunContext(BaseModel):
     """Hooks invoked after the run has ended.
 
     Fires after the graph has finished or raised, after the terminal
-    lifecycle event (``RUN_ENDED`` on success or ``RUN_FAILED`` on
-    exception) has been written, after the container registry has shut
+    lifecycle event (``RUN_ENDED`` / ``RUN_ABORTED`` / ``RUN_FAILED`` per
+    outcome) has been written, after the container registry has shut
     down, and after ``render_summary`` has written ``summary.txt`` —
     but before the final cleanup steps (ContextVar reset, signal
     handler removal, ``lifecycle.close()``, TracerProvider shutdown).
 
     Each hook receives a :class:`RunEndedEvent` carrying the context,
-    the captured exception (or ``None`` on success), and the run's
-    final output model (or ``None`` on failure). Hook exceptions are
-    caught, logged, and do not block other hooks or final teardown.
+    the typed ``outcome``, the captured exception (or ``None`` when not a
+    failure), and the run's final output model (or ``None`` when not
+    completed). Hook exceptions are caught, logged, and do not block
+    other hooks or final teardown.
 
     Same mutation contract and iteration semantics as
     ``on_run_starting``.
