@@ -148,14 +148,20 @@ def _retry_channels(prefix: str) -> dict[str, Any]:
     }
 
 
-# Fixed, resolver-knowable channel names carrying the exhaustion metadata the
-# resolver reads. The compiler writes these into the Retry's scope right before
-# the resolver node; a resolver input model declares matching fields to read
-# them. Fixed (not prefix-namespaced) because a resolver author cannot know the
-# Retry's compile prefix. v1 limitation: a Retry whose resolver or body itself
-# contains another Retry could collide on these names (and on the flat
-# ``disposition`` key) — acceptable for the realistic single / sequential-retry
-# cases (write-once-read-immediately).
+# Constant (not prefix-namespaced) channel names carrying the exhaustion
+# metadata the resolver reads. The compiler writes these into the Retry's scope
+# right before the resolver node; a resolver input model declares matching
+# fields to read them. The names must be constant rather than scoped to the
+# Retry's compile prefix because a resolver author cannot know that prefix.
+#
+# Each name is written once and read immediately by the resolver that runs as
+# the next node. Correctness depends on no second Retry writing these names
+# between that write and read. Today nothing can: all execution is sequential
+# (Sequence is linear, Loop awaits each iteration in turn, Conditional takes one
+# branch, and there is no parallel primitive), so no two Retries' write->read
+# windows ever overlap — not siblings, not nested. The shared names would only
+# collide if two Retries became live in the same scope at once, e.g. a Retry
+# inside another Retry's resolver, or concurrent execution were ever introduced.
 WELL_KNOWN_EXHAUSTION_REASON = "exhaustion_reason"
 WELL_KNOWN_ATTEMPT_FAILURES = "attempt_failures"
 WELL_KNOWN_METADATA_CHANNELS: dict[str, Any] = dict.fromkeys(WELL_KNOWN_METADATA_FIELDS, Any)
