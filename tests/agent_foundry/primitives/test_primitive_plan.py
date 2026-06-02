@@ -76,6 +76,20 @@ class TestPrimitivePlan:
         assert len(plan.all_primitives()) == 2
         assert inner in plan.all_primitives()
 
+    def test_all_primitives_walks_retry_resolver(self):
+        inner = _LeafStub[In, Out]()
+        resolver = _LeafStub[In, Out]()
+        retry = Retry[In, Out](
+            max_attempts=2,
+            until=lambda s: True,
+            body=inner,
+            on_max_attempts_resolver=resolver,
+        )
+        plan = PrimitivePlan(root=retry)
+        all_prims = plan.all_primitives()
+        assert len(all_prims) == 3
+        assert resolver in all_prims
+
     def test_all_primitives_walks_conditional_branches(self):
         then = _LeafStub[In, Out]()
         else_ = _LeafStub[In, Out]()
