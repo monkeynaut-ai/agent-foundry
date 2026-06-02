@@ -22,6 +22,7 @@ from agent_foundry.primitives.errors import (
 )
 from agent_foundry.primitives.models import (
     AgentAction,
+    AsyncFunctionAction,
     Conditional,
     FunctionAction,
     GateAction,
@@ -297,6 +298,12 @@ def _validate_function_action(_action: FunctionAction) -> None:
     return
 
 
+def _validate_async_function_action(_action: AsyncFunctionAction) -> None:
+    # Leaf primitive — no graph-level constraints beyond Primitive
+    # parameterization (enforced at construction).
+    return
+
+
 def _validate_agent_action(_action: AgentAction) -> None:
     # AgentAction is a leaf — no children to recurse into, no
     # graph-level constraints beyond Primitive parameterization.
@@ -315,5 +322,6 @@ register_validator(Retry, _validate_retry)
 register_validator(Conditional, _validate_conditional)
 register_validator(GateAction, _validate_gate_action)
 register_validator(FunctionAction, _validate_function_action)
+register_validator(AsyncFunctionAction, _validate_async_function_action)
 register_validator(AgentAction, _validate_agent_action)
 register_validator(AICall, _validate_ai_call)

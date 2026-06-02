@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import inspect
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, NamedTuple, TypedDict, cast
@@ -22,6 +22,7 @@ from agent_foundry.primitives.ai_call import AICall
 from agent_foundry.primitives.errors import PrimitiveCompilationError
 from agent_foundry.primitives.models import (
     AgentAction,
+    AsyncFunctionAction,
     Conditional,
     FunctionAction,
     GateAction,
@@ -442,6 +443,53 @@ def _compile_function_action(
 
 
 register_compiler(FunctionAction, _compile_function_action)
+
+
+def _compile_async_function_action(
+    graph: StateGraph, action: AsyncFunctionAction, ctx: CompileContext
+) -> CompileResult:
+    node_id = ctx.prefix
+    label = action.name or node_id
+    input_type, _ = get_type_args(action)
+    fn = cast(Callable[..., Awaitable[BaseModel]], action.function)
+    arity = len(inspect.signature(fn).parameters)
+
+    async def node_fn(state: dict[str, Any]) -> dict[str, Any]:
+        ctx_opt = current_run_context.get()
+        if ctx_opt is not None:
+            ctx_opt.lifecycle_writer.append(
+                LifecycleEvent.FUNCTION_ACTION_STARTED,
+                node_id=node_id,
+                name=label,
+            )
+        try:
+            if arity == 0:
+                result = await fn()
+            else:
+                model_input = _validate_scoped_input(state, input_type, node_id)
+                result = await fn(model_input)
+        except Exception as exc:
+            if ctx_opt is not None:
+                ctx_opt.lifecycle_writer.append(
+                    LifecycleEvent.FUNCTION_ACTION_FAILED,
+                    node_id=node_id,
+                    name=label,
+                    reason=str(exc),
+                )
+            raise
+        if ctx_opt is not None:
+            ctx_opt.lifecycle_writer.append(
+                LifecycleEvent.FUNCTION_ACTION_COMPLETED,
+                node_id=node_id,
+                name=label,
+            )
+        return result.model_dump()
+
+    graph.add_node(node_id, node_fn)  # type: ignore[arg-type]
+    return CompileResult(node_id, node_id)
+
+
+register_compiler(AsyncFunctionAction, _compile_async_function_action)
 
 
 def _compile_sequence(
