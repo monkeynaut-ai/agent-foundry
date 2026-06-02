@@ -585,20 +585,17 @@ def _compile_retry(
     pause and resume as an outer-graph node and the backstop counter lives in a
     declared state channel rather than Python locals.
     """
-    retry_in, retry_out = get_type_args(retry)
-    body_in, body_out = get_type_args(retry.body)
+    by_role = {suffix: child for child, suffix in retry.child_specs()}
+    body = by_role[Retry.BODY_SUFFIX]
+    resolver = by_role.get(Retry.RESOLVER_SUFFIX)
     prefix = ctx.prefix
 
-    # child_specs drives prefix derivation; body is always first, resolver (when
-    # present) second. Role wiring below still references retry.body /
-    # retry.on_max_attempts_resolver directly.
-    specs = retry.child_specs()
-    body_suffix = specs[0][1]
-    resolver_suffix = specs[1][1] if len(specs) > 1 else "resolver"
-    body_prefix = f"{prefix}_{body_suffix}"
+    retry_in, retry_out = get_type_args(retry)
+    body_in, body_out = get_type_args(body)
+    body_prefix = f"{prefix}_{Retry.BODY_SUFFIX}"
     # State includes retry I/O + body I/O for accumulated context.
     compiled_body = _compile_body_subgraph(
-        "RetryBodyState", [retry_in, retry_out, body_in, body_out], retry.body, body_prefix, ctx
+        "RetryBodyState", [retry_in, retry_out, body_in, body_out], body, body_prefix, ctx
     )
 
     until_fn = retry.until
@@ -610,7 +607,7 @@ def _compile_retry(
     )
 
     retry_id = f"{prefix}_retry"
-    resolver_id = f"{prefix}_{resolver_suffix}"
+    resolver_id = f"{prefix}_{Retry.RESOLVER_SUFFIX}"
     reentry_id = f"{prefix}_reentry"
     abort_id = f"{prefix}_abort"
     merge_id = f"{prefix}_merge"
@@ -750,7 +747,7 @@ def _compile_retry(
         return _retry_exhausted(current_state, reason, failures)
 
     # -- Resolver node: emits a ResolverDisposition into state --
-    if retry.on_max_attempts_resolver is None:
+    if resolver is None:
 
         def unset_resolver_node(state: dict[str, Any]) -> dict[str, Any]:
             return {
@@ -763,9 +760,7 @@ def _compile_retry(
         resolver_entry = resolver_id
         resolver_exit = resolver_id
     else:
-        resolver_entry, resolver_exit = _compile_node(
-            graph, retry.on_max_attempts_resolver, ctx.child(resolver_id)
-        )
+        resolver_entry, resolver_exit = _compile_node(graph, resolver, ctx.child(resolver_id))
 
     def retry_router(state: dict[str, Any]) -> str:
         return merge_id if state.get(retry_route_key) == "pass" else resolver_entry

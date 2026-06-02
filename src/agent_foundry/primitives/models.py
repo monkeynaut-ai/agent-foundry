@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -123,12 +124,13 @@ class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Safety backstop: max consecutive RETRY re-entries before raising
     ResolverDidNotConvergeError. A safety invariant, not a budget the resolver reasons about."""
 
+    BODY_SUFFIX: ClassVar[str] = "body"
+    RESOLVER_SUFFIX: ClassVar[str] = "resolver"
+
     def child_specs(self) -> list[tuple[Primitive, str]]:
-        # Ordering is load-bearing: body first, resolver second. Channel
-        # collection composes the merged channel dict in this order.
-        specs: list[tuple[Primitive, str]] = [(self.body, "body")]
+        specs: list[tuple[Primitive, str]] = [(self.body, self.BODY_SUFFIX)]
         if self.on_max_attempts_resolver is not None:
-            specs.append((self.on_max_attempts_resolver, "resolver"))
+            specs.append((self.on_max_attempts_resolver, self.RESOLVER_SUFFIX))
         return specs
 
 
