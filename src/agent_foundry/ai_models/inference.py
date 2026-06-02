@@ -1,11 +1,11 @@
 """Inference contract — provider abstract base, request, and tuning parameters."""
 
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
+
+from agent_foundry.models.usage import TokenUsage
 
 
 class InferenceParameters(BaseModel):
@@ -32,6 +32,19 @@ class InferenceRequest[O: BaseModel]:
     output_type: type[O]
 
 
+class InferenceResult(BaseModel):
+    """Provider call result: the parsed typed output plus token usage.
+
+    ``usage`` is ``None`` when the backend reported no usable token
+    counts, so consumers degrade to "unknown" rather than crashing.
+    Providers report tokens but no dollar cost — pricing is out of scope
+    for the inference layer.
+    """
+
+    output: BaseModel
+    usage: TokenUsage | None = None
+
+
 class InferenceProvider(ABC):
     """A service object that calls an inference backend.
 
@@ -42,8 +55,8 @@ class InferenceProvider(ABC):
     """
 
     @abstractmethod
-    async def __call__(self, request: InferenceRequest) -> BaseModel:
-        """Execute one inference call and return the parsed typed output."""
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
+        """Execute one inference call and return output plus token usage."""
 
     @abstractmethod
     async def close(self) -> None:

@@ -9,6 +9,7 @@ from agent_foundry.ai_models.inference import (
     InferenceParameters,
     InferenceProvider,
     InferenceRequest,
+    InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.evals.agent_foundry_tasks import build_invoke_ai_call_task
@@ -150,9 +151,9 @@ async def test_run_generates_unique_run_ids() -> None:
 
 def _make_ai_call(captured: list[InferenceRequest]) -> AICall[_Input, _Output]:
     class _CapturingProvider(InferenceProvider):
-        async def __call__(self, request: InferenceRequest) -> BaseModel:
+        async def __call__(self, request: InferenceRequest) -> InferenceResult:
             captured.append(request)
-            return _Output(result=request.prompt.upper())
+            return InferenceResult(output=_Output(result=request.prompt.upper()))
 
         async def close(self) -> None:
             pass

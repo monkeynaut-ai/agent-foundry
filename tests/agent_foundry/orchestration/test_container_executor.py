@@ -592,6 +592,144 @@ async def test_run_claude_turn_uses_manager_exec_run_for_success() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_claude_turn_parses_usage_and_cost_from_result_event() -> None:
+    fake_mgr = FakeContainerManager()
+    live, _ = _make_live_with_fake_mgr(fake_mgr)
+    payload = {"outcome": {"kind": "success", "payload": {"answer": "42"}}}
+    init_evt = {"type": "system", "subtype": "init", "session_id": "sess-u"}
+    asst_evt = {
+        "type": "assistant",
+        "message": {
+            "content": [{"type": "tool_use", "name": "StructuredOutput", "input": payload}]
+        },
+    }
+    result_evt = {
+        "type": "result",
+        "num_turns": 3,
+        "total_cost_usd": 0.0421,
+        "usage": {
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_creation_input_tokens": 10,
+            "cache_read_input_tokens": 5,
+        },
+    }
+    cmd = (
+        "gosu",
+        "claude",
+        "/home/claude/.local/bin/claude",
+        "-p",
+        "go",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--json-schema",
+        "{}",
+        "--model",
+        "claude-sonnet-4-6",
+    )
+    fake_mgr.exec_script[cmd] = _ExecResult(
+        exit_code=0, output=_stream_lines(init_evt, asst_evt, result_evt)
+    )
+
+    result = await _run_claude_turn(
+        live, prompt="go", resume_session_id=None, schema={}, model="claude-sonnet-4-6"
+    )
+    assert result.total_cost_usd == 0.0421
+    assert result.num_turns == 3
+    assert result.usage is not None
+    assert result.usage.input_tokens == 100
+    assert result.usage.output_tokens == 50
+    assert result.usage.cache_creation_input_tokens == 10
+    assert result.usage.cache_read_input_tokens == 5
+
+
+@pytest.mark.asyncio
+async def test_run_claude_turn_missing_result_event_yields_no_usage() -> None:
+    fake_mgr = FakeContainerManager()
+    live, _ = _make_live_with_fake_mgr(fake_mgr)
+    payload = {"outcome": {"kind": "success", "payload": {"answer": "42"}}}
+    init_evt = {"type": "system", "subtype": "init", "session_id": "sess-n"}
+    asst_evt = {
+        "type": "assistant",
+        "message": {
+            "content": [{"type": "tool_use", "name": "StructuredOutput", "input": payload}]
+        },
+    }
+    cmd = (
+        "gosu",
+        "claude",
+        "/home/claude/.local/bin/claude",
+        "-p",
+        "go",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--json-schema",
+        "{}",
+        "--model",
+        "claude-sonnet-4-6",
+    )
+    fake_mgr.exec_script[cmd] = _ExecResult(exit_code=0, output=_stream_lines(init_evt, asst_evt))
+
+    result = await _run_claude_turn(
+        live, prompt="go", resume_session_id=None, schema={}, model="claude-sonnet-4-6"
+    )
+    assert result.usage is None
+    assert result.total_cost_usd is None
+    assert result.num_turns is None
+
+
+@pytest.mark.asyncio
+async def test_invocation_completed_carries_usage_and_cost(monkeypatch, tmp_path) -> None:
+    """A success turn with usage threads tokens/cost/num_turns onto the
+    AGENT_INVOCATION_COMPLETED event."""
+    from agent_foundry.models.usage import TokenUsage
+    from agent_foundry.orchestration.container_executor import TurnResult
+
+    async def driver(live, **kwargs):
+        return TurnResult(
+            envelope=_success_env("done"),
+            session_id="sess-c",
+            raw_output=b"",
+            usage=TokenUsage(input_tokens=200, output_tokens=80),
+            total_cost_usd=0.12,
+            num_turns=4,
+        )
+
+    monkeypatch.setattr(container_executor, "_run_claude_turn", driver)
+    ctx, _, writer = _make_ctx(tmp_path=tmp_path)
+    primitive = _make_primitive()
+    await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+
+    completed = next(
+        e for e in writer.events if e["type"] == LifecycleEvent.AGENT_INVOCATION_COMPLETED
+    )
+    assert completed["total_cost_usd"] == 0.12
+    assert completed["num_turns"] == 4
+    assert completed["usage"]["input_tokens"] == 200
+    assert completed["usage"]["output_tokens"] == 80
+
+
+@pytest.mark.asyncio
+async def test_invocation_completed_omits_usage_when_absent(monkeypatch, tmp_path) -> None:
+    """A success turn with no usage data emits AGENT_INVOCATION_COMPLETED
+    with no usage/cost fields (graceful degradation, no crash)."""
+    driver = FakeClaudeCodeDriver(turn_script=[_success_env("done")], session_ids=["sess-d"])
+    _install_driver(monkeypatch, driver)
+    ctx, _, writer = _make_ctx(tmp_path=tmp_path)
+    primitive = _make_primitive()
+    await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+
+    completed = next(
+        e for e in writer.events if e["type"] == LifecycleEvent.AGENT_INVOCATION_COMPLETED
+    )
+    assert "usage" not in completed
+    assert "total_cost_usd" not in completed
+    assert "num_turns" not in completed
+
+
+@pytest.mark.asyncio
 async def test_run_claude_turn_raises_on_nonzero_exit_with_log_tail() -> None:
     fake_mgr = FakeContainerManager()
     live, _ = _make_live_with_fake_mgr(fake_mgr)

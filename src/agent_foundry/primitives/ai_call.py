@@ -41,8 +41,11 @@ class AICall[I: BaseModel, O: BaseModel](Primitive[I, O], arbitrary_types_allowe
     swap backends, or synthesize fallback verdicts on exception.
 
     Contract: ``async (*, primitive: AICall[I, O], model_input: I) -> O``.
-    Parameter names match ``invoke_ai_call`` so consumers can wrap it directly:
-    ``return await invoke_ai_call(primitive=primitive, model_input=model_input)``.
+    Parameter names match ``invoke_ai_call`` so consumers can wrap it,
+    unwrapping its ``AICallResult``:
+    ``return (await invoke_ai_call(primitive=primitive, model_input=model_input)).output``.
+    A custom executor returns ``O`` directly and contributes no token usage
+    to the ``AI_CALL_COMPLETED`` event; only the default path reports usage.
     Must be async — inference is always I/O. The compiler enforces this at
     compile time and raises ``PrimitiveCompilationError`` for sync callables.
     """

@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import BaseModel
 
-from agent_foundry.ai_models.inference import InferenceProvider, InferenceRequest
+from agent_foundry.ai_models.inference import (
+    InferenceProvider,
+    InferenceRequest,
+    InferenceResult,
+)
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry, get_model, register_model
 
 
 class _StubProvider(InferenceProvider):
-    async def __call__(self, request: InferenceRequest) -> BaseModel:
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
         raise NotImplementedError("stub provider — not invoked in registry tests")
 
     async def close(self) -> None:

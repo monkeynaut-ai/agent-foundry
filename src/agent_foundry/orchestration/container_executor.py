@@ -51,6 +51,7 @@ from agent_foundry.models.markers import (
     extract_paths,
     walk_file_path_fields,
 )
+from agent_foundry.models.usage import TokenUsage
 from agent_foundry.orchestration.artifacts import agent_turn_dir
 from agent_foundry.orchestration.errors import AgentFailedError
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
@@ -123,9 +124,28 @@ class AgentExecFailedError(RuntimeError):
         self.api_error_message = api_error_message
 
 
-def _parse_result_event(output: bytes) -> tuple[int | None, int | None, str | None]:
-    """Scan a claude stream for the trailing `result` event and pull out
-    (api_error_status, num_turns, result_text). All-None if not present.
+class ParsedResultEvent(BaseModel):
+    """Fields pulled from a claude stream's trailing ``result`` event.
+
+    All fields are optional: a stream with no ``result`` event (e.g. a
+    SIGKILL'd container) yields an instance with every field ``None``,
+    so usage/cost capture degrades to "unknown" rather than crashing.
+    ``total_cost_usd`` is the Claude-Code-reported dollar figure for the
+    whole invocation; ``usage`` carries the four token buckets.
+    """
+
+    api_error_status: int | None = None
+    num_turns: int | None = None
+    result_text: str | None = None
+    total_cost_usd: float | None = None
+    usage: TokenUsage | None = None
+
+
+def _parse_result_event(output: bytes) -> ParsedResultEvent:
+    """Scan a claude stream for the trailing ``result`` event.
+
+    Returns an all-``None`` :class:`ParsedResultEvent` when no parseable
+    ``result`` event is present.
     """
     for raw_line in output.decode(errors="replace").splitlines():
         line = raw_line.strip()
@@ -136,12 +156,15 @@ def _parse_result_event(output: bytes) -> tuple[int | None, int | None, str | No
         except json.JSONDecodeError:
             continue
         if evt.get("type") == "result":
-            return (
-                evt.get("api_error_status"),
-                evt.get("num_turns"),
-                evt.get("result"),
+            cost = evt.get("total_cost_usd")
+            return ParsedResultEvent(
+                api_error_status=evt.get("api_error_status"),
+                num_turns=evt.get("num_turns"),
+                result_text=evt.get("result"),
+                total_cost_usd=cost if isinstance(cost, (int, float)) else None,
+                usage=TokenUsage.from_mapping(evt.get("usage")),
             )
-    return None, None, None
+    return ParsedResultEvent()
 
 
 class TurnResult(BaseModel):
@@ -160,6 +183,9 @@ class TurnResult(BaseModel):
     envelope: dict[str, Any]
     session_id: str | None
     raw_output: bytes
+    usage: TokenUsage | None = None
+    total_cost_usd: float | None = None
+    num_turns: int | None = None
 
 
 # Contract for the ``run_turn`` callable threaded through
@@ -234,7 +260,7 @@ async def _run_claude_turn(
         output = result.output
         if exit_code != 0:
             logs = live.manager.read_logs(live.handle, tail=80).decode(errors="replace")
-            api_status, num_turns, api_msg = _parse_result_event(output)
+            parsed = _parse_result_event(output)
             raise AgentExecFailedError(
                 f"claude exec failed (exit={exit_code}):\n"
                 f"stdout/stderr: {output.decode(errors='replace')}\n\n"
@@ -242,9 +268,9 @@ async def _run_claude_turn(
                 exit_code=exit_code,
                 output=output,
                 container_logs=logs,
-                api_error_status=api_status,
-                num_turns=num_turns,
-                api_error_message=api_msg,
+                api_error_status=parsed.api_error_status,
+                num_turns=parsed.num_turns,
+                api_error_message=parsed.result_text,
             )
         envelope: dict[str, Any] | None = None
         session_id: str | None = None
@@ -293,7 +319,15 @@ async def _run_claude_turn(
                 output=output,
                 container_logs=logs,
             )
-        return TurnResult(envelope=envelope, session_id=session_id, raw_output=output)
+        parsed = _parse_result_event(output)
+        return TurnResult(
+            envelope=envelope,
+            session_id=session_id,
+            raw_output=output,
+            usage=parsed.usage,
+            total_cost_usd=parsed.total_cost_usd,
+            num_turns=parsed.num_turns,
+        )
 
     return await asyncio.to_thread(_do_exec)
 
@@ -891,10 +925,18 @@ async def run_agent_in_container(
                     payload_dict=payload_dict,
                     specs=file_path_specs,
                 )
+                usage_fields: dict[str, Any] = {}
+                if result.usage is not None:
+                    usage_fields["usage"] = result.usage.model_dump()
+                if result.total_cost_usd is not None:
+                    usage_fields["total_cost_usd"] = result.total_cost_usd
+                if result.num_turns is not None:
+                    usage_fields["num_turns"] = result.num_turns
                 lifecycle.append(
                     LifecycleEvent.AGENT_INVOCATION_COMPLETED,
                     agent_name=agent_name,
                     invocation=invocation,
+                    **usage_fields,
                 )
                 if isinstance(payload, output_type):
                     return payload
