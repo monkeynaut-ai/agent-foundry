@@ -39,6 +39,7 @@ from agent_foundry.ai_models.inference import (
     InferenceParameters,
     InferenceProvider,
     InferenceRequest,
+    InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
@@ -87,7 +88,7 @@ class _RaisingProvider(InferenceProvider):
     def __init__(self) -> None:
         self.call_count = 0
 
-    async def __call__(self, request: InferenceRequest) -> BaseModel:
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
         self.call_count += 1
         raise ValueError(f"provider unavailable (call #{self.call_count})")
 

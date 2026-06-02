@@ -392,3 +392,141 @@ def test_summary_reports_failed_with_error_kind(tmp_path: Path) -> None:
     text = (run_dir / "summary.txt").read_text()
     assert "failed" in text
     assert "backstop" in text
+
+
+# --- Usage / cost reporting --------------------------------------------------
+
+
+def _agent_completed_with_usage(
+    *,
+    run_id: str,
+    agent: str,
+    start_ts: str,
+    end_ts: str,
+    usage: dict,
+    total_cost_usd: float | None,
+    num_turns: int,
+) -> list[dict]:
+    started = {
+        "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+        "ts": start_ts,
+        "run_id": run_id,
+        "agent": agent,
+    }
+    completed = {
+        "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
+        "ts": end_ts,
+        "run_id": run_id,
+        "agent_name": agent,
+        "invocation": 1,
+        "usage": usage,
+        "num_turns": num_turns,
+    }
+    if total_cost_usd is not None:
+        completed["total_cost_usd"] = total_cost_usd
+    return [started, completed]
+
+
+def _ai_call_completed_with_usage(
+    *, run_id: str, name: str, ts: str, usage: dict, num_turns: int = 1
+) -> dict:
+    return {
+        "type": LifecycleEvent.AI_CALL_COMPLETED.value,
+        "ts": ts,
+        "run_id": run_id,
+        "name": name,
+        "usage": usage,
+        "num_turns": num_turns,
+    }
+
+
+def test_render_summary_reports_usage_total_and_breakdown(tmp_path: Path) -> None:
+    run_id = "run-usage"
+    run_dir = tmp_path / run_id
+    records: list[dict] = [_run_started(run_id, "2026-04-15T10:00:00+00:00")]
+    records.extend(
+        _agent_completed_with_usage(
+            run_id=run_id,
+            agent="implementer",
+            start_ts="2026-04-15T10:00:01+00:00",
+            end_ts="2026-04-15T10:00:10+00:00",
+            usage={
+                "input_tokens": 1000,
+                "output_tokens": 200,
+                "cache_creation_input_tokens": 50,
+                "cache_read_input_tokens": 10,
+            },
+            total_cost_usd=0.25,
+            num_turns=7,
+        )
+    )
+    records.append(
+        _ai_call_completed_with_usage(
+            run_id=run_id,
+            name="design_reviewer",
+            ts="2026-04-15T10:00:15+00:00",
+            usage={"input_tokens": 300, "output_tokens": 80},
+        )
+    )
+    records.append(_run_ended(run_id, "2026-04-15T10:00:30+00:00"))
+    _write_jsonl(run_dir / "lifecycle.jsonl", records)
+
+    render_summary(run_dir)
+    text = (run_dir / "summary.txt").read_text(encoding="utf-8")
+
+    # Total line: tokens by type + total USD.
+    assert "Usage" in text
+    assert "1300" in text  # total input tokens 1000 + 300
+    assert "280" in text  # total output tokens 200 + 80
+    assert "0.25" in text  # only the container agent reports USD
+    # Itemized rows.
+    assert "implementer" in text
+    assert "design_reviewer" in text
+    assert "7" in text  # num_turns for implementer
+
+
+def test_render_summary_usage_missing_renders_unknown(tmp_path: Path) -> None:
+    """A completed invocation without usage fields must render 'unknown',
+    not crash (e.g. SIGKILL'd container with no result event)."""
+    run_id = "run-no-usage"
+    run_dir = tmp_path / run_id
+    records: list[dict] = [
+        _run_started(run_id, "2026-04-15T10:00:00+00:00"),
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+            "ts": "2026-04-15T10:00:01+00:00",
+            "run_id": run_id,
+            "agent": "implementer",
+        },
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
+            "ts": "2026-04-15T10:00:05+00:00",
+            "run_id": run_id,
+            "agent_name": "implementer",
+            "invocation": 1,
+        },
+        _run_ended(run_id, "2026-04-15T10:00:30+00:00"),
+    ]
+    _write_jsonl(run_dir / "lifecycle.jsonl", records)
+
+    render_summary(run_dir)
+    text = (run_dir / "summary.txt").read_text(encoding="utf-8")
+
+    assert "unknown" in text.lower()
+    assert "implementer" in text
+
+
+def test_render_summary_usage_section_absent_when_no_usage_events(tmp_path: Path) -> None:
+    run_id = "run-none"
+    run_dir = tmp_path / run_id
+    _write_jsonl(
+        run_dir / "lifecycle.jsonl",
+        [
+            _run_started(run_id, "2026-04-15T10:00:00+00:00"),
+            _run_ended(run_id, "2026-04-15T10:00:01+00:00"),
+        ],
+    )
+
+    render_summary(run_dir)
+    text = (run_dir / "summary.txt").read_text(encoding="utf-8")
+    assert "Usage" not in text

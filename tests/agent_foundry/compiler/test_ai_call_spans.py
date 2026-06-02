@@ -22,6 +22,7 @@ from agent_foundry.ai_models.inference import (
     InferenceParameters,
     InferenceProvider,
     InferenceRequest,
+    InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.primitives.ai_call import AICall, ModelInput
@@ -86,8 +87,8 @@ def test_ai_call_emits_one_span_per_invocation(
     exporter, provider = exporter_and_provider
 
     class _FakeProvider(InferenceProvider):
-        async def __call__(self, request: InferenceRequest) -> BaseModel:
-            return _Out(success=True)
+        async def __call__(self, request: InferenceRequest) -> InferenceResult:
+            return InferenceResult(output=_Out(success=True))
 
         async def close(self) -> None:
             pass
@@ -125,7 +126,7 @@ def test_ai_call_provider_exception_records_error_span(
     exporter, provider = exporter_and_provider
 
     class _BoomProvider(InferenceProvider):
-        async def __call__(self, request: InferenceRequest) -> BaseModel:
+        async def __call__(self, request: InferenceRequest) -> InferenceResult:
             raise RuntimeError("provider blew up")
 
         async def close(self) -> None:

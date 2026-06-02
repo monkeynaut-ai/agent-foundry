@@ -5,9 +5,13 @@ from __future__ import annotations
 import os
 
 from anthropic import AsyncAnthropic
-from pydantic import BaseModel
 
-from agent_foundry.ai_models.inference import InferenceProvider, InferenceRequest
+from agent_foundry.ai_models.inference import (
+    InferenceProvider,
+    InferenceRequest,
+    InferenceResult,
+)
+from agent_foundry.models.usage import TokenUsage
 
 
 class AnthropicProvider(InferenceProvider):
@@ -34,7 +38,7 @@ class AnthropicProvider(InferenceProvider):
             )
         return self._client_instance
 
-    async def __call__(self, request: InferenceRequest) -> BaseModel:
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
         tool = {
             "name": "structured_output",
             "description": "Return the structured response.",
@@ -57,7 +61,11 @@ class AnthropicProvider(InferenceProvider):
             raise RuntimeError(
                 f"Anthropic provider returned no tool_use block for model {request.model_id!r}"
             )
-        return request.output_type.model_validate(tool_use_block.input)
+        output = request.output_type.model_validate(tool_use_block.input)
+        usage = TokenUsage.from_mapping(
+            response.usage.model_dump() if response.usage is not None else None
+        )
+        return InferenceResult(output=output, usage=usage)
 
     async def close(self) -> None:
         # Read the backing field, not the property — closing must not lazily

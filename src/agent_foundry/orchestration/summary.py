@@ -10,6 +10,9 @@ The output is explicitly a best-effort text report:
   ``(incomplete)`` marker when ``RUN_ENDED`` is missing).
 * One row per agent, alphabetical, with invocation/success/failure
   counts and average turn duration in milliseconds.
+* A usage section: a total line (tokens by type + total USD) and a
+  per-invocation table (agent/AICall label, num_turns, tokens, cost).
+  Missing fields render "unknown"; AICall rows never carry USD.
 * Artifacts footer pointing to container logs and the inspect script.
 
 Malformed lines are skipped silently; a missing or empty jsonl still
@@ -39,6 +42,39 @@ class _AgentStats:
     _pending_start: datetime | None = None
 
 
+_TOKEN_BUCKETS: tuple[str, ...] = (
+    "input_tokens",
+    "output_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+)
+
+
+@dataclass
+class _UsageRow:
+    """One itemized usage line: a single agent/AICall invocation."""
+
+    label: str
+    num_turns: int | None = None
+    tokens: dict[str, int] = field(default_factory=dict)
+    total_cost_usd: float | None = None
+
+
+def _coerce_usage(raw: object) -> dict[str, int]:
+    """Pull integer token buckets out of a usage mapping; unknowns dropped."""
+    if not isinstance(raw, dict):
+        return {}
+    return {k: raw[k] for k in _TOKEN_BUCKETS if isinstance(raw.get(k), int)}
+
+
+def _fmt_int(value: int | None) -> str:
+    return "unknown" if value is None else str(value)
+
+
+def _fmt_usd(value: float | None) -> str:
+    return "unknown" if value is None else f"${value:.4f}"
+
+
 def _parse_ts(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
@@ -64,6 +100,44 @@ def _format_duration(start: datetime | None, end: datetime | None) -> str:
     return f"{hours}h{minutes:02d}m{seconds:02d}s"
 
 
+def _render_usage(rows: list[_UsageRow]) -> list[str]:
+    """Render the total line + per-invocation itemized usage table.
+
+    A bucket is summed across rows only over the rows that report it; a
+    row missing a bucket renders that cell as "unknown" rather than 0.
+    USD is summed across rows that report a figure (container agents);
+    AICall rows never carry USD in v1.
+    """
+    totals: dict[str, int] = {}
+    for row in rows:
+        for bucket, value in row.tokens.items():
+            totals[bucket] = totals.get(bucket, 0) + value
+    total_cost = None
+    cost_values = [r.total_cost_usd for r in rows if r.total_cost_usd is not None]
+    if cost_values:
+        total_cost = sum(cost_values)
+
+    out: list[str] = ["Usage:"]
+    token_summary = ", ".join(
+        f"{bucket}={_fmt_int(totals.get(bucket))}" for bucket in _TOKEN_BUCKETS
+    )
+    grand_total = sum(totals.values()) if totals else None
+    out.append(
+        f"  total: {token_summary}, total_tokens={_fmt_int(grand_total)},"
+        f" cost={_fmt_usd(total_cost)}"
+    )
+    out.append("  by invocation:")
+    for row in rows:
+        cells = ", ".join(
+            f"{bucket}={_fmt_int(row.tokens.get(bucket))}" for bucket in _TOKEN_BUCKETS
+        )
+        out.append(
+            f"    {row.label}: num_turns={_fmt_int(row.num_turns)},"
+            f" {cells}, cost={_fmt_usd(row.total_cost_usd)}"
+        )
+    return out
+
+
 def render_summary(run_dir: Path) -> None:
     """Read ``lifecycle.jsonl`` from ``run_dir`` and write ``summary.txt``.
 
@@ -83,6 +157,7 @@ def render_summary(run_dir: Path) -> None:
 
     stats: dict[str, _AgentStats] = {}
     failure_records: list[dict] = []
+    usage_rows: list[_UsageRow] = []
 
     if jsonl_path.exists():
         with jsonl_path.open("r", encoding="utf-8") as fh:
@@ -128,12 +203,36 @@ def render_summary(run_dir: Path) -> None:
                     bucket = stats.setdefault(agent, _AgentStats())
                     bucket.started += 1
                     bucket._pending_start = ts
+                elif event_type == LifecycleEvent.AI_CALL_COMPLETED.value:
+                    label = record.get("name") or record.get("node_id") or "unknown"
+                    if "usage" in record or "num_turns" in record:
+                        num_turns = record.get("num_turns")
+                        usage_rows.append(
+                            _UsageRow(
+                                label=str(label),
+                                num_turns=num_turns if isinstance(num_turns, int) else None,
+                                tokens=_coerce_usage(record.get("usage")),
+                                total_cost_usd=None,
+                            )
+                        )
                 elif event_type in (
                     LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
                     LifecycleEvent.AGENT_INVOCATION_FAILED.value,
                 ):
                     if event_type == LifecycleEvent.AGENT_INVOCATION_FAILED.value:
                         failure_records.append(record)
+                    if event_type == LifecycleEvent.AGENT_INVOCATION_COMPLETED.value:
+                        label = record.get("agent_name") or record.get("agent") or "unknown"
+                        cost = record.get("total_cost_usd")
+                        num_turns = record.get("num_turns")
+                        usage_rows.append(
+                            _UsageRow(
+                                label=str(label),
+                                num_turns=num_turns if isinstance(num_turns, int) else None,
+                                tokens=_coerce_usage(record.get("usage")),
+                                total_cost_usd=cost if isinstance(cost, (int, float)) else None,
+                            )
+                        )
                     agent = record.get("agent")
                     if not isinstance(agent, str):
                         continue
@@ -212,6 +311,10 @@ def render_summary(run_dir: Path) -> None:
                     fields.append(f"{key}={rec[key]}")
             tail = ", ".join(fields) if fields else "no structured fields"
             lines.append(f"  {agent}/{invocation} — {tail}")
+        lines.append("")
+
+    if usage_rows:
+        lines.extend(_render_usage(usage_rows))
         lines.append("")
 
     lines.append("Artifacts:")

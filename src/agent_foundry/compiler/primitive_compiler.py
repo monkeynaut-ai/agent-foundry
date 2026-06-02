@@ -16,6 +16,7 @@ from pydantic import BaseModel, ValidationError
 # invoke_ai_call is safe at module level: invoke.py imports AICall only under
 # TYPE_CHECKING, so no runtime cycle exists.
 from agent_foundry.ai_models.execute.invoke import invoke_ai_call
+from agent_foundry.models.usage import TokenUsage
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.run_context import current_run_context, require_current_run_context
 from agent_foundry.primitives.ai_call import AICall
@@ -1092,9 +1093,12 @@ def _compile_ai_call(
             redaction=redaction,
         ) as handle:
             handle.set_operation_name("chat")
+            usage: TokenUsage | None = None
             try:
                 if executor is None:
-                    result = await invoke_ai_call(primitive=action, model_input=model_input)
+                    call_result = await invoke_ai_call(primitive=action, model_input=model_input)
+                    result = call_result.output
+                    usage = call_result.usage
                 else:
                     result = await executor(primitive=action, model_input=model_input)
                 typed = _validate_typed(result)
@@ -1126,10 +1130,15 @@ def _compile_ai_call(
                 raise
             handle.set_output(typed)
             if ctx_opt is not None:
+                usage_fields: dict[str, Any] = {}
+                if usage is not None:
+                    usage_fields["usage"] = usage.model_dump()
+                    usage_fields["num_turns"] = 1
                 ctx_opt.lifecycle_writer.append(
                     LifecycleEvent.AI_CALL_COMPLETED,
                     node_id=node_id,
                     name=label,
+                    **usage_fields,
                 )
             return typed.model_dump()
 

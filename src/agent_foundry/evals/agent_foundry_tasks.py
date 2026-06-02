@@ -142,7 +142,7 @@ def build_invoke_ai_call_task(call: AICall) -> Task:
         if executor is None:
             from agent_foundry.ai_models.execute.invoke import invoke_ai_call
 
-            return await invoke_ai_call(primitive=call, model_input=input_state)
+            return (await invoke_ai_call(primitive=call, model_input=input_state)).output
         if executor_is_async:
             return await executor(primitive=call, model_input=input_state)
         return executor(primitive=call, model_input=input_state)  # type: ignore[return-value]

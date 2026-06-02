@@ -27,10 +27,14 @@ class _Output(BaseModel):
 
 def _never_called_entry() -> ModelEntry:
     """ModelEntry whose provider raises if called — verifies the executor bypasses it."""
-    from agent_foundry.ai_models.inference import InferenceProvider, InferenceRequest
+    from agent_foundry.ai_models.inference import (
+        InferenceProvider,
+        InferenceRequest,
+        InferenceResult,
+    )
 
     class _NeverCallProvider(InferenceProvider):
-        async def __call__(self, request: InferenceRequest) -> BaseModel:
+        async def __call__(self, request: InferenceRequest) -> InferenceResult:
             raise AssertionError("Provider should not be called when executor is set")
 
         async def close(self) -> None:
@@ -93,14 +97,18 @@ class TestAICallEvalExecutor:
     @pytest.mark.asyncio
     async def test_b6_no_executor_uses_invoke_ai_call(self) -> None:
         """B6/B1: executor=None → eval task falls back to invoke_ai_call (provider is called)."""
-        from agent_foundry.ai_models.inference import InferenceProvider, InferenceRequest
+        from agent_foundry.ai_models.inference import (
+            InferenceProvider,
+            InferenceRequest,
+            InferenceResult,
+        )
 
         provider_calls: list[InferenceRequest] = []
 
         class _CapProvider(InferenceProvider):
-            async def __call__(self, request: InferenceRequest) -> BaseModel:
+            async def __call__(self, request: InferenceRequest) -> InferenceResult:
                 provider_calls.append(request)
-                return _Output(result="from-provider")
+                return InferenceResult(output=_Output(result="from-provider"))
 
             async def close(self) -> None:
                 pass

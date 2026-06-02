@@ -15,6 +15,7 @@ from agent_foundry.ai_models.inference import (
     InferenceParameters,
     InferenceProvider,
     InferenceRequest,
+    InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
@@ -40,9 +41,9 @@ class _CapturingProvider(InferenceProvider):
     def __init__(self) -> None:
         self.calls: list[InferenceRequest] = []
 
-    async def __call__(self, request: InferenceRequest) -> BaseModel:
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
         self.calls.append(request)
-        return _Output(result="from-provider")
+        return InferenceResult(output=_Output(result="from-provider"))
 
     async def close(self) -> None:
         pass
@@ -51,7 +52,7 @@ class _CapturingProvider(InferenceProvider):
 class _RaisingProvider(InferenceProvider):
     """Always raises ValueError — used to verify executor catch branches."""
 
-    async def __call__(self, request: InferenceRequest) -> BaseModel:
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
         raise ValueError("provider unavailable")
 
     async def close(self) -> None:
@@ -246,8 +247,9 @@ class TestExecutorCatchesException:
         from agent_foundry.ai_models.execute.invoke import invoke_ai_call
 
         async def wrapping_executor(*, primitive: Any, model_input: Any) -> _Output:
-            # This is the canonical wrap pattern — keyword args match invoke_ai_call's params.
-            return await invoke_ai_call(primitive=primitive, model_input=model_input)
+            # This is the canonical wrap pattern — keyword args match invoke_ai_call's params,
+            # and the executor unwraps the AICallResult to return O.
+            return (await invoke_ai_call(primitive=primitive, model_input=model_input)).output
 
         entry, provider = _capturing_entry()
         call = AICall[_Input, _Output](

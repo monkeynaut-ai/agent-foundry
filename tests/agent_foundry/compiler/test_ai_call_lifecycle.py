@@ -19,9 +19,11 @@ from agent_foundry.ai_models.inference import (
     InferenceParameters,
     InferenceProvider,
     InferenceRequest,
+    InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
+from agent_foundry.models.usage import TokenUsage
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
 from agent_foundry.orchestration.run_context import RunContext, current_run_context
@@ -59,15 +61,18 @@ class _CapturingWriter(LifecycleWriter):
 
 
 class _OkProvider(InferenceProvider):
-    async def __call__(self, request: InferenceRequest) -> BaseModel:
-        return _Output(result="ok")
+    def __init__(self, usage: TokenUsage | None = None) -> None:
+        self._usage = usage
+
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
+        return InferenceResult(output=_Output(result="ok"), usage=self._usage)
 
     async def close(self) -> None:
         return None
 
 
 class _RaisingProvider(InferenceProvider):
-    async def __call__(self, request: InferenceRequest) -> BaseModel:
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
         raise ValueError("boom")
 
     async def close(self) -> None:
@@ -117,6 +122,30 @@ def test_ai_call_emits_started_and_completed_with_name(writer: _CapturingWriter)
     started = writer.fields_for(LifecycleEvent.AI_CALL_STARTED)
     assert started["name"] == "design_correctness_review"
     assert started["node_id"] == "root"
+
+
+def test_ai_call_completed_carries_token_usage(writer: _CapturingWriter) -> None:
+    provider = _OkProvider(usage=TokenUsage(input_tokens=30, output_tokens=12))
+    graph = compile_runtime_plan(PrimitivePlan(_ai_call(provider=provider)))
+    asyncio.run(graph.ainvoke({"text": "x"}))
+
+    completed = writer.fields_for(LifecycleEvent.AI_CALL_COMPLETED)
+    assert completed["usage"]["input_tokens"] == 30
+    assert completed["usage"]["output_tokens"] == 12
+    assert completed["num_turns"] == 1
+    # No USD figure on the AICall path in v1.
+    assert "total_cost_usd" not in completed
+
+
+def test_ai_call_completed_omits_usage_when_provider_reports_none(
+    writer: _CapturingWriter,
+) -> None:
+    graph = compile_runtime_plan(PrimitivePlan(_ai_call(provider=_OkProvider())))
+    asyncio.run(graph.ainvoke({"text": "x"}))
+
+    completed = writer.fields_for(LifecycleEvent.AI_CALL_COMPLETED)
+    assert "usage" not in completed
+    assert "num_turns" not in completed
 
 
 def test_ai_call_emits_failed_on_provider_error(writer: _CapturingWriter) -> None:

@@ -17,8 +17,10 @@ from agent_foundry.ai_models.inference import (
     InferenceParameters,
     InferenceProvider,
     InferenceRequest,
+    InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
+from agent_foundry.models.usage import TokenUsage
 from agent_foundry.primitives.ai_call import AICall, ModelInput
 
 
@@ -32,12 +34,13 @@ class _Output(BaseModel):
 
 
 class _CapturingProvider(InferenceProvider):
-    def __init__(self, captured: list[InferenceRequest]) -> None:
+    def __init__(self, captured: list[InferenceRequest], usage: TokenUsage | None = None) -> None:
         self._captured = captured
+        self._usage = usage
 
-    async def __call__(self, request: InferenceRequest) -> BaseModel:
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
         self._captured.append(request)
-        return _Output(result="ok")
+        return InferenceResult(output=_Output(result="ok"), usage=self._usage)
 
     async def close(self) -> None:
         pass
@@ -63,13 +66,48 @@ async def test_static_instructions_and_prompt_passed_to_provider() -> None:
         model=_capturing_entry(captured),
     )
 
-    output = await invoke_ai_call(req, _Input(text="hello"))
+    result = await invoke_ai_call(req, _Input(text="hello"))
 
     assert len(captured) == 1
     assert captured[0].instructions == "system prompt"
     assert captured[0].prompt == "user message"
-    assert isinstance(output, _Output)
-    assert output.result == "ok"
+    assert isinstance(result.output, _Output)
+    assert result.output.result == "ok"
+
+
+@pytest.mark.asyncio
+async def test_provider_usage_threaded_into_result() -> None:
+    captured: list[InferenceRequest] = []
+    entry = ModelEntry(
+        model_id="fake",
+        provider=_CapturingProvider(captured, usage=TokenUsage(input_tokens=11, output_tokens=22)),
+        capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
+    )
+    req = AICall[_Input, _Output](
+        model_input=ModelInput[_Input](instructions="i", prompt="p"),
+        parameters=InferenceParameters(max_tokens=256),
+        model=entry,
+    )
+
+    result = await invoke_ai_call(req, _Input(text="x"))
+
+    assert result.usage is not None
+    assert result.usage.input_tokens == 11
+    assert result.usage.output_tokens == 22
+
+
+@pytest.mark.asyncio
+async def test_missing_provider_usage_yields_none() -> None:
+    captured: list[InferenceRequest] = []
+    req = AICall[_Input, _Output](
+        model_input=ModelInput[_Input](instructions="i", prompt="p"),
+        parameters=InferenceParameters(max_tokens=256),
+        model=_capturing_entry(captured),
+    )
+
+    result = await invoke_ai_call(req, _Input(text="x"))
+
+    assert result.usage is None
 
 
 @pytest.mark.asyncio
@@ -190,8 +228,8 @@ async def test_provider_returning_wrong_type_raises() -> None:
         other: str
 
     class _BadProvider(InferenceProvider):
-        async def __call__(self, request: InferenceRequest) -> BaseModel:
-            return WrongOutput(other="wrong")
+        async def __call__(self, request: InferenceRequest) -> InferenceResult:
+            return InferenceResult(output=WrongOutput(other="wrong"))
 
         async def close(self) -> None:
             pass

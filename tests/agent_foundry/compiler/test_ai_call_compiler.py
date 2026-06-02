@@ -11,6 +11,7 @@ from agent_foundry.ai_models.inference import (
     InferenceParameters,
     InferenceProvider,
     InferenceRequest,
+    InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
@@ -56,9 +57,9 @@ class _CapturingProvider(InferenceProvider):
     def __init__(self, captured: list[InferenceRequest]) -> None:
         self._captured = captured
 
-    async def __call__(self, request: InferenceRequest) -> BaseModel:
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
         self._captured.append(request)
-        return Output(result="ok")
+        return InferenceResult(output=Output(result="ok"))
 
     async def close(self) -> None:
         pass
@@ -190,8 +191,8 @@ class TestAICallCompilerOutputValidation:
             other: str
 
         class _BadProvider(InferenceProvider):
-            async def __call__(self, request: InferenceRequest) -> BaseModel:
-                return WrongOutput(other="wrong")
+            async def __call__(self, request: InferenceRequest) -> InferenceResult:
+                return InferenceResult(output=WrongOutput(other="wrong"))
 
             async def close(self) -> None:
                 pass
