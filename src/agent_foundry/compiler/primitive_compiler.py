@@ -42,8 +42,14 @@ from agent_foundry.primitives.retry_types import (
     ResolverDisposition,
     RetryAborted,
     RetryExhaustionReason,
+    RetryRoute,
 )
 from agent_foundry.telemetry.spans import emit_span
+
+# Flat (non-prefixed) state key the resolver node writes its ResolverDisposition
+# into and the disposition router reads. Fixed name so a resolver author can
+# declare it without knowing the Retry's compile prefix.
+DISPOSITION_KEY = "disposition"
 
 # -- Compile context and result --
 
@@ -143,8 +149,8 @@ def _retry_channels(prefix: str) -> dict[str, Any]:
     """
     return {
         f"{prefix}__resolver_reentries": Any,  # backstop counter (loop-carried)
-        f"{prefix}__retry_route": Any,  # automated-phase routing signal
-        f"{prefix}__reentry_route": Any,  # re-entry routing signal
+        _retry_route_key(prefix): Any,  # automated-phase routing signal
+        _reentry_route_key(prefix): Any,  # re-entry routing signal
     }
 
 
@@ -271,6 +277,61 @@ def _validate_scoped_input(
             f"Boundary validation failed at {node_id}: {e}",
             primitive_type=node_id,
         ) from e
+
+
+def _retry_route_key(prefix: str) -> str:
+    """Scoped state channel the automated retry node writes its RetryRoute into."""
+    return f"{prefix}__retry_route"
+
+
+def _reentry_route_key(prefix: str) -> str:
+    """Scoped state channel the re-entry node writes its RetryRoute into."""
+    return f"{prefix}__reentry_route"
+
+
+def _read_retry_route(state: dict[str, Any], route_key: str, node_id: str) -> RetryRoute:
+    """Read a required RetryRoute marker, raising if a node failed to write it.
+
+    A missing marker means a node forgot to set its route channel — a compiler
+    wiring bug — so this fails loud rather than silently defaulting a branch.
+    """
+    raw = state.get(route_key)
+    if raw is None:
+        raise PrimitiveCompilationError(
+            f"Retry {node_id}: missing route marker '{route_key}'",
+            primitive_type=node_id,
+        )
+    return RetryRoute(raw)
+
+
+def _derive_exhaustion_reason(raised: int, clean_not_passed: int) -> RetryExhaustionReason:
+    if raised and not clean_not_passed:
+        return RetryExhaustionReason.BODY_EXCEPTIONS
+    if clean_not_passed and not raised:
+        return RetryExhaustionReason.CONDITION_NOT_MET
+    return RetryExhaustionReason.MIXED
+
+
+def _coerce_disposition(raw: Any) -> ResolverDisposition:
+    if isinstance(raw, ResolverDisposition):
+        return raw
+    return ResolverDisposition.model_validate(raw)
+
+
+def _outcome_from_body(
+    state: dict[str, Any],
+    body_result: dict[str, Any],
+    *,
+    body_out: type[BaseModel],
+    retry_in: type[BaseModel],
+    retry_id: str,
+    until_fn: Callable[[Any], bool],
+) -> tuple[dict[str, Any], AttemptOutcome]:
+    """Merge a body attempt's output into state and evaluate the until() condition."""
+    merged = dict(state)
+    merged.update(_scope_out(body_result, body_out))
+    model = _validate_scoped_input(merged, retry_in, retry_id)
+    return merged, (AttemptOutcome.PASSED if until_fn(model) else AttemptOutcome.NOT_PASSED)
 
 
 def _compile_node(graph: StateGraph, prim: Primitive, ctx: CompileContext) -> CompileResult:
@@ -618,8 +679,8 @@ def _compile_retry(
     abort_id = f"{prefix}_abort"
     merge_id = f"{prefix}_merge"
     reentries_key = f"{prefix}__resolver_reentries"
-    retry_route_key = f"{prefix}__retry_route"
-    reentry_route_key = f"{prefix}__reentry_route"
+    retry_route_key = _retry_route_key(prefix)
+    reentry_route_key = _reentry_route_key(prefix)
     # Resolver-read metadata uses fixed names a resolver can declare without
     # knowing this compile prefix. Write-once-read-immediately by the resolver
     # that runs right after the automated loop. v1 limitation: a nested Retry in
@@ -627,14 +688,6 @@ def _compile_retry(
     # ``disposition`` key).
     exhaustion_reason_key = WELL_KNOWN_EXHAUSTION_REASON
     attempt_failures_key = WELL_KNOWN_ATTEMPT_FAILURES
-
-    def _outcome_from_body(
-        state: dict[str, Any], body_result: dict[str, Any]
-    ) -> tuple[dict[str, Any], AttemptOutcome]:
-        merged = dict(state)
-        merged.update(_scope_out(body_result, body_out))
-        model = _validate_scoped_input(merged, retry_in, retry_id)
-        return merged, (AttemptOutcome.PASSED if until_fn(model) else AttemptOutcome.NOT_PASSED)
 
     def _handle_body_exception(
         snapshot: dict[str, Any], exc: Exception, attempt_num: int
@@ -669,7 +722,14 @@ def _compile_retry(
         snapshot = copy.deepcopy(state)
         try:
             result = compiled_body.invoke(dict(state))  # type: ignore[arg-type]
-            merged, outcome = _outcome_from_body(state, result)
+            merged, outcome = _outcome_from_body(
+                state,
+                result,
+                body_out=body_out,
+                retry_in=retry_in,
+                retry_id=retry_id,
+                until_fn=until_fn,
+            )
             _emit_lifecycle(
                 LifecycleEvent.RETRY_ATTEMPT_PASSED
                 if outcome is AttemptOutcome.PASSED
@@ -687,7 +747,14 @@ def _compile_retry(
         snapshot = copy.deepcopy(state)
         try:
             result = await compiled_body.ainvoke(dict(state))  # type: ignore[arg-type]
-            merged, outcome = _outcome_from_body(state, result)
+            merged, outcome = _outcome_from_body(
+                state,
+                result,
+                body_out=body_out,
+                retry_in=retry_in,
+                retry_id=retry_id,
+                until_fn=until_fn,
+            )
             _emit_lifecycle(
                 LifecycleEvent.RETRY_ATTEMPT_PASSED
                 if outcome is AttemptOutcome.PASSED
@@ -699,17 +766,10 @@ def _compile_retry(
         except Exception as exc:
             return _handle_body_exception(snapshot, exc, attempt_num)
 
-    def _derive_exhaustion_reason(raised: int, clean_not_passed: int) -> RetryExhaustionReason:
-        if raised and not clean_not_passed:
-            return RetryExhaustionReason.BODY_EXCEPTIONS
-        if clean_not_passed and not raised:
-            return RetryExhaustionReason.CONDITION_NOT_MET
-        return RetryExhaustionReason.MIXED
-
     def _retry_exhausted(
         state: dict[str, Any], reason: RetryExhaustionReason, failures: list[AttemptFailure]
     ) -> dict[str, Any]:
-        state[retry_route_key] = "exhausted"
+        state[retry_route_key] = RetryRoute.EXHAUSTED
         state[reentries_key] = 0
         state[exhaustion_reason_key] = reason.value
         state[attempt_failures_key] = [f.model_dump() for f in failures]
@@ -717,7 +777,7 @@ def _compile_retry(
 
     def _retry_passed(state: dict[str, Any]) -> dict[str, Any]:
         out = _scope_out(state, retry_out)
-        out[retry_route_key] = "pass"
+        out[retry_route_key] = RetryRoute.PASS
         return out
 
     def retry_node_sync(state: dict[str, Any]) -> dict[str, Any]:
@@ -757,7 +817,7 @@ def _compile_retry(
 
         def unset_resolver_node(state: dict[str, Any]) -> dict[str, Any]:
             return {
-                "disposition": ResolverDisposition(
+                DISPOSITION_KEY: ResolverDisposition(
                     kind=DispositionKind.ABORT, reason="no resolver configured"
                 ).model_dump()
             }
@@ -769,7 +829,8 @@ def _compile_retry(
         resolver_entry, resolver_exit = _compile_node(graph, resolver, ctx.child(resolver_id))
 
     def retry_router(state: dict[str, Any]) -> str:
-        return merge_id if state.get(retry_route_key) == "pass" else resolver_entry
+        route = _read_retry_route(state, retry_route_key, retry_id)
+        return merge_id if route is RetryRoute.PASS else resolver_entry
 
     graph.add_node(
         retry_id,
@@ -777,23 +838,18 @@ def _compile_retry(
     )
     graph.add_conditional_edges(retry_id, retry_router, [merge_id, resolver_entry])
 
-    def _coerce_disposition(raw: Any) -> ResolverDisposition:
-        if isinstance(raw, ResolverDisposition):
-            return raw
-        return ResolverDisposition.model_validate(raw)
-
     def disposition_router(state: dict[str, Any]) -> str:
-        raw = state.get("disposition")
+        raw = state.get(DISPOSITION_KEY)
         if raw is None:
             raise PrimitiveCompilationError(
-                f"Retry {retry_id}: resolver produced no 'disposition' field",
+                f"Retry {retry_id}: resolver produced no '{DISPOSITION_KEY}' field",
                 primitive_type=retry_id,
             )
         try:
             disposition = _coerce_disposition(raw)
         except ValidationError as exc:
             raise PrimitiveCompilationError(
-                f"Retry {retry_id}: 'disposition' is not a ResolverDisposition: {exc}",
+                f"Retry {retry_id}: '{DISPOSITION_KEY}' is not a ResolverDisposition: {exc}",
                 primitive_type=retry_id,
             ) from exc
         _emit_lifecycle(
@@ -823,9 +879,9 @@ def _compile_retry(
         current_state[reentries_key] = reentries
         if outcome is AttemptOutcome.PASSED:
             out = _scope_out(current_state, retry_out)
-            out[reentry_route_key] = "pass"
+            out[reentry_route_key] = RetryRoute.PASS
             return out
-        current_state[reentry_route_key] = "not_passed"
+        current_state[reentry_route_key] = RetryRoute.NOT_PASSED
         return current_state
 
     def reentry_node_sync(state: dict[str, Any]) -> dict[str, Any]:
@@ -843,7 +899,8 @@ def _compile_retry(
         return _reentry_finish(current_state, reentries, outcome)
 
     def reentry_router(state: dict[str, Any]) -> str:
-        return merge_id if state.get(reentry_route_key) == "pass" else resolver_entry
+        route = _read_retry_route(state, reentry_route_key, retry_id)
+        return merge_id if route is RetryRoute.PASS else resolver_entry
 
     graph.add_node(
         reentry_id,
@@ -853,7 +910,7 @@ def _compile_retry(
 
     # -- Abort node: raise RetryAborted carrying the reason --
     def abort_node(state: dict[str, Any]) -> dict[str, Any]:
-        raw = state.get("disposition")
+        raw = state.get(DISPOSITION_KEY)
         reason = _coerce_disposition(raw).reason if raw is not None else ""
         raise RetryAborted(reason)
 

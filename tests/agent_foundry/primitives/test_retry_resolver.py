@@ -646,6 +646,73 @@ async def test_nested_retry_reentry_that_passes_exits_successfully() -> None:
     assert resolver._calls["i"] == 1  # type: ignore[attr-defined]
 
 
+# ---------------------------------------------------------------------------
+# Sibling Retries — two Retries side-by-side in a Sequence each drive their own
+# resolver cycle. Guards against route-channel collision: each Retry's routing
+# markers are prefix-namespaced, so the second Retry's exhaustion must not be
+# decided by a stale marker the first one left in shared state.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sibling_retries_run_independent_resolver_cycles() -> None:
+    """Two Retries in one Sequence: the first ACCEPTs after a RETRY, the second
+    exhausts and aborts. Each resolver is consulted independently — the second's
+    routing is not short-circuited by the first's PASS marker."""
+    first_resolver = _resolver([DispositionKind.RETRY, DispositionKind.ACCEPT])
+    first = Retry[RS, RS](
+        max_attempts=1,
+        until=lambda s: False,
+        body=_failing_body(),
+        on_max_attempts_resolver=first_resolver,
+    )
+    second_resolver = _resolver([DispositionKind.ABORT])
+    second = Retry[RS, RS](
+        max_attempts=1,
+        until=lambda s: False,
+        body=_failing_body(),
+        on_max_attempts_resolver=second_resolver,
+    )
+    seq = Sequence[RS, RS](steps=[first, second])
+
+    with pytest.raises(RetryAborted, match="r"):
+        await _compile_and_run_seq(seq, RS(n=0))
+    # First resolver: RETRY then ACCEPT = 2 visits. Second: single ABORT = 1.
+    assert first_resolver._calls["i"] == 2  # type: ignore[attr-defined]
+    assert second_resolver._calls["i"] == 1  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_sibling_retries_both_pass_automatically() -> None:
+    """Two sibling Retries that each PASS on the automated path exit through the
+    Sequence without either resolver running — the PASS route marker of the first
+    does not leak into the second's routing decision."""
+    first_resolver = _resolver([DispositionKind.ABORT])
+    second_resolver = _resolver([DispositionKind.ABORT])
+    passing_body = FunctionAction[RS, RS](
+        function=lambda s: RS(n=s.n + 1, verdict="pass", disposition=s.disposition)
+    )
+    first = Retry[RS, RS](
+        max_attempts=1,
+        until=lambda s: s.verdict == "pass",
+        body=passing_body,
+        on_max_attempts_resolver=first_resolver,
+    )
+    second = Retry[RS, RS](
+        max_attempts=1,
+        until=lambda s: s.verdict == "pass",
+        body=passing_body,
+        on_max_attempts_resolver=second_resolver,
+    )
+    seq = Sequence[RS, RS](steps=[first, second])
+
+    result = await _compile_and_run_seq(seq, RS(n=0))
+    assert result.verdict == "pass"
+    assert result.n == 2  # each Retry's body ran once
+    assert first_resolver._calls["i"] == 0  # type: ignore[attr-defined]
+    assert second_resolver._calls["i"] == 0  # type: ignore[attr-defined]
+
+
 def _raising_body(exc: Exception) -> FunctionAction:
     def _raise(s: RS) -> RS:
         raise exc
