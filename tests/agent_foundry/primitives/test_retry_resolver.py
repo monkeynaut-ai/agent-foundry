@@ -543,6 +543,34 @@ def test_nested_retry_channels_declared_in_outer_schema() -> None:
     assert "attempt_failures" in channels
 
 
+def test_retry_in_resolver_subtree_channels_collected() -> None:
+    """A Retry whose resolver subtree itself contains a Retry has the inner
+    Retry's channels collected under the resolver prefix. Guards the
+    resolver-branch recursion path that the inline scheme special-cased."""
+    from agent_foundry.compiler.primitive_compiler import _collect_retry_channels
+
+    resolver_inner_retry = Retry[RS, RS](
+        max_attempts=1,
+        until=lambda s: False,
+        body=_failing_body(),
+        on_max_attempts_resolver=_resolver([DispositionKind.ACCEPT]),
+    )
+    outer_retry = Retry[RS, RS](
+        max_attempts=1,
+        until=lambda s: False,
+        body=_failing_body(),
+        on_max_attempts_resolver=resolver_inner_retry,
+    )
+
+    channels = _collect_retry_channels(outer_retry, "root")
+    # Outer Retry's own channels at root.
+    assert "root__resolver_reentries" in channels
+    # Inner Retry sits under the resolver prefix root_resolver.
+    assert "root_resolver__resolver_reentries" in channels
+    assert "root_resolver__retry_route" in channels
+    assert "root_resolver__reentry_route" in channels
+
+
 async def _compile_and_run_seq(seq: Sequence, initial: RS) -> RS:
     ctx_var, ctx = _run_context()
     token = ctx_var.set(ctx)

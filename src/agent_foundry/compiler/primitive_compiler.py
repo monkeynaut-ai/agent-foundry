@@ -164,38 +164,19 @@ WELL_KNOWN_METADATA_CHANNELS: dict[str, Any] = dict.fromkeys(WELL_KNOWN_METADATA
 def _collect_retry_channels(prim: Primitive, prefix: str) -> dict[str, Any]:
     """Walk the plan tree and collect outer-state channels every Retry needs.
 
-    Prefix derivation mirrors each compiler's ``ctx.child(...)`` scheme exactly;
-    diverging here means a nested Retry writes to undeclared keys that LangGraph
-    silently drops. Confirmed against the per-type compilers:
-      - Sequence step i -> f"{prefix}_step_{i}"
-      - Conditional then/else -> f"{prefix}_then" / f"{prefix}_else"
-      - Loop body / Retry body -> f"{prefix}_body"
-      - Retry resolver seat -> f"{prefix}_resolver"
-
-    Returns both the prefix-namespaced internal channels and the fixed
-    well-known metadata channels so any graph whose schema owns a Retry's nodes
-    declares the keys that Retry writes.
+    A Retry contributes its prefix-namespaced internal channels and the fixed
+    well-known metadata channels; child enumeration recurses through
+    ``child_specs`` so the per-child prefixes match the compilers' scheme by
+    construction (a divergence would make a nested Retry write to undeclared
+    keys that LangGraph silently drops). Leaves return no children, so they add
+    nothing.
     """
     channels: dict[str, Any] = {}
-
     if isinstance(prim, Retry):
         channels.update(_retry_channels(prefix))
         channels.update(WELL_KNOWN_METADATA_CHANNELS)
-        channels.update(_collect_retry_channels(prim.body, f"{prefix}_body"))
-        if prim.on_max_attempts_resolver is not None:
-            channels.update(
-                _collect_retry_channels(prim.on_max_attempts_resolver, f"{prefix}_resolver")
-            )
-    elif isinstance(prim, Sequence):
-        for i, step in enumerate(prim.steps):
-            channels.update(_collect_retry_channels(step, f"{prefix}_step_{i}"))
-    elif isinstance(prim, Conditional):
-        channels.update(_collect_retry_channels(prim.then_branch, f"{prefix}_then"))
-        if prim.else_branch is not None:
-            channels.update(_collect_retry_channels(prim.else_branch, f"{prefix}_else"))
-    elif isinstance(prim, Loop):
-        channels.update(_collect_retry_channels(prim.body, f"{prefix}_body"))
-
+    for child, suffix in prim.child_specs():
+        channels.update(_collect_retry_channels(child, f"{prefix}_{suffix}"))
     return channels
 
 
@@ -213,6 +194,31 @@ def _state_type_with_retry_channels(
     for child, child_prefix in children:
         merged.update(_collect_retry_channels(child, child_prefix))
     return TypedDict(name, merged, total=False)  # type: ignore[call-overload]
+
+
+def _compile_body_subgraph(
+    state_type_name: str,
+    io_types: list[type[BaseModel]],
+    body: Primitive,
+    body_prefix: str,
+    ctx: CompileContext,
+) -> Any:
+    """Compile a single-body subgraph (entry -> body -> END) and return the
+    compiled graph. ``io_types`` are the models whose fields seed the subgraph
+    state schema (outer + body I/O); the body's retry channels are injected too.
+    Shared by Loop and Retry, whose bodies compile identically."""
+    fields: dict[str, Any] = {}
+    for model in io_types:
+        for name in model.model_fields:
+            fields[name] = Any
+    body_state_type = _state_type_with_retry_channels(
+        state_type_name, fields, [(body, body_prefix)]
+    )
+    body_graph = StateGraph(body_state_type)
+    body_entry, body_exit = _compile_node(body_graph, body, ctx.child(body_prefix))
+    body_graph.set_entry_point(body_entry)
+    body_graph.add_edge(body_exit, END)
+    return body_graph.compile()
 
 
 def _scope_in(parent_state: dict[str, Any], child_input_type: type[BaseModel]) -> dict[str, Any]:
@@ -390,14 +396,15 @@ def _compile_sequence(
     for model in all_types:
         for name in model.model_fields:
             fields[name] = Any
-    step_children = [(step, f"{ctx.prefix}_step_{i}") for i, step in enumerate(seq.steps)]
+    specs = seq.child_specs()
+    step_children = [(step, f"{ctx.prefix}_{suffix}") for step, suffix in specs]
     sub_state_type = _state_type_with_retry_channels("SeqState", fields, step_children)
     sub_graph = StateGraph(sub_state_type)
 
     first_entry = None
     prev_exit = None
-    for i, step in enumerate(seq.steps):
-        entry, exit_ = _compile_node(sub_graph, step, ctx.child(f"{ctx.prefix}_step_{i}"))
+    for step, suffix in specs:
+        entry, exit_ = _compile_node(sub_graph, step, ctx.child(f"{ctx.prefix}_{suffix}"))
         if first_entry is None:
             first_entry = entry
         if prev_exit is not None:
@@ -444,22 +451,27 @@ def _compile_conditional(
     for model in all_types:
         for name in model.model_fields:
             fields[name] = Any
-    branch_children: list[tuple[Primitive, str]] = [(cond.then_branch, f"{ctx.prefix}_then")]
+    # then/else are role-specific for edge wiring, so child_specs drives only the
+    # prefix derivation; the suffix per branch is looked up by object identity.
+    suffix_for = {id(child): suffix for child, suffix in cond.child_specs()}
+    then_prefix = f"{ctx.prefix}_{suffix_for[id(cond.then_branch)]}"
+    branch_children: list[tuple[Primitive, str]] = [(cond.then_branch, then_prefix)]
     if cond.else_branch is not None:
-        branch_children.append((cond.else_branch, f"{ctx.prefix}_else"))
+        else_prefix = f"{ctx.prefix}_{suffix_for[id(cond.else_branch)]}"
+        branch_children.append((cond.else_branch, else_prefix))
     sub_state_type = _state_type_with_retry_channels("CondState", fields, branch_children)
     sub_graph = StateGraph(sub_state_type)
 
     router_id = f"{ctx.prefix}_router"
     merge_id = f"{ctx.prefix}_merge"
 
-    then_entry, then_exit = _compile_node(
-        sub_graph, cond.then_branch, ctx.child(f"{ctx.prefix}_then")
-    )
+    then_entry, then_exit = _compile_node(sub_graph, cond.then_branch, ctx.child(then_prefix))
 
     if cond.else_branch is not None:
         else_entry, else_exit = _compile_node(
-            sub_graph, cond.else_branch, ctx.child(f"{ctx.prefix}_else")
+            sub_graph,
+            cond.else_branch,
+            ctx.child(else_prefix),  # type: ignore[possibly-undefined]
         )
         targets = [then_entry, else_entry]
     else:
@@ -513,20 +525,12 @@ def _compile_loop(
     loop_in, loop_out = get_type_args(loop)
     body_in, body_out = get_type_args(loop.body)
 
-    # Compile body subgraph — state includes loop I/O + body I/O for accumulated context
-    all_types = [loop_in, loop_out, body_in, body_out]
-    fields: dict[str, Any] = {}
-    for model in all_types:
-        for name in model.model_fields:
-            fields[name] = Any
-    body_state_type = _state_type_with_retry_channels(
-        "LoopBodyState", fields, [(loop.body, f"{ctx.prefix}_body")]
+    ((body, body_suffix),) = loop.child_specs()
+    body_prefix = f"{ctx.prefix}_{body_suffix}"
+    # State includes loop I/O + body I/O for accumulated context.
+    compiled_body = _compile_body_subgraph(
+        "LoopBodyState", [loop_in, loop_out, body_in, body_out], body, body_prefix, ctx
     )
-    body_graph = StateGraph(body_state_type)
-    body_entry, body_exit = _compile_node(body_graph, loop.body, ctx.child(f"{ctx.prefix}_body"))
-    body_graph.set_entry_point(body_entry)
-    body_graph.add_edge(body_exit, END)
-    compiled_body = body_graph.compile()
 
     over_fn = loop.over
     item_key = loop.item_key
@@ -581,24 +585,18 @@ def _compile_retry(
     pause and resume as an outer-graph node and the backstop counter lives in a
     declared state channel rather than Python locals.
     """
-    retry_in, retry_out = get_type_args(retry)
-    body_in, body_out = get_type_args(retry.body)
+    by_role = {suffix: child for child, suffix in retry.child_specs()}
+    body = by_role[Retry.BODY_SUFFIX]
+    resolver = by_role.get(Retry.RESOLVER_SUFFIX)
     prefix = ctx.prefix
 
-    # Compile body subgraph — state includes retry I/O + body I/O for accumulated context
-    all_types = [retry_in, retry_out, body_in, body_out]
-    fields: dict[str, Any] = {}
-    for model in all_types:
-        for name in model.model_fields:
-            fields[name] = Any
-    body_state_type = _state_type_with_retry_channels(
-        "RetryBodyState", fields, [(retry.body, f"{prefix}_body")]
+    retry_in, retry_out = get_type_args(retry)
+    body_in, body_out = get_type_args(body)
+    body_prefix = f"{prefix}_{Retry.BODY_SUFFIX}"
+    # State includes retry I/O + body I/O for accumulated context.
+    compiled_body = _compile_body_subgraph(
+        "RetryBodyState", [retry_in, retry_out, body_in, body_out], body, body_prefix, ctx
     )
-    body_graph = StateGraph(body_state_type)
-    body_entry, body_exit = _compile_node(body_graph, retry.body, ctx.child(f"{prefix}_body"))
-    body_graph.set_entry_point(body_entry)
-    body_graph.add_edge(body_exit, END)
-    compiled_body = body_graph.compile()
 
     until_fn = retry.until
     max_attempts = retry.max_attempts
@@ -609,7 +607,7 @@ def _compile_retry(
     )
 
     retry_id = f"{prefix}_retry"
-    resolver_id = f"{prefix}_resolver"
+    resolver_id = f"{prefix}_{Retry.RESOLVER_SUFFIX}"
     reentry_id = f"{prefix}_reentry"
     abort_id = f"{prefix}_abort"
     merge_id = f"{prefix}_merge"
@@ -749,7 +747,7 @@ def _compile_retry(
         return _retry_exhausted(current_state, reason, failures)
 
     # -- Resolver node: emits a ResolverDisposition into state --
-    if retry.on_max_attempts_resolver is None:
+    if resolver is None:
 
         def unset_resolver_node(state: dict[str, Any]) -> dict[str, Any]:
             return {
@@ -762,9 +760,7 @@ def _compile_retry(
         resolver_entry = resolver_id
         resolver_exit = resolver_id
     else:
-        resolver_entry, resolver_exit = _compile_node(
-            graph, retry.on_max_attempts_resolver, ctx.child(resolver_id)
-        )
+        resolver_entry, resolver_exit = _compile_node(graph, resolver, ctx.child(resolver_id))
 
     def retry_router(state: dict[str, Any]) -> str:
         return merge_id if state.get(retry_route_key) == "pass" else resolver_entry

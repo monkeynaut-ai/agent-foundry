@@ -2,13 +2,7 @@
 
 from __future__ import annotations
 
-from agent_foundry.primitives.models import (
-    Conditional,
-    Loop,
-    Primitive,
-    Retry,
-    Sequence,
-)
+from agent_foundry.primitives.models import Primitive
 from agent_foundry.primitives.validators import validate_primitive
 
 
@@ -33,13 +27,6 @@ class PrimitivePlan:
     def _walk(self, prim: Primitive) -> list[Primitive]:
         """Recursively collect all Primitive instances in the graph."""
         result = [prim]
-        if isinstance(prim, Sequence):
-            for step in prim.steps:
-                result.extend(self._walk(step))
-        elif isinstance(prim, (Loop, Retry)):
-            result.extend(self._walk(prim.body))
-        elif isinstance(prim, Conditional):
-            result.extend(self._walk(prim.then_branch))
-            if prim.else_branch is not None:
-                result.extend(self._walk(prim.else_branch))
+        for child, _ in prim.child_specs():
+            result.extend(self._walk(child))
         return result

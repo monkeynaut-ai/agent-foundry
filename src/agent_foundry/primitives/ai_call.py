@@ -47,5 +47,8 @@ class AICall[I: BaseModel, O: BaseModel](Primitive[I, O], arbitrary_types_allowe
     compile time and raises ``PrimitiveCompilationError`` for sync callables.
     """
 
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        return []
+
 
 AICall.model_rebuild()
