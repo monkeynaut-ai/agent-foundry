@@ -29,6 +29,19 @@ class AttemptOutcome(StrEnum):
     NOT_PASSED = "not_passed"
 
 
+class RetryRoute(StrEnum):
+    """Branch marker a Retry node writes into its scoped route channel.
+
+    The automated/re-entry nodes write one of these; the conditional-edge router
+    reads it to pick the next node. PASS exits to merge; EXHAUSTED enters the
+    resolver cycle; NOT_PASSED returns from re-entry to the resolver.
+    """
+
+    PASS = "pass"
+    EXHAUSTED = "exhausted"
+    NOT_PASSED = "not_passed"
+
+
 class RetryExhaustionReason(StrEnum):
     """Why a Retry primitive exhausted all attempts without until() returning True.
 
