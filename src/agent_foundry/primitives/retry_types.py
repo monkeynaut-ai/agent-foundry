@@ -92,7 +92,8 @@ class ResolverDisposition(BaseModel):
 class RetryAborted(Exception):
     """Raised when a resolver returns ABORT. Carries the abort reason.
 
-    Terminates the run via the raise path (clean-signal variant deferred).
+    An internal unwind signal: the runner catches it and converts it to a
+    RunAborted outcome; it does not escape run_primitive_plan.
     """
 
     def __init__(self, reason: str) -> None:
@@ -103,7 +104,8 @@ class RetryAborted(Exception):
 class ResolverDidNotConvergeError(Exception):
     """Raised when consecutive RETRY re-entries hit the safety backstop ceiling.
 
-    A safety invariant trip, not an intentional abort.
+    A safety invariant trip, not an intentional abort. The runner catches it
+    and surfaces it as a RunFailed(error_kind=BACKSTOP) outcome.
     """
 
     def __init__(self, ceiling: int) -> None:

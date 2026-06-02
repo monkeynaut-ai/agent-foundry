@@ -37,9 +37,20 @@ from agent_foundry.orchestration.run_context import (
     RunStartingEvent,
     current_run_context,
 )
+from agent_foundry.orchestration.run_outcome import (
+    FailureKind,
+    RunAborted,
+    RunCompleted,
+    RunFailed,
+    RunOutcome,
+)
 from agent_foundry.orchestration.summary import render_summary
 from agent_foundry.primitives.models import get_type_args
 from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.primitives.retry_types import (
+    ResolverDidNotConvergeError,
+    RetryAborted,
+)
 from agent_foundry.responders.protocol import ResponderProvider
 from agent_foundry.telemetry import setup as telemetry_setup
 from agent_foundry.telemetry.config import TelemetryConfig
@@ -87,7 +98,7 @@ async def run_primitive_plan(
     telemetry: TelemetryConfig | None = None,
     extra_env: dict[str, str] | None = None,
     extra_volumes: dict[str, dict[str, str]] | None = None,
-) -> BaseModel:
+) -> RunOutcome:
     """Execute a :class:`PrimitivePlan` with full orchestration wiring.
 
     Bootstraps the run artifacts directory, builds a
@@ -98,14 +109,22 @@ async def run_primitive_plan(
     ``on_run_starting`` hooks (each receiving a :class:`RunStartingEvent`),
     and invokes the compiled graph via :meth:`ainvoke`.
 
+    Returns exactly one :class:`RunOutcome` and never re-raises an
+    in-graph exception. The body's four terminal conditions classify as:
+    a clean graph return → ``RunCompleted``; a ``RetryAborted`` →
+    ``RunAborted``; a ``ResolverDidNotConvergeError`` →
+    ``RunFailed(BACKSTOP)``; any other ``BaseException`` →
+    ``RunFailed(CRASH)``. Exceptions raised before the graph runs (e.g.
+    telemetry setup) still propagate.
+
     Teardown (``finally``) always runs: writes exactly ONE terminal
-    lifecycle event (``RUN_FAILED`` if the body raised, ``RUN_ENDED``
-    otherwise), shuts down the registry, renders ``summary.txt``,
-    invokes ``on_run_ended`` hooks (each receiving a
-    :class:`RunEndedEvent` carrying the context, the captured
-    exception or None, and the final output model or None), then
-    resets the ContextVar and signal handlers — even on cancel or
-    agent failure.
+    lifecycle event (``RUN_ENDED`` / ``RUN_ABORTED`` / ``RUN_FAILED`` per
+    outcome, with ``error_kind`` on the ``RUN_FAILED`` record), shuts down
+    the registry, renders ``summary.txt``, invokes ``on_run_ended`` hooks
+    (each receiving a :class:`RunEndedEvent` carrying the context, the
+    typed outcome, the captured exception or None, and the final output
+    model or None), then resets the ContextVar and signal handlers — even
+    on cancel or agent failure.
     """
     resolved_run_id = run_id if run_id is not None else uuid.uuid4().hex
 
@@ -188,21 +207,47 @@ async def run_primitive_plan(
 
     caught_exc: BaseException | None = None
     final_output: BaseModel | None = None
+    outcome: RunOutcome
+    # Clause ordering is load-bearing: RetryAborted and
+    # ResolverDidNotConvergeError must precede the broad except BaseException,
+    # else they fall into the CRASH path.
     try:
         graph = compile_runtime_plan(plan)
         result_dict = await graph.ainvoke(initial_state.model_dump())
         final_output = root_out.model_validate(result_dict)
-        return final_output
+        outcome = RunCompleted(output=final_output)
+    except RetryAborted as aborted:
+        outcome = RunAborted(reason=aborted.reason)
+    except ResolverDidNotConvergeError as backstop:
+        caught_exc = backstop
+        outcome = RunFailed(
+            error_kind=FailureKind.BACKSTOP,
+            error_type=type(backstop).__name__,
+            message=str(backstop),
+        )
     except BaseException as exc:
         caught_exc = exc
-        raise
+        outcome = RunFailed(
+            error_kind=FailureKind.CRASH,
+            error_type=type(exc).__name__,
+            message=str(exc),
+        )
     finally:
         # Order matters:
         #   1. Write the terminal lifecycle event so the JSONL stream has
         #      a terminal record before downstream consumers (render_summary,
-        #      on_close hooks) read it.
-        terminal = LifecycleEvent.RUN_FAILED if caught_exc is not None else LifecycleEvent.RUN_ENDED
-        lifecycle.append(terminal, run_id=resolved_run_id)
+        #      on_close hooks) read it. error_kind rides the RUN_FAILED record
+        #      so render_summary reads one field.
+        if isinstance(outcome, RunAborted):
+            terminal = LifecycleEvent.RUN_ABORTED
+        elif isinstance(outcome, RunFailed):
+            terminal = LifecycleEvent.RUN_FAILED
+        else:
+            terminal = LifecycleEvent.RUN_ENDED
+        extra_fields = (
+            {"error_kind": outcome.error_kind.value} if isinstance(outcome, RunFailed) else {}
+        )
+        lifecycle.append(terminal, run_id=resolved_run_id, **extra_fields)
         #   2. Existing teardown that produces files in artifacts_dir
         #      (registry.shutdown_all, render_summary). Each remains in
         #      its own try/except so a teardown failure can't prevent
@@ -224,6 +269,7 @@ async def run_primitive_plan(
                 run_context=run_ctx,
                 exception=caught_exc,
                 output=final_output,
+                outcome=outcome,
             ),
             label="on_run_ended",
         )
@@ -244,3 +290,7 @@ async def run_primitive_plan(
                     "TracerProvider.shutdown raised during teardown",
                     exc_info=True,
                 )
+
+    # Placed after try/finally so the finally block runs exactly once before
+    # every terminal path returns its classified envelope.
+    return outcome

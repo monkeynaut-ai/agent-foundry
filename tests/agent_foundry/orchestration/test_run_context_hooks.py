@@ -15,6 +15,7 @@ from agent_foundry.orchestration.run_context import (
     RunEndedEvent,
     RunStartingEvent,
 )
+from agent_foundry.orchestration.run_outcome import FailureKind, RunAborted, RunFailed
 
 
 def _ctx(tmp_path: Path, **overrides) -> RunContext:
@@ -29,6 +30,22 @@ def _ctx(tmp_path: Path, **overrides) -> RunContext:
     )
     kwargs.update(overrides)
     return RunContext(**kwargs)
+
+
+def test_run_ended_event_defaults_no_outcome(tmp_path: Path) -> None:
+    ev = RunEndedEvent(run_context=_ctx(tmp_path))
+    assert ev.outcome is None
+    assert ev.exception is None
+    assert ev.output is None
+
+
+def test_run_ended_event_carries_aborted_outcome(tmp_path: Path) -> None:
+    ev = RunEndedEvent(
+        run_context=_ctx(tmp_path),
+        outcome=RunAborted(reason="declined"),
+    )
+    assert isinstance(ev.outcome, RunAborted)
+    assert ev.outcome.reason == "declined"
 
 
 def test_run_context_on_run_starting_default_empty(tmp_path: Path) -> None:
@@ -163,23 +180,26 @@ async def test_run_primitive_plan_invokes_on_run_ended_with_exception_and_none_o
     action = FunctionAction[_State, _State](function=boom)
     plan = PrimitivePlan(root=action)
 
-    with pytest.raises(RuntimeError, match="boom"):
-        await run_primitive_plan(
-            plan,
-            initial_state=_State(),
-            artifacts_dir=tmp_path,
-            workspace_volume="vol",
-            base_image_tag="img",
-            responder_provider=lambda _id: lambda *a, **k: None,
-            run_id="run-fail",
-            on_run_ended=[observed.append],
-        )
+    result = await run_primitive_plan(
+        plan,
+        initial_state=_State(),
+        artifacts_dir=tmp_path,
+        workspace_volume="vol",
+        base_image_tag="img",
+        responder_provider=lambda _id: lambda *a, **k: None,
+        run_id="run-fail",
+        on_run_ended=[observed.append],
+    )
+
+    assert isinstance(result, RunFailed)
+    assert result.error_kind is FailureKind.CRASH
 
     assert len(observed) == 1
     event = observed[0]
     assert isinstance(event.exception, RuntimeError)
     assert "boom" in str(event.exception)
     assert event.output is None
+    assert isinstance(event.outcome, RunFailed)
 
 
 @pytest.mark.asyncio
@@ -202,16 +222,17 @@ async def test_run_primitive_plan_writes_run_failed_lifecycle_event(
     action = FunctionAction[_State, _State](function=boom)
     plan = PrimitivePlan(root=action)
 
-    with pytest.raises(RuntimeError, match="boom"):
-        await run_primitive_plan(
-            plan,
-            initial_state=_State(),
-            artifacts_dir=tmp_path,
-            workspace_volume="vol",
-            base_image_tag="img",
-            responder_provider=lambda _id: lambda *a, **k: None,
-            run_id="run-fail-lc",
-        )
+    result = await run_primitive_plan(
+        plan,
+        initial_state=_State(),
+        artifacts_dir=tmp_path,
+        workspace_volume="vol",
+        base_image_tag="img",
+        responder_provider=lambda _id: lambda *a, **k: None,
+        run_id="run-fail-lc",
+    )
+
+    assert isinstance(result, RunFailed)
 
     lifecycle_path = next(tmp_path.rglob("lifecycle.jsonl"))
     events = [json.loads(line) for line in lifecycle_path.read_text().splitlines()]

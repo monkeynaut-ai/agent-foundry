@@ -18,6 +18,7 @@ class LifecycleEvent(StrEnum):
     RUN_STARTED = "run_started"
     RUN_ENDED = "run_ended"
     RUN_FAILED = "run_failed"
+    RUN_ABORTED = "run_aborted"
     AGENT_CONTAINER_STARTED = "agent_container_started"
     AGENT_INVOCATION_STARTED = "agent_invocation_started"
     AGENT_INVOCATION_COMPLETED = "agent_invocation_completed"

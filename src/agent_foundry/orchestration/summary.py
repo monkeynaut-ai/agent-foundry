@@ -77,6 +77,9 @@ def render_summary(run_dir: Path) -> None:
     run_started_at: datetime | None = None
     run_ended_at: datetime | None = None
     run_failed = False
+    run_aborted = False
+    abort_reason: str | None = None
+    failure_kind: str | None = None
 
     stats: dict[str, _AgentStats] = {}
     failure_records: list[dict] = []
@@ -107,6 +110,17 @@ def render_summary(run_dir: Path) -> None:
                 elif event_type == LifecycleEvent.RUN_FAILED.value:
                     run_ended_at = ts
                     run_failed = True
+                    kind = record.get("error_kind")
+                    if isinstance(kind, str):
+                        failure_kind = kind
+                elif event_type == LifecycleEvent.RUN_ABORTED.value:
+                    run_ended_at = ts
+                    run_aborted = True
+                elif event_type == LifecycleEvent.RESOLVER_DISPOSITION.value:
+                    if record.get("kind") == "abort":
+                        reason = record.get("reason")
+                        if isinstance(reason, str):
+                            abort_reason = reason
                 elif event_type == LifecycleEvent.AGENT_INVOCATION_STARTED.value:
                     agent = record.get("agent")
                     if not isinstance(agent, str):
@@ -141,7 +155,12 @@ def render_summary(run_dir: Path) -> None:
     if run_ended_at is not None:
         end_str = run_ended_at.isoformat()
         duration_str = _format_duration(run_started_at, run_ended_at)
-        status = "failed" if run_failed else "completed"
+        if run_aborted:
+            status = "aborted"
+        elif run_failed:
+            status = "failed"
+        else:
+            status = "completed"
         header = f"Run {display_run_id} — started {start_str}, {status} {end_str} ({duration_str})"
     else:
         header = f"Run {display_run_id} — started {start_str}, ended (incomplete)"
@@ -169,6 +188,10 @@ def render_summary(run_dir: Path) -> None:
         lines.append("")
 
     lines.append(header)
+    if run_aborted and abort_reason:
+        lines.append(f"Abort reason: {abort_reason}")
+    if run_failed and failure_kind:
+        lines.append(f"Failure kind: {failure_kind}")
     lines.append("")
 
     if failure_records:

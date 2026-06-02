@@ -14,6 +14,7 @@ EXPECTED_MEMBERS = {
     "RUN_STARTED",
     "RUN_ENDED",
     "RUN_FAILED",
+    "RUN_ABORTED",
     "AGENT_CONTAINER_STARTED",
     "AGENT_INVOCATION_STARTED",
     "AGENT_INVOCATION_COMPLETED",
@@ -54,3 +55,7 @@ def test_lifecycle_event_values_are_lowercased_member_names() -> None:
 def test_lifecycle_event_member_set_is_exact() -> None:
     actual = {member.name for member in LifecycleEvent}
     assert actual == EXPECTED_MEMBERS
+
+
+def test_run_aborted_event_value() -> None:
+    assert LifecycleEvent.RUN_ABORTED.value == "run_aborted"
