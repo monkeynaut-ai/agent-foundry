@@ -12,14 +12,11 @@ authors = [
 dependencies = [
     "pydantic>=2.12.5",
     "pytest>=9.0.2",
-    "pyyaml>=6.0.3",
     "python-dotenv>=1.2.1",
     "jsonschema>=4.26.0",
     "docker>=7.1.0",
     "pexpect>=4.9.0",
     "langgraph>=1.1.2",
-    "markdown-it-py>=4.0.0",
-    "jinja2>=3.1.0",
     "opentelemetry-api>=1.41.1",
     "opentelemetry-sdk>=1.41.1",
     "opentelemetry-exporter-otlp-proto-http>=1.41.1",
@@ -27,6 +24,7 @@ dependencies = [
     "pydantic-evals>=1.96.1",
     "fastapi>=0.136.1",
     "uvicorn[standard]>=0.47.0",
+    "archetype @ file:///${PROJECT_ROOT}/../archetype",
 ]
 requires-python = "==3.14.*"
 readme = "README.md"

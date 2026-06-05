@@ -13,6 +13,8 @@ hide/
 .tmp/
 *.db
 
+.claude/worktrees
+
 # Eval harness run artifacts
 **/.runs/
 **/runs/
