@@ -14,9 +14,12 @@ run both inside and outside a plan doesn't need special-case branches.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent_foundry.orchestration.run_context import current_run_context
+
+if TYPE_CHECKING:
+    from agent_foundry.responders.protocol import Responder
 
 
 def emit(kind: str, **fields: Any) -> None:
@@ -57,4 +60,21 @@ def cancelled() -> bool:
     return ctx.cancel_event.is_set()
 
 
-__all__ = ["artifacts_dir", "cancelled", "emit", "run_id"]
+def responder() -> Responder | None:
+    """Return the run's resolved operator responder, or ``None``.
+
+    Returns ``None`` outside a run, and ``None`` when the active run was
+    started without a responder provider. Inside a run with a provider,
+    resolves and returns the ``Responder`` so async product code can
+    ``await responder().respond(request, context)``.
+    """
+    ctx = current_run_context.get()
+    if ctx is None:
+        return None
+    provider = ctx.responder_provider
+    if provider is None:
+        return None
+    return provider()
+
+
+__all__ = ["artifacts_dir", "cancelled", "emit", "responder", "run_id"]

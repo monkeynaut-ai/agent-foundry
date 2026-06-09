@@ -741,3 +741,16 @@ class TestAICallValidation:
         )
         seq = Sequence[_AIReqInput, _AIReqOutput](steps=[action])
         validate_primitive(seq)  # must not raise
+
+
+class TestAsyncFunctionActionValidation:
+    """AsyncFunctionAction is registered with a validator (no unknown-type)."""
+
+    def test_validates_without_raising(self):
+        from agent_foundry.primitives.models import AsyncFunctionAction
+
+        async def fn(state: StateA) -> StateA:
+            return state
+
+        action = AsyncFunctionAction[StateA, StateA](function=fn)
+        validate_primitive(action)  # must not raise

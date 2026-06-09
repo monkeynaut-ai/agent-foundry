@@ -185,6 +185,45 @@ class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
         return []
 
 
+class AsyncFunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
+    """An asynchronous in-process function call that runs ON the event loop.
+
+    Wraps a coroutine function transforming input state to output state.
+    The callable is awaited directly on the executing loop, so it may
+    ``await`` run-scoped async resources — most notably the operator
+    responder via ``agent_foundry.runtime.responder()``.
+
+    Because the callable runs on the loop rather than a worker thread, a
+    blocking or CPU-bound call inside it stalls the entire loop. Keep the
+    body non-blocking (only ``await`` real coroutines); push synchronous,
+    blocking, or CPU-bound work into a ``FunctionAction`` instead.
+    """
+
+    function: Callable[[I], Awaitable[O]]
+    """The coroutine invoked by the compiled node.
+
+    Signature is ``async (state) -> O``. For run-scoped state (emit domain
+    events, read artifacts_dir, check cancellation, reach the responder),
+    import accessors from ``agent_foundry.runtime``:
+
+        from agent_foundry import runtime
+
+        async def my_function(state: StateA) -> StateB:
+            resp = runtime.responder()
+            answer = await resp.respond(request, context)
+            return StateB(...)
+
+    No need to accept ``run_ctx`` as a parameter.
+    """
+    name: str | None = Field(default=None, min_length=1)
+    """Diagnostic label for lifecycle events and logs. Not used for composition
+    or lookup. Optional — when None the compiler falls back to the positional
+    node_id."""
+
+    def child_specs(self) -> list[tuple[Primitive, str]]:
+        return []
+
+
 class GateAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     """Block execution until external input is received.
 
@@ -309,5 +348,6 @@ Loop.model_rebuild()
 Retry.model_rebuild()
 Conditional.model_rebuild()
 FunctionAction.model_rebuild()
+AsyncFunctionAction.model_rebuild()
 GateAction.model_rebuild()
 AgentAction.model_rebuild()

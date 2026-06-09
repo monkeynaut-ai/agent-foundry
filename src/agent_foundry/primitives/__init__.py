@@ -16,6 +16,7 @@ from agent_foundry.primitives.mcp import (
 )
 from agent_foundry.primitives.models import (
     AgentAction,
+    AsyncFunctionAction,
     Conditional,
     ContainerReusePolicy,
     FunctionAction,
@@ -39,6 +40,7 @@ from agent_foundry.primitives.validators import register_validator, validate_pri
 
 __all__ = [
     "AgentAction",
+    "AsyncFunctionAction",
     "AttemptFailure",
     "AttemptOutcome",
     "ClaudeEffort",
