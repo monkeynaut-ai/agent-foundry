@@ -10,6 +10,7 @@
   "env": {
     "DISABLE_AUTOUPDATER": "1",
     "CLAUDE_CODE_TMPDIR": "/tmp",
-    "ENABLE_LSP_TOOL": "1"
+    "ENABLE_LSP_TOOL": "1",
+    "BASH_DEFAULT_TIMEOUT_MS": "600000"
   }
 }
