@@ -1,6 +1,6 @@
 """Tests for the eval task builders' RunOutcome adaptation.
 
-``build_run_primitive_plan_task`` wraps ``run_primitive_plan`` (which
+``build_run_process_task`` wraps ``run_process`` (which
 returns a ``RunOutcome``) into the Inspect ``Task`` contract, which is
 exception-based: a completed run unwraps to its product output; a failed
 or aborted run raises.
@@ -13,7 +13,8 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.evals.agent_foundry_tasks import build_run_primitive_plan_task
+from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
+from agent_foundry.evals.agent_foundry_tasks import build_run_process_task
 from agent_foundry.orchestration import runner as runner_mod
 from agent_foundry.orchestration.run_outcome import (
     FailureKind,
@@ -21,7 +22,6 @@ from agent_foundry.orchestration.run_outcome import (
     RunCompleted,
     RunFailed,
 )
-from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
 
 class _In(BaseModel):
@@ -38,7 +38,7 @@ def _agent() -> AgentAction:
         model="claude-sonnet-4-6",
         prompt_builder=lambda s: s.task,
         instructions_provider=lambda _s: "i",
-        executor=lambda **_k: None,  # never called; run_primitive_plan is patched
+        executor=lambda **_k: None,  # never called; run_process is patched
         reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )
 
@@ -47,8 +47,8 @@ def _build_task(monkeypatch, outcome, tmp_path: Path):
     async def _fake_run(*_a, **_k):
         return outcome
 
-    monkeypatch.setattr(runner_mod, "run_primitive_plan", _fake_run)
-    return build_run_primitive_plan_task(
+    monkeypatch.setattr(runner_mod, "run_process", _fake_run)
+    return build_run_process_task(
         _agent(),
         artifacts_dir=tmp_path,
         workspace_volume="vol",

@@ -364,7 +364,7 @@ class FakeRunTurn:
 
     Tests pass an instance as ``run_turn=`` to ``run_agent_in_container``
     (or :func:`install_fake_run_turn` for the indirect path via
-    ``run_primitive_plan``). The instance exposes ``calls`` for
+    ``run_process``). The instance exposes ``calls`` for
     assertions about the prompt / resume id each turn saw.
 
     Parameters

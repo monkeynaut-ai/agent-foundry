@@ -7,13 +7,13 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
-from agent_foundry.primitives.errors import PrimitiveCompilationError
-from agent_foundry.primitives.models import (
+from agent_foundry.compiler.compiler import compile_process
+from agent_foundry.constructs.errors import ConstructCompilationError
+from agent_foundry.constructs.models import (
     AgentAction,
     ContainerReusePolicy,
 )
-from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.constructs.process import Process
 
 
 class AgentInput(BaseModel):
@@ -81,16 +81,16 @@ def _default_run_context(tmp_path):
 class TestAgentActionCompiler:
     """The AgentAction compiler node mirrors FunctionAction behavior.
 
-    The compiler calls ``action.executor(primitive=action, prompt=...)``.
+    The compiler calls ``action.executor(construct=action, prompt=...)``.
     Tests supply their executor directly on the AgentAction — no monkey-
-    patching, because the executor is an explicit field on the primitive.
+    patching, because the executor is an explicit field on the construct.
     """
 
-    def test_executor_called_with_primitive_and_prompt(self):
+    def test_executor_called_with_construct_and_prompt(self):
         captured: dict[str, Any] = {}
 
-        def _executor(*, primitive, prompt, instructions, run_ctx):
-            captured["primitive"] = primitive
+        def _executor(*, construct, prompt, instructions, run_ctx):
+            captured["construct"] = construct
             captured["prompt"] = prompt
             return AgentOutput(answer="42")
 
@@ -102,14 +102,14 @@ class TestAgentActionCompiler:
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        plan = PrimitivePlan(root=action)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=action)
+        graph = compile_process(process)
 
         graph.invoke({"query": "hello"})
 
         assert _prompts_built == ["Q: hello"]
         assert captured["prompt"] == "Q: hello"
-        assert captured["primitive"] is action
+        assert captured["construct"] is action
 
     def test_instructions_provider_receives_input_state(self):
         """The compiler resolves instructions against the input state and
@@ -120,7 +120,7 @@ class TestAgentActionCompiler:
             captured["state"] = state
             return f"Instructions for query={state.query!r}"
 
-        def _executor(*, primitive, prompt, instructions, run_ctx):
+        def _executor(*, construct, prompt, instructions, run_ctx):
             captured["instructions"] = instructions
             return AgentOutput(answer="42")
 
@@ -132,8 +132,8 @@ class TestAgentActionCompiler:
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        plan = PrimitivePlan(root=action)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=action)
+        graph = compile_process(process)
 
         graph.invoke({"query": "probe"})
 
@@ -157,7 +157,7 @@ class TestAgentActionCompiler:
                 state=state,
             )
 
-        def _executor(*, primitive, prompt, instructions, run_ctx):
+        def _executor(*, construct, prompt, instructions, run_ctx):
             captured["instructions"] = instructions
             return AgentOutput(answer="ok")
 
@@ -169,15 +169,15 @@ class TestAgentActionCompiler:
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        plan = PrimitivePlan(root=action)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=action)
+        graph = compile_process(process)
 
         graph.invoke({"query": "hello"})
 
         assert captured["instructions"] == "Query was: hello"
 
     def test_missing_required_input_field_raises(self):
-        def _executor(*, primitive, prompt, instructions, run_ctx):
+        def _executor(*, construct, prompt, instructions, run_ctx):
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
@@ -188,14 +188,14 @@ class TestAgentActionCompiler:
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        plan = PrimitivePlan(root=action)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=action)
+        graph = compile_process(process)
 
-        with pytest.raises(PrimitiveCompilationError, match="Boundary validation failed"):
+        with pytest.raises(ConstructCompilationError, match="Boundary validation failed"):
             graph.invoke({})  # missing `query`
 
     def test_executor_output_merged_into_state(self):
-        def _executor(*, primitive, prompt, instructions, run_ctx):
+        def _executor(*, construct, prompt, instructions, run_ctx):
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
@@ -206,8 +206,8 @@ class TestAgentActionCompiler:
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        plan = PrimitivePlan(root=action)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=action)
+        graph = compile_process(process)
 
         result = graph.invoke({"query": "hello"})
 
@@ -217,7 +217,7 @@ class TestAgentActionCompiler:
         class WrongType(BaseModel):
             other: str
 
-        def _executor(*, primitive, prompt, instructions, run_ctx):
+        def _executor(*, construct, prompt, instructions, run_ctx):
             return WrongType(other="oops")
 
         action = AgentAction[AgentInput, AgentOutput](
@@ -233,10 +233,10 @@ class TestAgentActionCompiler:
             executor=_executor,  # type: ignore[arg-type]
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        plan = PrimitivePlan(root=action)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=action)
+        graph = compile_process(process)
 
-        with pytest.raises(PrimitiveCompilationError, match="AgentOutput"):
+        with pytest.raises(ConstructCompilationError, match="AgentOutput"):
             graph.invoke({"query": "hello"})
 
     def test_compiles_with_empty_lockdown_dirs(self):
@@ -247,7 +247,7 @@ class TestAgentActionCompiler:
         empty dirs.
         """
 
-        def _executor(*, primitive, prompt, instructions, run_ctx):
+        def _executor(*, construct, prompt, instructions, run_ctx):
             return AgentOutput(answer="42")
 
         action = AgentAction[AgentInput, AgentOutput](
@@ -259,8 +259,8 @@ class TestAgentActionCompiler:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             # visible_dirs and writable_dirs default to empty.
         )
-        plan = PrimitivePlan(root=action)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=action)
+        graph = compile_process(process)
 
         result = graph.invoke({"query": "hello"})
 
@@ -280,7 +280,7 @@ class TestAgentActionCompiler_ExceptionPropagation:
     """Executor exceptions propagate through the compiled node."""
 
     def test_executor_exception_propagates(self):
-        def _executor(*, primitive, prompt, instructions, run_ctx):
+        def _executor(*, construct, prompt, instructions, run_ctx):
             raise _ExecutorFailure("agent failed")
 
         action = AgentAction[AgentInput, AgentOutput](
@@ -291,8 +291,8 @@ class TestAgentActionCompiler_ExceptionPropagation:
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        plan = PrimitivePlan(root=action)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=action)
+        graph = compile_process(process)
 
         with pytest.raises(_ExecutorFailure, match="agent failed"):
             graph.invoke({"query": "hello"})
@@ -321,7 +321,7 @@ class SeqOutput(BaseModel):
 class TestAgentActionCompiler_Composition:
     @pytest.mark.asyncio
     async def test_agent_action_inside_sequence(self):
-        from agent_foundry.primitives.models import FunctionAction, Sequence
+        from agent_foundry.constructs.models import FunctionAction, Sequence
 
         class AgentStepInput(BaseModel):
             query: str
@@ -329,7 +329,7 @@ class TestAgentActionCompiler_Composition:
         class AgentStepOutput(BaseModel):
             answer: str
 
-        def _executor(*, primitive, prompt, instructions, run_ctx):
+        def _executor(*, construct, prompt, instructions, run_ctx):
             return AgentStepOutput(answer="42")
 
         agent_step = AgentAction[AgentStepInput, AgentStepOutput](
@@ -348,8 +348,8 @@ class TestAgentActionCompiler_Composition:
             ),
         )
         seq = Sequence[SeqInput, SeqOutput](steps=[agent_step, annotate_step])
-        plan = PrimitivePlan(root=seq)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=seq)
+        graph = compile_process(process)
 
         result = await graph.ainvoke({"query": "hello"})
 
@@ -365,7 +365,7 @@ class TestAgentActionCompiler_Composition:
         before validation, even if the agent's input forbids extras."""
         from pydantic import ConfigDict
 
-        from agent_foundry.primitives.models import FunctionAction, Sequence
+        from agent_foundry.constructs.models import FunctionAction, Sequence
 
         class StrictAgentInput(BaseModel):
             model_config = ConfigDict(extra="forbid")
@@ -378,7 +378,7 @@ class TestAgentActionCompiler_Composition:
         class AgentStepOutput(BaseModel):
             answer: str
 
-        def _executor(*, primitive, prompt, instructions, run_ctx):
+        def _executor(*, construct, prompt, instructions, run_ctx):
             return AgentStepOutput(answer="42")
 
         step1 = FunctionAction[SeqInput, Step1Out](
@@ -393,8 +393,8 @@ class TestAgentActionCompiler_Composition:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
         seq = Sequence[SeqInput, AgentStepOutput](steps=[step1, agent_step])
-        plan = PrimitivePlan(root=seq)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=seq)
+        graph = compile_process(process)
 
         result = await graph.ainvoke({"query": "hello"})
         assert result["answer"] == "42"
@@ -407,7 +407,7 @@ class TestAgentActionCompiler_Composition:
 
 class TestAgentActionCompiler_RunCtxThreading:
     """The AgentAction compiled node must call
-    ``action.executor(primitive=action, prompt=<built>, run_ctx=<ctx>)``,
+    ``action.executor(construct=action, prompt=<built>, run_ctx=<ctx>)``,
     where ``run_ctx`` is pulled from the ``current_run_context``
     ContextVar at invocation time (not capture/compile time).
     """
@@ -423,8 +423,8 @@ class TestAgentActionCompiler_RunCtxThreading:
 
         captured: dict[str, Any] = {}
 
-        def _executor(*, primitive, prompt, instructions, run_ctx):
-            captured["primitive"] = primitive
+        def _executor(*, construct, prompt, instructions, run_ctx):
+            captured["construct"] = construct
             captured["prompt"] = prompt
             captured["run_ctx"] = run_ctx
             return AgentOutput(answer="ok")
@@ -437,8 +437,8 @@ class TestAgentActionCompiler_RunCtxThreading:
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        plan = PrimitivePlan(root=action)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=action)
+        graph = compile_process(process)
 
         run_ctx = RunContext(
             run_id="run-g1-agent",
@@ -456,7 +456,7 @@ class TestAgentActionCompiler_RunCtxThreading:
         finally:
             current_run_context.reset(token)
 
-        assert captured["primitive"] is action
+        assert captured["construct"] is action
         assert captured["prompt"] == "Q: hello"
         assert captured["run_ctx"] is run_ctx
         assert result["answer"] == "ok"
@@ -478,7 +478,7 @@ class TestAgentActionCompiler_RunCtxThreading:
 
         observed: list[RunContext] = []
 
-        def _executor(*, primitive, prompt, instructions, run_ctx):
+        def _executor(*, construct, prompt, instructions, run_ctx):
             observed.append(run_ctx)
             return AgentOutput(answer="ok")
 
@@ -490,8 +490,8 @@ class TestAgentActionCompiler_RunCtxThreading:
             executor=_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        plan = PrimitivePlan(root=action)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=action)
+        graph = compile_process(process)
 
         run_ctx_a = RunContext(
             run_id="run-g1-late-bind-a",

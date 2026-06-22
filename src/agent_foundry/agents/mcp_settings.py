@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_foundry.primitives.mcp import McpServer, McpTransport
+from agent_foundry.constructs.mcp import McpServer, McpTransport
 
 
 def build_mcp_permissions(servers: dict[str, McpServer]) -> dict[str, Any]:

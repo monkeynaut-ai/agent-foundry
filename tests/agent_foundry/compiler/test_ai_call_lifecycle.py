@@ -1,5 +1,5 @@
 """AICall emits lifecycle events, and both AICall and FunctionAction
-events carry the primitive's ``name`` alongside the positional node_id.
+events carry the construct's ``name`` alongside the positional node_id.
 
 Before this, AICalls were invisible in lifecycle.jsonl (no AI_CALL_* event
 types existed) and FunctionAction events were keyed only by the positional
@@ -22,14 +22,14 @@ from agent_foundry.ai_models.inference import (
     InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
-from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
+from agent_foundry.compiler.compiler import compile_process
+from agent_foundry.constructs.ai_call import AICall, ModelInput
+from agent_foundry.constructs.models import FunctionAction
+from agent_foundry.constructs.process import Process
 from agent_foundry.models.usage import TokenUsage
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
 from agent_foundry.orchestration.run_context import RunContext, current_run_context
-from agent_foundry.primitives.ai_call import AICall, ModelInput
-from agent_foundry.primitives.models import FunctionAction
-from agent_foundry.primitives.plan import PrimitivePlan
 
 
 class _Input(BaseModel):
@@ -114,7 +114,7 @@ def writer(tmp_path: Any) -> Any:
 
 
 def test_ai_call_emits_started_and_completed_with_name(writer: _CapturingWriter) -> None:
-    graph = compile_runtime_plan(PrimitivePlan(_ai_call(name="design_correctness_review")))
+    graph = compile_process(Process(_ai_call(name="design_correctness_review")))
     asyncio.run(graph.ainvoke({"text": "x"}))
 
     assert LifecycleEvent.AI_CALL_STARTED in writer.types()
@@ -126,7 +126,7 @@ def test_ai_call_emits_started_and_completed_with_name(writer: _CapturingWriter)
 
 def test_ai_call_completed_carries_token_usage(writer: _CapturingWriter) -> None:
     provider = _OkProvider(usage=TokenUsage(input_tokens=30, output_tokens=12))
-    graph = compile_runtime_plan(PrimitivePlan(_ai_call(provider=provider)))
+    graph = compile_process(Process(_ai_call(provider=provider)))
     asyncio.run(graph.ainvoke({"text": "x"}))
 
     completed = writer.fields_for(LifecycleEvent.AI_CALL_COMPLETED)
@@ -140,7 +140,7 @@ def test_ai_call_completed_carries_token_usage(writer: _CapturingWriter) -> None
 def test_ai_call_completed_omits_usage_when_provider_reports_none(
     writer: _CapturingWriter,
 ) -> None:
-    graph = compile_runtime_plan(PrimitivePlan(_ai_call(provider=_OkProvider())))
+    graph = compile_process(Process(_ai_call(provider=_OkProvider())))
     asyncio.run(graph.ainvoke({"text": "x"}))
 
     completed = writer.fields_for(LifecycleEvent.AI_CALL_COMPLETED)
@@ -149,7 +149,7 @@ def test_ai_call_completed_omits_usage_when_provider_reports_none(
 
 
 def test_ai_call_emits_failed_on_provider_error(writer: _CapturingWriter) -> None:
-    graph = compile_runtime_plan(PrimitivePlan(_ai_call(name="rev", provider=_RaisingProvider())))
+    graph = compile_process(Process(_ai_call(name="rev", provider=_RaisingProvider())))
     with pytest.raises(ValueError):
         asyncio.run(graph.ainvoke({"text": "x"}))
 
@@ -160,7 +160,7 @@ def test_ai_call_emits_failed_on_provider_error(writer: _CapturingWriter) -> Non
 
 
 def test_ai_call_name_falls_back_to_node_id(writer: _CapturingWriter) -> None:
-    graph = compile_runtime_plan(PrimitivePlan(_ai_call(name=None)))
+    graph = compile_process(Process(_ai_call(name=None)))
     asyncio.run(graph.ainvoke({"text": "x"}))
 
     started = writer.fields_for(LifecycleEvent.AI_CALL_STARTED)
@@ -171,7 +171,7 @@ def test_function_action_event_carries_name(writer: _CapturingWriter) -> None:
     fa = FunctionAction[_Input, _Output](
         function=lambda s: _Output(result="y"), name="aggregate_design_verdict"
     )
-    graph = compile_runtime_plan(PrimitivePlan(fa))
+    graph = compile_process(Process(fa))
     asyncio.run(graph.ainvoke({"text": "x"}))
 
     started = writer.fields_for(LifecycleEvent.FUNCTION_ACTION_STARTED)

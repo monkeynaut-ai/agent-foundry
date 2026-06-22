@@ -9,6 +9,8 @@ from pydantic import BaseModel, ValidationError
 
 from agent_foundry.ai_models.inference import InferenceParameters
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
+from agent_foundry.constructs.ai_call import AICall, ModelInput
+from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
 from agent_foundry.evals.models import (
     AgentTarget,
     AICallTarget,
@@ -20,8 +22,6 @@ from agent_foundry.evals.models import (
     EvaluationReport,
     RunResult,
 )
-from agent_foundry.primitives.ai_call import AICall, ModelInput
-from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
 
 class _Input(BaseModel):
@@ -32,7 +32,7 @@ class _Output(BaseModel):
     result: str
 
 
-def _stub_executor(*, primitive, prompt, instructions, run_ctx) -> _Output:
+def _stub_executor(*, construct, prompt, instructions, run_ctx) -> _Output:
     return _Output(result="")
 
 

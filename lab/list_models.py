@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from dotenv import load_dotenv
 
-from agent_foundry.primitives import list_claude_models
+from agent_foundry.constructs import list_claude_models
 
 load_dotenv()
 

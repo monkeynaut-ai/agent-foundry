@@ -1,4 +1,4 @@
-"""AICall primitive — single LLM inference call with structured output."""
+"""AICall construct — single LLM inference call with structured output."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from agent_foundry.ai_models.inference import InferenceParameters
 from agent_foundry.ai_models.model import ModelEntry
-from agent_foundry.primitives.models import Primitive
+from agent_foundry.constructs.models import Construct
 
 
 class ModelInput[I: BaseModel](BaseModel):
@@ -18,10 +18,10 @@ class ModelInput[I: BaseModel](BaseModel):
     prompt: str | Callable[[I], str]
 
 
-class AICall[I: BaseModel, O: BaseModel](Primitive[I, O], arbitrary_types_allowed=True):
+class AICall[I: BaseModel, O: BaseModel](Construct[I, O], arbitrary_types_allowed=True):
     """Make a single LLM inference call and return structured output.
 
-    A leaf primitive — no children, no tool loop. Returns an instance of O
+    A leaf construct — no children, no tool loop. Returns an instance of O
     parsed from the model response.
     """
 
@@ -40,17 +40,17 @@ class AICall[I: BaseModel, O: BaseModel](Primitive[I, O], arbitrary_types_allowe
     path). Pass a custom callable to mock inference in tests, wrap with metrics,
     swap backends, or synthesize fallback verdicts on exception.
 
-    Contract: ``async (*, primitive: AICall[I, O], model_input: I) -> O``.
+    Contract: ``async (*, construct: AICall[I, O], model_input: I) -> O``.
     Parameter names match ``invoke_ai_call`` so consumers can wrap it,
     unwrapping its ``AICallResult``:
-    ``return (await invoke_ai_call(primitive=primitive, model_input=model_input)).output``.
+    ``return (await invoke_ai_call(construct=construct, model_input=model_input)).output``.
     A custom executor returns ``O`` directly and contributes no token usage
     to the ``AI_CALL_COMPLETED`` event; only the default path reports usage.
     Must be async — inference is always I/O. The compiler enforces this at
-    compile time and raises ``PrimitiveCompilationError`` for sync callables.
+    compile time and raises ``ConstructCompilationError`` for sync callables.
     """
 
-    def child_specs(self) -> list[tuple[Primitive, str]]:
+    def child_specs(self) -> list[tuple[Construct, str]]:
         return []
 
 

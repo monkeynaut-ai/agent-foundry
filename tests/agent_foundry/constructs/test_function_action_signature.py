@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from agent_foundry.primitives.models import FunctionAction
+from agent_foundry.constructs.models import FunctionAction
 
 
 class InputModel(BaseModel):
@@ -55,7 +55,7 @@ def test_function_action_function_annotation_resolves():
 # -- runtime.emit threading through compiled node --
 #
 # Pins the end-to-end contract that a FunctionAction whose function
-# calls ``runtime.emit`` inside a running plan reaches the active
+# calls ``runtime.emit`` inside a running process reaches the active
 # ``RunContext``'s lifecycle writer.
 
 
@@ -65,7 +65,7 @@ def test_function_action_callable_can_emit_via_runtime(tmp_path):
     from langgraph.graph import StateGraph
 
     from agent_foundry import runtime
-    from agent_foundry.compiler.primitive_compiler import (
+    from agent_foundry.compiler.compiler import (
         CompileContext,
         _compile_function_action,
     )

@@ -27,7 +27,7 @@ from agent_foundry.evals.models import (
     EqualsExpectedSpec,
     EvalSuite,
 )
-from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
+from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
 
 
 class _Input(BaseModel):
@@ -38,7 +38,7 @@ class _Output(BaseModel):
     result: str
 
 
-def _stub_executor(*, primitive, prompt, instructions, run_ctx):
+def _stub_executor(*, construct, prompt, instructions, run_ctx):
     return _Output(result="")
 
 
@@ -78,7 +78,7 @@ from agent_foundry.evals.models import (
     EqualsExpectedSpec,
     EvalSuite,
 )
-from agent_foundry.primitives.ai_call import AICall, ModelInput
+from agent_foundry.constructs.ai_call import AICall, ModelInput
 
 
 class _Input(BaseModel):

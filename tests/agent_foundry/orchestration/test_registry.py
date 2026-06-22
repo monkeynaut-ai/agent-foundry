@@ -18,6 +18,8 @@ import pytest
 from pydantic import BaseModel
 
 from agent_foundry.agents.lifecycle import HealthReport, HealthStatus
+from agent_foundry.constructs import StdioMcpServer
+from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
 from agent_foundry.orchestration.lifecycle_writer import (
     JsonlLifecycleWriter,
     LifecycleWriter,
@@ -27,8 +29,6 @@ from agent_foundry.orchestration.registry import (
     MCP_SETTINGS_PATH,
     AgentContainerRegistry,
 )
-from agent_foundry.primitives import StdioMcpServer
-from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
 from .fakes import FakeContainerManager, FakeDockerClient
 
@@ -41,7 +41,7 @@ class OutputModel(BaseModel):
     answer: str
 
 
-def _make_primitive() -> AgentAction[InputModel, OutputModel]:
+def _make_construct() -> AgentAction[InputModel, OutputModel]:
     return AgentAction[InputModel, OutputModel](
         name="test-agent",
         model="claude-sonnet-4-6",
@@ -82,8 +82,8 @@ async def test_get_or_create_creates_exactly_one_container_on_first_call(
     writer: LifecycleWriter,
     fake_docker: FakeDockerClient,
 ) -> None:
-    primitive = _make_primitive()
-    live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    construct = _make_construct()
+    live = await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
     assert live is not None
     assert len(fake_docker.containers.created) == 1
     # The returned LiveContainer exposes the handle and manager.
@@ -98,10 +98,10 @@ async def test_get_or_create_forwards_extra_volumes_to_create_container(
     writer: LifecycleWriter,
     fake_docker: FakeDockerClient,
 ) -> None:
-    primitive = _make_primitive()
+    construct = _make_construct()
     extra = {"/host/ca.crt": {"bind": "/etc/ca.crt", "mode": "ro"}}
     await registry.get_or_create(
-        primitive,
+        construct,
         lifecycle_writer=writer,
         agent_name="coder",
         extra_volumes=extra,
@@ -116,9 +116,9 @@ async def test_get_or_create_merges_extra_env_into_container_env(
     writer: LifecycleWriter,
     fake_docker: FakeDockerClient,
 ) -> None:
-    primitive = _make_primitive()
+    construct = _make_construct()
     await registry.get_or_create(
-        primitive,
+        construct,
         lifecycle_writer=writer,
         agent_name="coder",
         extra_env={"HTTPS_PROXY": "http://host.docker.internal:8080"},
@@ -128,14 +128,14 @@ async def test_get_or_create_merges_extra_env_into_container_env(
 
 
 @pytest.mark.asyncio
-async def test_get_or_create_is_idempotent_for_same_primitive(
+async def test_get_or_create_is_idempotent_for_same_construct(
     registry: AgentContainerRegistry,
     writer: LifecycleWriter,
     fake_docker: FakeDockerClient,
 ) -> None:
-    primitive = _make_primitive()
-    first = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
-    second = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    construct = _make_construct()
+    first = await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
+    second = await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
     assert first is second
     # No additional container created on the repeat call.
     assert len(fake_docker.containers.created) == 1
@@ -145,13 +145,13 @@ async def test_get_or_create_is_idempotent_for_same_primitive(
 
 
 @pytest.mark.asyncio
-async def test_distinct_primitives_get_distinct_containers(
+async def test_distinct_constructs_get_distinct_containers(
     registry: AgentContainerRegistry,
     writer: LifecycleWriter,
     fake_docker: FakeDockerClient,
 ) -> None:
-    prim_a = _make_primitive()
-    prim_b = _make_primitive()
+    prim_a = _make_construct()
+    prim_b = _make_construct()
     assert prim_a is not prim_b  # sanity: different identities
 
     live_a = await registry.get_or_create(prim_a, lifecycle_writer=writer, agent_name="a")
@@ -169,25 +169,25 @@ async def test_record_session_id_stamps_live_container(
     registry: AgentContainerRegistry,
     writer: LifecycleWriter,
 ) -> None:
-    primitive = _make_primitive()
-    live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    construct = _make_construct()
+    live = await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
     assert live.session_id is None
-    registry.record_session_id(primitive, "sess-1")
+    registry.record_session_id(construct, "sess-1")
 
-    # Same primitive key → must return the same LiveContainer with the id set.
-    again = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    # Same construct key → must return the same LiveContainer with the id set.
+    again = await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
     assert again is live
     assert again.session_id == "sess-1"
 
 
 @pytest.mark.asyncio
-async def test_record_session_id_unknown_primitive_is_noop(
+async def test_record_session_id_unknown_construct_is_noop(
     registry: AgentContainerRegistry,
 ) -> None:
-    primitive = _make_primitive()
-    # Must not raise — simply no-op when the primitive has never been
+    construct = _make_construct()
+    # Must not raise — simply no-op when the construct has never been
     # registered via get_or_create.
-    registry.record_session_id(primitive, "sess-x")
+    registry.record_session_id(construct, "sess-x")
 
 
 # --- shutdown_all -------------------------------------------------------------
@@ -199,8 +199,8 @@ async def test_shutdown_all_destroys_every_registered_container(
     writer: LifecycleWriter,
     fake_docker: FakeDockerClient,
 ) -> None:
-    prim_a = _make_primitive()
-    prim_b = _make_primitive()
+    prim_a = _make_construct()
+    prim_b = _make_construct()
     await registry.get_or_create(prim_a, lifecycle_writer=writer, agent_name="a")
     await registry.get_or_create(prim_b, lifecycle_writer=writer, agent_name="b")
 
@@ -220,8 +220,8 @@ async def test_shutdown_all_retains_failed_container_when_pause_on_failure_true(
     LiveContainer marked failed. Successful containers in the same run
     still destroy — the retention is narrow.
     """
-    prim_failed = _make_primitive()
-    prim_ok = _make_primitive()
+    prim_failed = _make_construct()
+    prim_ok = _make_construct()
     live_failed = await registry.get_or_create(
         prim_failed, lifecycle_writer=writer, agent_name="failed-one"
     )
@@ -249,8 +249,8 @@ async def test_shutdown_all_destroys_failed_container_when_pause_on_failure_fals
     regardless of the failed flag. Production runs don't accumulate
     dead containers.
     """
-    primitive = _make_primitive()
-    live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="a")
+    construct = _make_construct()
+    live = await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="a")
     live.failed = True
 
     await registry.shutdown_all(pause_on_failure=False)
@@ -264,8 +264,8 @@ async def test_shutdown_all_is_idempotent(
     registry: AgentContainerRegistry,
     writer: LifecycleWriter,
 ) -> None:
-    primitive = _make_primitive()
-    await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    construct = _make_construct()
+    await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
     await registry.shutdown_all()
     # Second call must not raise.
     await registry.shutdown_all()
@@ -278,8 +278,8 @@ async def test_shutdown_all_tolerates_individual_destroy_failure(
     fake_docker: FakeDockerClient,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    prim_a = _make_primitive()
-    prim_b = _make_primitive()
+    prim_a = _make_construct()
+    prim_b = _make_construct()
     live_a = await registry.get_or_create(prim_a, lifecycle_writer=writer, agent_name="a")
     live_b = await registry.get_or_create(prim_b, lifecycle_writer=writer, agent_name="b")
 
@@ -323,8 +323,8 @@ async def test_get_or_create_emits_agent_container_started(
     writer: LifecycleWriter,
     tmp_path: Path,
 ) -> None:
-    primitive = _make_primitive()
-    await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    construct = _make_construct()
+    await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
     # Flush: close the writer through its public API — but the fixture
     # closes on teardown, so read via a second handle mid-test.
 
@@ -342,9 +342,9 @@ async def test_get_or_create_emits_event_only_on_first_creation(
     writer: LifecycleWriter,
     tmp_path: Path,
 ) -> None:
-    primitive = _make_primitive()
-    await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
-    await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    construct = _make_construct()
+    await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
+    await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
 
     lines = (tmp_path / "lifecycle.jsonl").read_text().splitlines()
     started = [
@@ -371,8 +371,8 @@ async def test_wait_for_health_polls_manager_health_status_when_enabled(
         base_image_tag="img",
         manager=fake_mgr,
     )
-    primitive = _make_primitive()
-    await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    construct = _make_construct()
+    await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
     # FakeContainerManager records each health_status call by container_id.
     assert len(fake_mgr.health_log) >= 1
 
@@ -387,9 +387,9 @@ async def test_wait_for_health_returns_when_status_healthy(
         base_image_tag="img",
         manager=fake_mgr,
     )
-    primitive = _make_primitive()
+    construct = _make_construct()
     # FakeContainerManager defaults to HEALTHY → loop exits on first poll.
-    live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    live = await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
     assert live is not None
     assert len(fake_mgr.health_log) == 1
 
@@ -404,7 +404,7 @@ async def test_wait_for_health_raises_on_unhealthy_report(
         base_image_tag="img",
         manager=fake_mgr,
     )
-    primitive = _make_primitive()
+    construct = _make_construct()
     # Pre-script the next handle to come back UNHEALTHY. The handle's
     # container_id follows the FakeContainerManager's _next_id counter,
     # so we know it'll be "fake-1".
@@ -413,7 +413,7 @@ async def test_wait_for_health_raises_on_unhealthy_report(
         raw={"FailingStreak": 3, "Log": [{"Output": "boom"}]},
     )
     with pytest.raises(RuntimeError, match="unhealthy"):
-        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+        await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
 
 
 # --- LiveContainer invocation counter ----------------------------------------
@@ -458,9 +458,9 @@ async def test_wait_for_health_treats_health_none_as_ready(
         base_image_tag="img",
         manager=fake_mgr,
     )
-    primitive = _make_primitive()
+    construct = _make_construct()
     fake_mgr.health_script["fake-1"] = HealthReport(status=HealthStatus.NONE)
-    live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="coder")
+    live = await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder")
     assert live is not None
 
 
@@ -490,7 +490,7 @@ class TestLiveContainerGids:
 
 class TestGetOrCreateGidPropagation:
     @pytest.mark.asyncio
-    async def test_given_primitive_with_gids_then_live_container_gids_match(
+    async def test_given_construct_with_gids_then_live_container_gids_match(
         self, writer: LifecycleWriter
     ) -> None:
         fake_mgr = FakeContainerManager()
@@ -499,7 +499,7 @@ class TestGetOrCreateGidPropagation:
             base_image_tag="img",
             manager=fake_mgr,
         )
-        primitive = AgentAction[InputModel, OutputModel](
+        construct = AgentAction[InputModel, OutputModel](
             name="writer",
             model="claude-sonnet-4-6",
             prompt_builder=lambda s: f"do: {s.task}",
@@ -508,11 +508,11 @@ class TestGetOrCreateGidPropagation:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             gids=[1001],
         )
-        live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="writer")
+        live = await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="writer")
         assert live.gids == [1001]
 
     @pytest.mark.asyncio
-    async def test_given_primitive_with_no_gids_then_live_container_gids_empty(
+    async def test_given_construct_with_no_gids_then_live_container_gids_empty(
         self, writer: LifecycleWriter
     ) -> None:
         fake_mgr = FakeContainerManager()
@@ -521,20 +521,20 @@ class TestGetOrCreateGidPropagation:
             base_image_tag="img",
             manager=fake_mgr,
         )
-        primitive = _make_primitive()
-        live = await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="reader")
+        construct = _make_construct()
+        live = await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="reader")
         assert live.gids == []
 
 
 class TestGetOrCreateSupplementaryGidsEnv:
-    """Registry injects SUPPLEMENTARY_GIDS env var when primitive.gids is set.
+    """Registry injects SUPPLEMENTARY_GIDS env var when construct.gids is set.
 
     The Docker exec API does not support GroupAdd. Group membership must be
     configured at container startup via the entrypoint reading SUPPLEMENTARY_GIDS.
     """
 
     @pytest.mark.asyncio
-    async def test_given_primitive_with_gids_then_container_gets_supplementary_gids_env(
+    async def test_given_construct_with_gids_then_container_gets_supplementary_gids_env(
         self, writer: LifecycleWriter
     ) -> None:
         fake_mgr = FakeContainerManager()
@@ -543,7 +543,7 @@ class TestGetOrCreateSupplementaryGidsEnv:
             base_image_tag="img",
             manager=fake_mgr,
         )
-        primitive = AgentAction[InputModel, OutputModel](
+        construct = AgentAction[InputModel, OutputModel](
             name="writer",
             model="claude-sonnet-4-6",
             prompt_builder=lambda s: f"do: {s.task}",
@@ -552,11 +552,11 @@ class TestGetOrCreateSupplementaryGidsEnv:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             gids=[1001],
         )
-        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="writer")
+        await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="writer")
         assert fake_mgr.handles[0].env.get("SUPPLEMENTARY_GIDS") == "1001"
 
     @pytest.mark.asyncio
-    async def test_given_primitive_with_multiple_gids_then_env_is_comma_separated(
+    async def test_given_construct_with_multiple_gids_then_env_is_comma_separated(
         self, writer: LifecycleWriter
     ) -> None:
         fake_mgr = FakeContainerManager()
@@ -565,7 +565,7 @@ class TestGetOrCreateSupplementaryGidsEnv:
             base_image_tag="img",
             manager=fake_mgr,
         )
-        primitive = AgentAction[InputModel, OutputModel](
+        construct = AgentAction[InputModel, OutputModel](
             name="writer",
             model="claude-sonnet-4-6",
             prompt_builder=lambda s: f"do: {s.task}",
@@ -574,11 +574,11 @@ class TestGetOrCreateSupplementaryGidsEnv:
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
             gids=[1001, 1002],
         )
-        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="writer")
+        await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="writer")
         assert fake_mgr.handles[0].env.get("SUPPLEMENTARY_GIDS") == "1001,1002"
 
     @pytest.mark.asyncio
-    async def test_given_primitive_with_no_gids_then_no_supplementary_gids_env(
+    async def test_given_construct_with_no_gids_then_no_supplementary_gids_env(
         self, writer: LifecycleWriter
     ) -> None:
         fake_mgr = FakeContainerManager()
@@ -587,12 +587,12 @@ class TestGetOrCreateSupplementaryGidsEnv:
             base_image_tag="img",
             manager=fake_mgr,
         )
-        primitive = _make_primitive()
-        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="reader")
+        construct = _make_construct()
+        await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="reader")
         assert "SUPPLEMENTARY_GIDS" not in fake_mgr.handles[0].env
 
 
-def _make_primitive_with_mcp() -> AgentAction[InputModel, OutputModel]:
+def _make_construct_with_mcp() -> AgentAction[InputModel, OutputModel]:
     return AgentAction[InputModel, OutputModel](
         name="mcp-agent",
         model="claude-sonnet-4-6",
@@ -629,8 +629,8 @@ class TestMcpSettingsInjection:
             base_image_tag="img",
             manager=fake_mgr,
         )
-        primitive = _make_primitive_with_mcp()
-        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
+        construct = _make_construct_with_mcp()
+        await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="mcp-agent")
         assert CLAUDE_CONFIG_PATH in fake_mgr.handles[0].files
         claude_json = json.loads(fake_mgr.handles[0].files[CLAUDE_CONFIG_PATH])
         servers = claude_json["projects"]["/workspace"]["mcpServers"]
@@ -644,8 +644,8 @@ class TestMcpSettingsInjection:
             base_image_tag="img",
             manager=fake_mgr,
         )
-        primitive = _make_primitive_with_mcp()
-        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
+        construct = _make_construct_with_mcp()
+        await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="mcp-agent")
         assert MCP_SETTINGS_PATH in fake_mgr.handles[0].files
         settings = json.loads(fake_mgr.handles[0].files[MCP_SETTINGS_PATH])
         assert "mcp__fs__*" in settings["permissions"]["allow"]
@@ -658,8 +658,8 @@ class TestMcpSettingsInjection:
             base_image_tag="img",
             manager=fake_mgr,
         )
-        primitive = _make_primitive()
-        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="test-agent")
+        construct = _make_construct()
+        await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="test-agent")
         assert CLAUDE_CONFIG_PATH not in fake_mgr.handles[0].files
         assert MCP_SETTINGS_PATH not in fake_mgr.handles[0].files
 
@@ -671,7 +671,7 @@ class TestMcpSettingsInjection:
             base_image_tag="img",
             manager=fake_mgr,
         )
-        primitive = AgentAction[InputModel, OutputModel](
+        construct = AgentAction[InputModel, OutputModel](
             name="mcp-agent",
             model="claude-sonnet-4-6",
             prompt_builder=lambda s: f"do: {s.task}",
@@ -686,7 +686,7 @@ class TestMcpSettingsInjection:
                 )
             },
         )
-        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
+        await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="mcp-agent")
         claude_json = json.loads(fake_mgr.handles[0].files[CLAUDE_CONFIG_PATH])
         server = claude_json["projects"]["/workspace"]["mcpServers"]["fs"]
         assert server == {
@@ -704,8 +704,8 @@ class TestMcpSettingsInjection:
             base_image_tag="img",
             manager=tracking_mgr,
         )
-        primitive = _make_primitive_with_mcp()
-        await registry.get_or_create(primitive, lifecycle_writer=writer, agent_name="mcp-agent")
+        construct = _make_construct_with_mcp()
+        await registry.get_or_create(construct, lifecycle_writer=writer, agent_name="mcp-agent")
         claude_json_key = f"write:{CLAUDE_CONFIG_PATH}"
         settings_key = f"write:{MCP_SETTINGS_PATH}"
         assert claude_json_key in tracking_mgr.call_log

@@ -13,8 +13,8 @@ from pydantic import BaseModel
 
 from agent_foundry.ai_models.inference import InferenceParameters
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
+from agent_foundry.constructs.ai_call import AICall, ModelInput
 from agent_foundry.evals.agent_foundry_tasks import build_invoke_ai_call_task
-from agent_foundry.primitives.ai_call import AICall, ModelInput
 
 
 class _Input(BaseModel):
@@ -53,8 +53,8 @@ class TestAICallEvalExecutor:
         """B6: eval task calls the custom executor, not the underlying provider."""
         calls: list[dict] = []
 
-        async def spy_executor(*, primitive: Any, model_input: Any) -> _Output:
-            calls.append({"primitive": primitive, "model_input": model_input})
+        async def spy_executor(*, construct: Any, model_input: Any) -> _Output:
+            calls.append({"construct": construct, "model_input": model_input})
             return _Output(result="from-spy")
 
         call = AICall[_Input, _Output](
@@ -67,7 +67,7 @@ class TestAICallEvalExecutor:
         result = await task(_Input(text="hello"))
 
         assert len(calls) == 1
-        assert calls[0]["primitive"] is call
+        assert calls[0]["construct"] is call
         assert calls[0]["model_input"].text == "hello"
         assert isinstance(result, _Output)
         assert result.result == "from-spy"
@@ -77,8 +77,8 @@ class TestAICallEvalExecutor:
         """B6: async custom executor is awaited by the eval task."""
         calls: list[dict] = []
 
-        async def async_spy(*, primitive: Any, model_input: Any) -> _Output:
-            calls.append({"primitive": primitive, "model_input": model_input})
+        async def async_spy(*, construct: Any, model_input: Any) -> _Output:
+            calls.append({"construct": construct, "model_input": model_input})
             return _Output(result="from-async-spy")
 
         call = AICall[_Input, _Output](

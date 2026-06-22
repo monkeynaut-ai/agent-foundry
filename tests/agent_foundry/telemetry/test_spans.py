@@ -69,8 +69,8 @@ def test_emit_span_emits_one_span_with_input_and_output(
     in_memory_exporter.clear()
     with emit_span(
         name="agent_foundry.AgentAction",
-        primitive_type="AgentAction",
-        primitive_name="reviewer",
+        construct_type="AgentAction",
+        construct_name="reviewer",
         input_model=_In(ticket_id="42"),
         run_id="run-1",
         redaction=None,
@@ -98,8 +98,8 @@ def test_emit_span_records_exception_and_sets_error_status(
         pytest.raises(RuntimeError, match="boom"),
         emit_span(
             name="agent_foundry.AgentAction",
-            primitive_type="AgentAction",
-            primitive_name=None,
+            construct_type="AgentAction",
+            construct_name=None,
             input_model=_In(ticket_id="42"),
             run_id=None,
             redaction=None,
@@ -120,8 +120,8 @@ def test_emit_span_omits_run_id_attribute_when_none(
     in_memory_exporter.clear()
     with emit_span(
         name="agent_foundry.AgentAction",
-        primitive_type="AgentAction",
-        primitive_name=None,
+        construct_type="AgentAction",
+        construct_name=None,
         input_model=_In(ticket_id="42"),
         run_id=None,
         redaction=None,
@@ -139,8 +139,8 @@ def test_emit_span_set_token_usage_writes_gen_ai_attributes(
     in_memory_exporter.clear()
     with emit_span(
         name="agent_foundry.AgentAction",
-        primitive_type="AgentAction",
-        primitive_name=None,
+        construct_type="AgentAction",
+        construct_name=None,
         input_model=_In(ticket_id="42"),
         run_id=None,
         redaction=None,
@@ -161,12 +161,12 @@ def test_emit_span_is_noop_when_no_run_context_active() -> None:
 
     The body still runs and exceptions still propagate, but no span emerges
     and the handle's setters are no-ops. This is the path for callers who
-    run without telemetry configured (telemetry=None on run_primitive_plan).
+    run without telemetry configured (telemetry=None on run_process).
     """
     with emit_span(
         name="x",
-        primitive_type="X",
-        primitive_name=None,
+        construct_type="X",
+        construct_name=None,
         input_model=_In(ticket_id="1"),
         run_id=None,
         redaction=None,
@@ -192,8 +192,8 @@ def test_emit_span_is_noop_when_run_context_has_no_provider(tmp_path: Path) -> N
     try:
         with emit_span(
             name="x",
-            primitive_type="X",
-            primitive_name=None,
+            construct_type="X",
+            construct_name=None,
             input_model=_In(ticket_id="1"),
             run_id=None,
             redaction=None,
@@ -210,8 +210,8 @@ def test_emit_span_noop_propagates_exception_when_no_provider() -> None:
         pytest.raises(RuntimeError, match="boom"),
         emit_span(
             name="x",
-            primitive_type="X",
-            primitive_name=None,
+            construct_type="X",
+            construct_name=None,
             input_model=_In(ticket_id="1"),
             run_id=None,
             redaction=None,

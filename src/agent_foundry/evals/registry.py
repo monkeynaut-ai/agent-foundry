@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from agent_foundry.primitives.ai_call import AICall
+from agent_foundry.constructs.ai_call import AICall
 
 
 class DuplicateAICallError(ValueError):

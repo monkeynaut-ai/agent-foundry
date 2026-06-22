@@ -18,8 +18,8 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace.status import StatusCode
 from pydantic import BaseModel
 
-from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
-from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
+from agent_foundry.constructs.process import Process
 from agent_foundry.telemetry import attributes
 
 
@@ -55,7 +55,7 @@ def test_agent_action_emits_one_span_per_invocation(
     exporter_and_provider: tuple[InMemorySpanExporter, TracerProvider],
     tmp_path: Path,
 ) -> None:
-    from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
+    from agent_foundry.compiler.compiler import compile_process
     from agent_foundry.orchestration.run_context import (
         NoOpLifecycleWriter,
         RunContext,
@@ -64,11 +64,11 @@ def test_agent_action_emits_one_span_per_invocation(
 
     exporter, provider = exporter_and_provider
 
-    def fake_executor(*, primitive, prompt, instructions, run_ctx) -> _Out:
+    def fake_executor(*, construct, prompt, instructions, run_ctx) -> _Out:
         return _Out(success=True)
 
     action = _build_action(fake_executor)
-    plan = PrimitivePlan(root=action)
+    process = Process(root=action)
 
     ctx = RunContext(
         run_id="run-spans",
@@ -82,7 +82,7 @@ def test_agent_action_emits_one_span_per_invocation(
     )
     tok = current_run_context.set(ctx)
     try:
-        graph = compile_runtime_plan(plan)
+        graph = compile_process(process)
         graph.invoke(_In(ticket_id="42").model_dump())
     finally:
         current_run_context.reset(tok)
@@ -104,7 +104,7 @@ def test_agent_action_executor_exception_records_error_span(
     exporter_and_provider: tuple[InMemorySpanExporter, TracerProvider],
     tmp_path: Path,
 ) -> None:
-    from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
+    from agent_foundry.compiler.compiler import compile_process
     from agent_foundry.orchestration.run_context import (
         NoOpLifecycleWriter,
         RunContext,
@@ -113,11 +113,11 @@ def test_agent_action_executor_exception_records_error_span(
 
     exporter, provider = exporter_and_provider
 
-    def boom_executor(*, primitive, prompt, instructions, run_ctx) -> _Out:
+    def boom_executor(*, construct, prompt, instructions, run_ctx) -> _Out:
         raise RuntimeError("executor blew up")
 
     action = _build_action(boom_executor)
-    plan = PrimitivePlan(root=action)
+    process = Process(root=action)
 
     ctx = RunContext(
         run_id="run-fail",
@@ -131,7 +131,7 @@ def test_agent_action_executor_exception_records_error_span(
     )
     tok = current_run_context.set(ctx)
     try:
-        graph = compile_runtime_plan(plan)
+        graph = compile_process(process)
         with pytest.raises(RuntimeError, match="executor blew up"):
             graph.invoke(_In(ticket_id="42").model_dump())
     finally:

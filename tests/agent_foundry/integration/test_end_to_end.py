@@ -2,7 +2,7 @@
 
 Drives the full orchestration stack against the real ``agent-worker:latest``
 base image and real Claude Code via ``CLAUDE_CODE_OAUTH_TOKEN`` from
-``.env``. The plan under test is a ``Sequence[StateA, StateC]`` of
+``.env``. The process under test is a ``Sequence[StateA, StateC]`` of
 
     [AgentAction[StateA, StateB], FunctionAction[StateB, StateC]]
 
@@ -41,18 +41,18 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from agent_foundry import runtime
-from agent_foundry.models.markers import AgentFilePath
-from agent_foundry.orchestration.container_executor import run_agent_in_container
-from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
-from agent_foundry.orchestration.run_outcome import RunCompleted
-from agent_foundry.orchestration.runner import run_primitive_plan
-from agent_foundry.primitives.models import (
+from agent_foundry.constructs.models import (
     AgentAction,
     ContainerReusePolicy,
     FunctionAction,
     Sequence,
 )
-from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.constructs.process import Process
+from agent_foundry.models.markers import AgentFilePath
+from agent_foundry.orchestration.container_executor import run_agent_in_container
+from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+from agent_foundry.orchestration.run_outcome import RunCompleted
+from agent_foundry.orchestration.runner import run_process
 from agent_foundry.responders.models import (
     ResponderContext,
     ResponderRequest,
@@ -119,7 +119,7 @@ class _UnusedResponder(Responder):
 async def test_end_to_end_real_claude_code(tmp_path: Path, cleanup_volumes) -> None:
     # Fail loudly — not skip — when the OAuth token is missing.
     oauth_token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
-    assert oauth_token  # used implicitly by ``run_primitive_plan`` via os.environ
+    assert oauth_token  # used implicitly by ``run_process`` via os.environ
 
     # Skip only on docker unavailability.
     try:
@@ -134,7 +134,7 @@ async def test_end_to_end_real_claude_code(tmp_path: Path, cleanup_volumes) -> N
     workspace_volume = f"plan2-e2e-{uuid.uuid4().hex[:8]}"
     cleanup_volumes.append(workspace_volume)
 
-    # --- Build the plan ----------------------------------------------------
+    # --- Build the process ----------------------------------------------------
 
     # The agent should report the path of the CLAUDE.md file the
     # entrypoint has already materialised — a known-existing path lets
@@ -177,7 +177,7 @@ async def test_end_to_end_real_claude_code(tmp_path: Path, cleanup_volumes) -> N
 
     fn = FunctionAction[StateB, StateC](function=_finalize)
     seq = Sequence[StateA, StateC](steps=[agent, fn])
-    plan = PrimitivePlan(root=seq)
+    process = Process(root=seq)
 
     # The executor's default ``_run_claude_turn`` helper shells out to
     # the real ``claude`` CLI inside the live container. No test seam
@@ -187,8 +187,8 @@ async def test_end_to_end_real_claude_code(tmp_path: Path, cleanup_volumes) -> N
     artifacts_dir.mkdir()
     run_id = f"run-{uuid.uuid4().hex[:8]}"
 
-    result = await run_primitive_plan(
-        plan,
+    result = await run_process(
+        process,
         initial_state=StateA(topic="archipelago"),
         artifacts_dir=artifacts_dir,
         workspace_volume=workspace_volume,

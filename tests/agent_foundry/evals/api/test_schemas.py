@@ -6,9 +6,9 @@ from pydantic import BaseModel
 
 from agent_foundry.ai_models.inference import InferenceParameters
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
+from agent_foundry.constructs.ai_call import AICall, ModelInput
 from agent_foundry.evals.api.schemas import TargetSpec, target_spec_from_ai_call
 from agent_foundry.evals.models import EvalTargetKind
-from agent_foundry.primitives.ai_call import AICall, ModelInput
 
 
 class _Input(BaseModel):

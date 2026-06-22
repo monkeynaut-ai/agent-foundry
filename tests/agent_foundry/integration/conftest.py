@@ -13,7 +13,7 @@ def cleanup_volumes():
 
     ``ContainerManager.destroy()`` removes the container but preserves its
     workspace volume (session reuse). A test that mints a named volume and
-    passes it to ``create_container`` / ``run_primitive_plan`` must therefore
+    passes it to ``create_container`` / ``run_process`` must therefore
     remove the volume itself, or it leaks after the run. Append each volume
     name to the yielded list; teardown removes them all.
     """

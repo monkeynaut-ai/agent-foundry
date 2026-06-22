@@ -1,4 +1,4 @@
-"""Tests for primitive models and common contract."""
+"""Tests for construct models and common contract."""
 
 from __future__ import annotations
 
@@ -7,19 +7,19 @@ from pydantic import BaseModel, ValidationError
 
 from agent_foundry.ai_models.inference import InferenceParameters
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
-from agent_foundry.primitives import (
+from agent_foundry.constructs import (
     AgentAction,
     StdioMcpServer,
     StreamableHttpMcpServer,
 )
-from agent_foundry.primitives.ai_call import AICall, ModelInput
-from agent_foundry.primitives.models import (
+from agent_foundry.constructs.ai_call import AICall, ModelInput
+from agent_foundry.constructs.models import (
     Conditional,
+    Construct,
     ContainerReusePolicy,
     FunctionAction,
     GateAction,
     Loop,
-    Primitive,
     Retry,
     Sequence,
     get_type_args,
@@ -34,15 +34,15 @@ class StubOutput(BaseModel):
     result: str
 
 
-class _LeafStubGeneric[I: BaseModel, O: BaseModel](Primitive[I, O]):
+class _LeafStubGeneric[I: BaseModel, O: BaseModel](Construct[I, O]):
     """Concrete placeholder leaf for composition tests. Implements the
-    structural contract so it can stand in as a child primitive.
+    structural contract so it can stand in as a child construct.
 
-    Generic because ``Primitive`` rejects construction unless its type args
+    Generic because ``Construct`` rejects construction unless its type args
     flow through ``__pydantic_generic_metadata__``; binding the args on the
-    class line (``Primitive[StubInput, StubOutput]``) leaves that empty."""
+    class line (``Construct[StubInput, StubOutput]``) leaves that empty."""
 
-    def child_specs(self) -> list[tuple[Primitive, str]]:
+    def child_specs(self) -> list[tuple[Construct, str]]:
         return []
 
 
@@ -50,12 +50,12 @@ _LeafStub = _LeafStubGeneric[StubInput, StubOutput]
 
 
 # ======================================================================
-# Primitive Base
+# Construct Base
 # ======================================================================
 
 
-class TestPrimitiveBase:
-    """Primitive base model is parameterized with input/output types."""
+class TestConstructBase:
+    """Construct base model is parameterized with input/output types."""
 
     def test_given_type_params_when_created_then_succeeds(self):
         p = _LeafStub()
@@ -63,11 +63,11 @@ class TestPrimitiveBase:
         assert input_type is StubInput
         assert output_type is StubOutput
 
-    def test_unparameterized_primitive_raises_at_construction(self):
+    def test_unparameterized_construct_raises_at_construction(self):
         # The base is abstract, so instantiation is blocked before the
         # parameterization model_validator can run.
         with pytest.raises(TypeError):
-            Primitive()
+            Construct()
 
 
 # ======================================================================
@@ -93,20 +93,20 @@ def _agent_action_leaf() -> AgentAction:
         model="claude-sonnet-4-6",
         prompt_builder=lambda s: "p",
         instructions_provider=lambda s: "i",
-        executor=lambda *, primitive, prompt: StubOutput(result="r"),
+        executor=lambda *, construct, prompt: StubOutput(result="r"),
         reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )
 
 
 class TestChildSpecs:
-    """Primitives expose their child primitives + local suffixes via child_specs."""
+    """Constructs expose their child constructs + local suffixes via child_specs."""
 
-    def test_bare_primitive_cannot_instantiate(self):
+    def test_bare_construct_cannot_instantiate(self):
         with pytest.raises(TypeError):
-            Primitive[StubInput, StubOutput]()
+            Construct[StubInput, StubOutput]()
 
     def test_subclass_forgetting_child_specs_cannot_instantiate(self):
-        class Forgot(Primitive[StubInput, StubOutput]):
+        class Forgot(Construct[StubInput, StubOutput]):
             pass
 
         with pytest.raises(TypeError):
@@ -240,13 +240,13 @@ def fake_commit(state: CommitInput) -> CommitOutput:
 
 
 class TestSequence:
-    """Sequence primitive executes steps in order."""
+    """Sequence construct executes steps in order."""
 
     def test_given_valid_steps_when_created_then_succeeds(self):
         inner = _LeafStub()
         seq = Sequence[StubInput, StubOutput](steps=[inner])
         assert len(seq.steps) == 1
-        assert isinstance(seq.steps[0], Primitive)
+        assert isinstance(seq.steps[0], Construct)
 
     def test_given_multiple_steps_when_created_then_succeeds(self):
         a = _LeafStub()
@@ -277,7 +277,7 @@ class TestSequence:
 
 
 class TestLoop:
-    """Loop primitive iterates over a collection in state."""
+    """Loop construct iterates over a collection in state."""
 
     def test_given_valid_config_when_created_then_succeeds(self):
         body = _LeafStub()
@@ -365,7 +365,7 @@ class TestRetryResolverSeat:
         assert r.on_max_attempts_resolver is None
         assert r.resolver_max_reentries == 50
 
-    def test_retry_accepts_resolver_primitive(self):
+    def test_retry_accepts_resolver_construct(self):
         resolver = FunctionAction[_ResolverState, _ResolverState](function=lambda s: s)
         r = Retry[_ResolverState, _ResolverState](
             max_attempts=1,
@@ -401,7 +401,7 @@ class TestRetryResolverSeat:
             )
 
     def test_disposition_types_exported_from_package(self):
-        from agent_foundry.primitives import (
+        from agent_foundry.constructs import (
             AttemptOutcome,
             DispositionKind,
             ResolverDidNotConvergeError,
@@ -417,7 +417,7 @@ class TestRetryResolverSeat:
 
 
 class TestRetry:
-    """Retry primitive repeats body until condition met or exhausted."""
+    """Retry construct repeats body until condition met or exhausted."""
 
     def test_given_valid_config_when_created_then_succeeds(self):
         body = _LeafStub()
@@ -454,7 +454,7 @@ class TestRetry:
 
 
 class TestConditional:
-    """Conditional primitive branches based on state."""
+    """Conditional construct branches based on state."""
 
     def test_given_both_branches_when_created_then_succeeds(self):
         then = _LeafStub()
@@ -464,8 +464,8 @@ class TestConditional:
             then_branch=then,
             else_branch=else_,
         )
-        assert isinstance(cond.then_branch, Primitive)
-        assert isinstance(cond.else_branch, Primitive)
+        assert isinstance(cond.then_branch, Construct)
+        assert isinstance(cond.else_branch, Construct)
 
     def test_given_no_else_branch_when_created_then_none(self):
         then = _LeafStub()
@@ -569,7 +569,7 @@ class TestFunctionAction:
 
 
 class TestRecursiveNesting:
-    """Primitives can be nested recursively via direct object references."""
+    """Constructs can be nested recursively via direct object references."""
 
     def test_sequence_containing_loop(self):
         body = _LeafStub()
@@ -614,45 +614,45 @@ class TestRecursiveNesting:
 
 
 class TestPublicAPI:
-    """All primitives are importable from the package."""
+    """All constructs are importable from the package."""
 
     def test_import_from_package(self):
-        from agent_foundry.primitives import (
+        from agent_foundry.constructs import (
             Conditional,
+            Construct,
             FunctionAction,
             GateAction,
             Loop,
-            Primitive,
-            PrimitivePlan,
+            Process,
             Retry,
             Sequence,
         )
 
-        assert Primitive is not None
+        assert Construct is not None
         assert Sequence is not None
         assert Loop is not None
         assert Retry is not None
         assert Conditional is not None
         assert FunctionAction is not None
         assert GateAction is not None
-        assert PrimitivePlan is not None
+        assert Process is not None
 
     def test_agent_action_importable_from_package(self):
         assert AgentAction is not None
 
     def test_container_reuse_policy_importable_from_package(self):
-        from agent_foundry.primitives import ContainerReusePolicy
+        from agent_foundry.constructs import ContainerReusePolicy
 
         assert ContainerReusePolicy is not None
 
     def test_response_channels_not_exported_from_package(self):
-        """Response channel types are not part of the primitives surface."""
-        import agent_foundry.primitives as primitives
+        """Response channel types are not part of the constructs surface."""
+        import agent_foundry.constructs as constructs
 
-        assert not hasattr(primitives, "StructuredOutputChannel")
-        assert not hasattr(primitives, "FileCollectionChannel")
-        assert not hasattr(primitives, "ResponseChannel")
-        assert not hasattr(primitives, "ResponseChannelKind")
+        assert not hasattr(constructs, "StructuredOutputChannel")
+        assert not hasattr(constructs, "FileCollectionChannel")
+        assert not hasattr(constructs, "ResponseChannel")
+        assert not hasattr(constructs, "ResponseChannelKind")
 
 
 # -- stub helpers for AgentAction mcp_servers tests --
@@ -674,7 +674,7 @@ def _mcp_instructions_provider(_state: object) -> str:
     return "# Agent instructions\n\nDo the task."
 
 
-def _mcp_executor(*, primitive, prompt) -> AgentMcpOutput:
+def _mcp_executor(*, construct, prompt) -> AgentMcpOutput:
     return AgentMcpOutput(result="done")
 
 

@@ -24,11 +24,11 @@ import pytest
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
+from agent_foundry.constructs.mcp import StdioMcpServer
+from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
+from agent_foundry.constructs.process import Process
 from agent_foundry.orchestration.container_executor import run_agent_in_container
-from agent_foundry.orchestration.runner import run_primitive_plan
-from agent_foundry.primitives.mcp import StdioMcpServer
-from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
-from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.orchestration.runner import run_process
 from agent_foundry.responders.models import (
     ResponderContext,
     ResponderRequest,
@@ -150,13 +150,13 @@ async def test_agent_calls_mcp_echo_tool() -> None:
         skip_permissions=True,
     )
 
-    plan = PrimitivePlan(root=agent)
+    process = Process(root=agent)
     runs_dir = Path(__file__).parent / "runs"
     runs_dir.mkdir(exist_ok=True)
     run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    result = await run_primitive_plan(
-        plan,
+    result = await run_process(
+        process,
         initial_state=EchoInput(word=ECHO_WORD),
         artifacts_dir=runs_dir,
         run_id=run_id,

@@ -25,29 +25,29 @@ class MyOutput(BaseModel):
     result: str
 ```
 
-**2. Build primitives** — compose a tree from leaf actions and control flow:
+**2. Build constructs** — compose a tree from leaf actions and control flow:
 
 ```python
-from agent_foundry.primitives import (
-    FunctionAction, Sequence, Loop, Retry, Conditional, PrimitivePlan
+from agent_foundry.constructs import (
+    FunctionAction, Sequence, Loop, Retry, Conditional, Process
 )
 
 action = FunctionAction[MyInput, MyOutput](
     function=lambda s: MyOutput(data=s.data, result=s.data.upper())
 )
-plan = PrimitivePlan(root=action)
+process = Process(root=action)
 ```
 
-**3. Run it** — `run_primitive_plan` is the single public entry point. It is `async`,
+**3. Run it** — `run_process` is the single public entry point. It is `async`,
 takes keyword-only arguments, and returns a `RunOutcome` (`RunCompleted` /
 `RunAborted` / `RunFailed`) whose `.output` holds the typed final state:
 
 ```python
-from agent_foundry.orchestration.runner import run_primitive_plan
+from agent_foundry.orchestration.runner import run_process
 from agent_foundry.orchestration import RunCompleted
 
-outcome = await run_primitive_plan(
-    plan,
+outcome = await run_process(
+    process,
     initial_state=MyInput(data="hello"),
     artifacts_dir=run_dir,            # Path where this run writes lifecycle/summary
     workspace_volume="my-vol",        # Docker volume backing agent workspaces
@@ -62,34 +62,34 @@ if isinstance(outcome, RunCompleted):
 For a complete, runnable end-to-end example (including telemetry wiring), see the
 [README](../../README.md) and `examples/mlflow_demo/`.
 
-## Primitive types
+## Construct types
 
-| Primitive | Purpose | Key fields |
+| Construct | Purpose | Key fields |
 |-----------|---------|-----------|
 | `FunctionAction[I, O]` | Call a function | `function: Callable[[I], O]` |
 | `GateAction[I, O]` | Block for human input | `interaction: str`, `prompt_key: str` |
-| `Sequence[I, O]` | Run steps in order | `steps: list[Primitive]` |
-| `Loop[I, O]` | Iterate over collection | `over: Callable[[I], list]`, `item_key: str`, `body: Primitive` |
-| `Retry[I, O]` | Repeat until condition | `max_attempts: int`, `until: Callable[[I], bool]`, `body: Primitive` |
+| `Sequence[I, O]` | Run steps in order | `steps: list[Construct]` |
+| `Loop[I, O]` | Iterate over collection | `over: Callable[[I], list]`, `item_key: str`, `body: Construct` |
+| `Retry[I, O]` | Repeat until condition | `max_attempts: int`, `until: Callable[[I], bool]`, `body: Construct` |
 | `Conditional[I, O]` | Branch on state | `condition: Callable[[I], bool]`, `then_branch`, `else_branch` |
 
 ## Rules
 
-- Every primitive is parameterized: `FunctionAction[InputType, OutputType](...)`
+- Every construct is parameterized: `FunctionAction[InputType, OutputType](...)`
 - Types must match at boundaries (exact match, not subtype)
-- Composite primitives (Sequence, Loop, etc.) isolate state — only I/O fields cross boundaries
+- Composite constructs (Sequence, Loop, etc.) isolate state — only I/O fields cross boundaries
 - Retry exits normally on exhaustion — check domain state in a parent Conditional to handle it
 - Conditional without else_branch is a "detour" — all four types must be identical
 
-## Extending with custom primitives
+## Extending with custom constructs
 
-Register a compiler for your own primitive type:
+Register a compiler for your own construct type:
 
 ```python
-from agent_foundry.primitives import Primitive
+from agent_foundry.constructs import Construct
 from agent_foundry.compiler import register_compiler
 
-class MyCustomPrimitive[I, O](Primitive[I, O]):
+class MyCustomConstruct[I, O](Construct[I, O]):
     custom_field: str
 
 def _compile_my_custom(graph, prim, prefix, gate_ids):
@@ -97,12 +97,12 @@ def _compile_my_custom(graph, prim, prefix, gate_ids):
     # Return (entry_node_id, exit_node_id)
     ...
 
-register_compiler(MyCustomPrimitive, _compile_my_custom)
+register_compiler(MyCustomConstruct, _compile_my_custom)
 ```
 
 ## What to test
 
 - State models construct and validate correctly
-- Primitive trees pass validation (`plan.validate()`)
-- `run_primitive_plan(plan, input)` produces expected typed output
+- Construct trees pass validation (`process.validate()`)
+- `run_process(process, input)` produces expected typed output
 - State isolation — internal fields don't leak across boundaries

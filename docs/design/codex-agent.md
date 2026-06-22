@@ -37,7 +37,7 @@ parallel or extend.
    `StructuredOutput` (envelope payload).
 5. **`src/agent_foundry/agents/schema_tools.py::to_claude_code_schema`**
    — converts a Pydantic envelope type to claude's JSON Schema dialect.
-6. **`src/agent_foundry/primitives/models.py::AgentAction.effort`** —
+6. **`src/agent_foundry/constructs/models.py::AgentAction.effort`** —
    maps to claude's `--effort` flag.
 7. **`BASE_IMAGE_TAG`** — pinned at the call sites (e.g.
    `archipelago/systems/design_pipeline.py:30`,
@@ -478,7 +478,7 @@ invoke a command the image doesn't have.
 - **LSP capability gap.** Claude has the `pyright-lsp` plugin
   (and others). Codex doesn't have an equivalent. If the role
   markdown's LSP-first rule is load-bearing, codex agents need a
-  fallback navigation primitive or an accepted capability gap.
+  fallback navigation construct or an accepted capability gap.
 
 ## Folder structure during parallel development
 

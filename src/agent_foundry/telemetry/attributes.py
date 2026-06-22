@@ -20,12 +20,12 @@ AF_INPUT = "agent_foundry.input"
 AF_OUTPUT = "agent_foundry.output"
 """JSON-serialised output model (post-redaction)."""
 
-AF_PRIMITIVE_TYPE = "agent_foundry.primitive_type"
-"""The Python class name of the primitive emitting this span,
+AF_PRIMITIVE_TYPE = "agent_foundry.construct_type"
+"""The Python class name of the construct emitting this span,
 e.g. ``"AgentAction"``."""
 
-AF_PRIMITIVE_NAME = "agent_foundry.primitive_name"
-"""The primitive's diagnostic ``name`` field if set; otherwise absent."""
+AF_PRIMITIVE_NAME = "agent_foundry.construct_name"
+"""The construct's diagnostic ``name`` field if set; otherwise absent."""
 
 AF_RUN_ID = "agent_foundry.run_id"
 """The active ``RunContext.run_id`` for cross-referencing spans to runs."""

@@ -25,8 +25,8 @@ from agent_foundry.ai_models.inference import (
     InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
-from agent_foundry.primitives.ai_call import AICall, ModelInput
-from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.constructs.ai_call import AICall, ModelInput
+from agent_foundry.constructs.process import Process
 from agent_foundry.telemetry import attributes
 
 
@@ -81,7 +81,7 @@ def test_ai_call_emits_one_span_per_invocation(
     exporter_and_provider: tuple[InMemorySpanExporter, TracerProvider],
     tmp_path: Path,
 ) -> None:
-    from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
+    from agent_foundry.compiler.compiler import compile_process
     from agent_foundry.orchestration.run_context import current_run_context
 
     exporter, provider = exporter_and_provider
@@ -94,12 +94,12 @@ def test_ai_call_emits_one_span_per_invocation(
             pass
 
     action = _build_action(_FakeProvider())
-    plan = PrimitivePlan(root=action)
+    process = Process(root=action)
 
     ctx = _run_ctx(tmp_path, provider)
     tok = current_run_context.set(ctx)
     try:
-        graph = compile_runtime_plan(plan)
+        graph = compile_process(process)
         asyncio.run(graph.ainvoke(_In(ticket_id="42").model_dump()))
     finally:
         current_run_context.reset(tok)
@@ -120,7 +120,7 @@ def test_ai_call_provider_exception_records_error_span(
     exporter_and_provider: tuple[InMemorySpanExporter, TracerProvider],
     tmp_path: Path,
 ) -> None:
-    from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
+    from agent_foundry.compiler.compiler import compile_process
     from agent_foundry.orchestration.run_context import current_run_context
 
     exporter, provider = exporter_and_provider
@@ -133,12 +133,12 @@ def test_ai_call_provider_exception_records_error_span(
             pass
 
     action = _build_action(_BoomProvider())
-    plan = PrimitivePlan(root=action)
+    process = Process(root=action)
 
     ctx = _run_ctx(tmp_path, provider)
     tok = current_run_context.set(ctx)
     try:
-        graph = compile_runtime_plan(plan)
+        graph = compile_process(process)
         with pytest.raises(RuntimeError, match="provider blew up"):
             asyncio.run(graph.ainvoke(_In(ticket_id="42").model_dump()))
     finally:

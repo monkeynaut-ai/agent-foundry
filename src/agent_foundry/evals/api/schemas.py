@@ -12,9 +12,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from agent_foundry.constructs.ai_call import AICall
+from agent_foundry.constructs.models import get_type_args
 from agent_foundry.evals.models import EvalTargetKind
-from agent_foundry.primitives.ai_call import AICall
-from agent_foundry.primitives.models import get_type_args
 
 
 class TargetSpec(BaseModel):

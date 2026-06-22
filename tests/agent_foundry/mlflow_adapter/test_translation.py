@@ -72,8 +72,8 @@ def test_emit_span_dual_writes_input_and_output_via_mlflow_translations(
     """
     with emit_span(
         name="agent_foundry.X",
-        primitive_type="X",
-        primitive_name=None,
+        construct_type="X",
+        construct_name=None,
         input_model=_M(x=1),
         run_id=None,
         redaction=None,
@@ -117,8 +117,8 @@ def test_emit_span_without_translations_does_not_set_mlflow_attributes(
     try:
         with emit_span(
             name="x",
-            primitive_type="X",
-            primitive_name=None,
+            construct_type="X",
+            construct_name=None,
             input_model=_M(x=1),
             run_id=None,
             redaction=None,

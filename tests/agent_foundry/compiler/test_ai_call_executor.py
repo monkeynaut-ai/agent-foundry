@@ -18,10 +18,10 @@ from agent_foundry.ai_models.inference import (
     InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
-from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
-from agent_foundry.primitives.ai_call import AICall, ModelInput
-from agent_foundry.primitives.errors import PrimitiveCompilationError
-from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.compiler.compiler import compile_process
+from agent_foundry.constructs.ai_call import AICall, ModelInput
+from agent_foundry.constructs.errors import ConstructCompilationError
+from agent_foundry.constructs.process import Process
 
 
 class _Input(BaseModel):
@@ -129,7 +129,7 @@ class TestDefaultExecutor:
         call = _make_call(model_entry=entry)
         assert call.executor is None
 
-        graph = compile_runtime_plan(PrimitivePlan(call))
+        graph = compile_process(Process(call))
         result = asyncio.run(graph.ainvoke({"text": "hello"}))
 
         assert len(provider.calls) == 1
@@ -143,15 +143,15 @@ class TestDefaultExecutor:
 
 class TestSyncExecutorRejected:
     def test_sync_executor_raises_at_compile_time(self) -> None:
-        """B2: sync executor raises PrimitiveCompilationError at compile_runtime_plan."""
+        """B2: sync executor raises ConstructCompilationError at compile_process."""
 
-        def my_sync_executor(*, primitive: Any, model_input: Any) -> _Output:  # type: ignore[return]
+        def my_sync_executor(*, construct: Any, model_input: Any) -> _Output:  # type: ignore[return]
             return _Output(result="sync")
 
         call = _make_call(executor=my_sync_executor)  # type: ignore[arg-type]
 
-        with pytest.raises(PrimitiveCompilationError, match="executor must be async"):
-            compile_runtime_plan(PrimitivePlan(call))
+        with pytest.raises(ConstructCompilationError, match="executor must be async"):
+            compile_process(Process(call))
 
 
 # ---------------------------------------------------------------------------
@@ -161,19 +161,19 @@ class TestSyncExecutorRejected:
 
 class TestAsyncCustomExecutor:
     def test_async_executor_called_with_keyword_args(self) -> None:
-        """B3: async executor receives (*, primitive, model_input) and its return value is used."""
+        """B3: async executor receives (*, construct, model_input) and its return value is used."""
         received: list[dict] = []
 
-        async def my_async_executor(*, primitive: Any, model_input: Any) -> _Output:
-            received.append({"primitive": primitive, "model_input": model_input})
+        async def my_async_executor(*, construct: Any, model_input: Any) -> _Output:
+            received.append({"construct": construct, "model_input": model_input})
             return _Output(result="from-async-executor")
 
         call = _make_call(executor=my_async_executor)
-        graph = compile_runtime_plan(PrimitivePlan(call))
+        graph = compile_process(Process(call))
         result = asyncio.run(graph.ainvoke({"text": "hi"}))
 
         assert len(received) == 1
-        assert received[0]["primitive"] is call
+        assert received[0]["construct"] is call
         assert received[0]["model_input"].text == "hi"
         assert result["result"] == "from-async-executor"
 
@@ -181,7 +181,7 @@ class TestAsyncCustomExecutor:
         """B3: when executor is set, the underlying provider is bypassed."""
         entry, provider = _capturing_entry()
 
-        async def my_async_executor(*, primitive: Any, model_input: Any) -> _Output:
+        async def my_async_executor(*, construct: Any, model_input: Any) -> _Output:
             return _Output(result="custom")
 
         call = AICall[_Input, _Output](
@@ -190,31 +190,31 @@ class TestAsyncCustomExecutor:
             model=entry,
             executor=my_async_executor,
         )
-        graph = compile_runtime_plan(PrimitivePlan(call))
+        graph = compile_process(Process(call))
         asyncio.run(graph.ainvoke({"text": "x"}))
 
         assert len(provider.calls) == 0
 
 
 # ---------------------------------------------------------------------------
-# B4 — wrong return type raises PrimitiveCompilationError
+# B4 — wrong return type raises ConstructCompilationError
 # ---------------------------------------------------------------------------
 
 
 class TestExecutorOutputValidation:
     def test_wrong_type_raises(self) -> None:
-        """B4: executor returning wrong type triggers PrimitiveCompilationError."""
+        """B4: executor returning wrong type triggers ConstructCompilationError."""
 
         class _Wrong(BaseModel):
             other: str
 
-        async def bad_executor(*, primitive: Any, model_input: Any) -> Any:
+        async def bad_executor(*, construct: Any, model_input: Any) -> Any:
             return _Wrong(other="nope")
 
         call = _make_call(executor=bad_executor)
-        graph = compile_runtime_plan(PrimitivePlan(call))
+        graph = compile_process(Process(call))
 
-        with pytest.raises(PrimitiveCompilationError):
+        with pytest.raises(ConstructCompilationError):
             asyncio.run(graph.ainvoke({"text": "x"}))
 
 
@@ -229,7 +229,7 @@ class TestExecutorCatchesException:
         The exception never reaches the AICall caller.
         """
 
-        async def catching_executor(*, primitive: Any, model_input: Any) -> _Output:
+        async def catching_executor(*, construct: Any, model_input: Any) -> _Output:
             try:
                 # Simulate calling an underlying provider that raises.
                 raise ValueError("simulated provider failure")
@@ -237,7 +237,7 @@ class TestExecutorCatchesException:
                 return _Output(result="fallback")
 
         call = _make_call(executor=catching_executor)
-        graph = compile_runtime_plan(PrimitivePlan(call))
+        graph = compile_process(Process(call))
         result = asyncio.run(graph.ainvoke({"text": "x"}))
 
         assert result["result"] == "fallback"
@@ -246,10 +246,10 @@ class TestExecutorCatchesException:
         """B2/F2: consumer can wrap invoke_ai_call using the documented contract."""
         from agent_foundry.ai_models.execute.invoke import invoke_ai_call
 
-        async def wrapping_executor(*, primitive: Any, model_input: Any) -> _Output:
+        async def wrapping_executor(*, construct: Any, model_input: Any) -> _Output:
             # This is the canonical wrap pattern — keyword args match invoke_ai_call's params,
             # and the executor unwraps the AICallResult to return O.
-            return (await invoke_ai_call(primitive=primitive, model_input=model_input)).output
+            return (await invoke_ai_call(construct=construct, model_input=model_input)).output
 
         entry, provider = _capturing_entry()
         call = AICall[_Input, _Output](
@@ -258,7 +258,7 @@ class TestExecutorCatchesException:
             model=entry,
             executor=wrapping_executor,
         )
-        graph = compile_runtime_plan(PrimitivePlan(call))
+        graph = compile_process(Process(call))
         result = asyncio.run(graph.ainvoke({"text": "wrap"}))
 
         assert len(provider.calls) == 1

@@ -31,7 +31,7 @@ Convictions strong enough to build on. All are subject to revision as we learn.
 ## Principles
 
 - hide LangChain, LangGraph, MLflow
-- primitives to simplify defining topology
+- constructs to simplify defining topology
 - composability
 - strict typing
 - standardize tool calling - correctly interpret tool calls, and argument structure, from any model
@@ -60,7 +60,7 @@ Each ring depends on the one inside it. For each: what exists today, what's next
 
 ### Core
 
-The execution engine — primitives, compilation, state management, typing.
+The execution engine — constructs, compilation, state management, typing.
 
 <!-- Exists: ... -->
 <!-- Next: ... -->
@@ -84,7 +84,7 @@ What end-users of products built on Agent Foundry see — UI widgets per node, a
 
 ### Ecosystem
 
-Extension points, registries, community-contributed primitives and agents.
+Extension points, registries, community-contributed constructs and agents.
 
 <!-- Exists: ... -->
 <!-- Next: ... -->

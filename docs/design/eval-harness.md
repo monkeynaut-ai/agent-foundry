@@ -40,7 +40,7 @@ roll our own `Case`, `Dataset`, `Evaluator`, or `EvaluationReport` types.
 
 Reasons:
 
-- Their Case / Evaluator / Report primitives match what we'd build.
+- Their Case / Evaluator / Report constructs match what we'd build.
 - `LLMJudge` is a built-in evaluator — saves us writing one.
 - Built-ins for the common code checks: `EqualsExpected`, `Equals`, `Contains`,
   `IsInstance`, `MaxDuration`.
@@ -65,10 +65,10 @@ dev CLI. Production agent runs are unaffected (they don't import `pydantic_evals
 
 The harness consumes Agent Foundry's existing public APIs. No refactors required.
 
-- Invocation uses the existing `run_primitive_plan` orchestration entry point.
-  The harness wraps the AgentAction under test in a `PrimitivePlan(root=agent)`,
+- Invocation uses the existing `run_process` orchestration entry point.
+  The harness wraps the AgentAction under test in a `Process(root=agent)`,
   passes the case's typed input as `initial_state`, and gets the typed output.
-- `RunContext` is constructed by `run_primitive_plan`; the harness supplies its
+- `RunContext` is constructed by `run_process`; the harness supplies its
   constructor args (artifacts dir, workspace volume, base image tag,
   responder provider).
 - A `RaiseOnInvokeResponder(Responder)` is the only new collaborator the
@@ -97,8 +97,8 @@ The harness consumes Agent Foundry's existing public APIs. No refactors required
 └──────────────────┬──────────────────────────┘
                    ↓
 ┌─────────────────────────────────────────────┐
-│ Agent Foundry orchestration                 │  run_primitive_plan
-│   PrimitivePlan(root=agent) →               │
+│ Agent Foundry orchestration                 │  run_process
+│   Process(root=agent) →               │
 │     RunContext → executor → typed output    │
 └─────────────────────────────────────────────┘
 ```
@@ -286,13 +286,13 @@ debugging becomes a real need, we add structured snapshot at that point.
 
 ## Implementation outline
 
-A rough sketch, not a binding plan:
+A rough sketch, not a binding process:
 
 1. Add `pydantic-evals` to `pyproject.toml`.
 2. Create `agent_foundry/evals/` package:
    - `models.py` — `EvalSuite`, `RunResult`
    - `responder.py` — `RaiseOnInvokeResponder`
-   - `runner.py` — `run_suite(suite) -> RunResult`, wraps `run_primitive_plan`
+   - `runner.py` — `run_suite(suite) -> RunResult`, wraps `run_process`
      as the task function, calls `dataset.evaluate` N times
    - `cli.py` — `pdm eval` entrypoint
    - `persistence.py` — write/read `report.json`

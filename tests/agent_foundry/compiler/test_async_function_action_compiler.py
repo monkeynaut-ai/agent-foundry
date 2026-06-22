@@ -12,12 +12,12 @@ import pytest
 from pydantic import BaseModel
 
 from agent_foundry import runtime
-from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
+from agent_foundry.compiler.compiler import compile_process
+from agent_foundry.constructs.models import AsyncFunctionAction
+from agent_foundry.constructs.process import Process
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter, NoOpLifecycleWriter
 from agent_foundry.orchestration.run_context import RunContext, current_run_context
-from agent_foundry.primitives.models import AsyncFunctionAction
-from agent_foundry.primitives.plan import PrimitivePlan
 from agent_foundry.responders.models import (
     ClarificationRequest,
     ResponderContext,
@@ -77,7 +77,7 @@ def test_async_function_action_runs_and_merges_output(writer: _CapturingWriter) 
         return _Output(result=state.text.upper())
 
     action = AsyncFunctionAction[_Input, _Output](function=fn)
-    graph = compile_runtime_plan(PrimitivePlan(action))
+    graph = compile_process(Process(action))
     final = asyncio.run(graph.ainvoke({"text": "hi"}))
 
     assert final["result"] == "HI"
@@ -88,7 +88,7 @@ def test_async_function_action_arity_zero(writer: _CapturingWriter) -> None:
         return _Output(result="zero")
 
     action = AsyncFunctionAction[_Input, _Output](function=fn)
-    graph = compile_runtime_plan(PrimitivePlan(action))
+    graph = compile_process(Process(action))
     final = asyncio.run(graph.ainvoke({"text": "ignored"}))
 
     assert final["result"] == "zero"
@@ -99,7 +99,7 @@ def test_async_function_action_emits_started_and_completed(writer: _CapturingWri
         return _Output(result="ok")
 
     action = AsyncFunctionAction[_Input, _Output](function=fn, name="resolve_choice")
-    graph = compile_runtime_plan(PrimitivePlan(action))
+    graph = compile_process(Process(action))
     asyncio.run(graph.ainvoke({"text": "x"}))
 
     assert LifecycleEvent.FUNCTION_ACTION_STARTED in writer.types()
@@ -114,7 +114,7 @@ def test_async_function_action_emits_failed_on_raise(writer: _CapturingWriter) -
         raise ValueError("boom")
 
     action = AsyncFunctionAction[_Input, _Output](function=fn, name="boomer")
-    graph = compile_runtime_plan(PrimitivePlan(action))
+    graph = compile_process(Process(action))
     with pytest.raises(ValueError):
         asyncio.run(graph.ainvoke({"text": "x"}))
 
@@ -142,7 +142,7 @@ def test_async_function_action_can_await_responder(tmp_path: Any) -> None:
         return _Output(result=resp.answer)
 
     action = AsyncFunctionAction[_Input, _Output](function=fn)
-    graph = compile_runtime_plan(PrimitivePlan(action))
+    graph = compile_process(Process(action))
 
     ctx = RunContext(
         run_id="afa-resp",

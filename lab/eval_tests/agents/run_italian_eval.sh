@@ -39,7 +39,7 @@ if [[ -f "${ENV_FILE}" ]]; then
 fi
 
 # The agent containers' entrypoint requires Claude Code authentication
-# via CLAUDE_CODE_OAUTH_TOKEN. Without it, run_primitive_plan boots the
+# via CLAUDE_CODE_OAUTH_TOKEN. Without it, run_process boots the
 # container with no auth env, the entrypoint exits 1, and every exec_run
 # returns "409 container is not running". Fail fast with a clear message.
 if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then

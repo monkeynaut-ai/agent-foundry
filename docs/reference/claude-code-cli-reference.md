@@ -34,7 +34,7 @@ Research compiled from official Claude Code documentation.
 - **`--append-system-prompt-file <path>`**: Append file contents to default prompt
 
 ### Permissions & Security
-- **`--permission-mode <mode>`**: `default` | `acceptEdits` | `plan` | `dontAsk` | `bypassPermissions`
+- **`--permission-mode <mode>`**: `default` | `acceptEdits` | `process` | `dontAsk` | `bypassPermissions`
 - **`--dangerously-skip-permissions`**: Skip all permission prompts (use with caution)
 - **`--allow-dangerously-skip-permissions`**: Enable bypass as option without activating immediately
 - **`--permission-prompt-tool <mcp_tool>`**: Use MCP tool to handle permission prompts in non-interactive mode
@@ -91,7 +91,7 @@ Research compiled from official Claude Code documentation.
     "allow": ["Bash(npm run *)", "Read", "Edit(/src/**)"],
     "ask": ["Bash(git push *)"],
     "deny": ["Bash(rm -rf *)"],
-    "defaultMode": "acceptEdits|plan|dontAsk|bypassPermissions|default",
+    "defaultMode": "acceptEdits|process|dontAsk|bypassPermissions|default",
     "additionalDirectories": ["../docs/", "~/.config"],
     "disableBypassPermissionsMode": "disable"
   }
@@ -268,7 +268,7 @@ Research compiled from official Claude Code documentation.
   "fileSuggestion": {"type": "command", "command": "~/.claude/file-suggestion.sh"},
   "language": "english|japanese|spanish|...",
   "cleanupPeriodDays": 30,
-  "plansDirectory": "./plans",
+  "plansDirectory": "./processes",
   "fastModePerSessionOptIn": true,
   "alwaysThinkingEnabled": true
 }

@@ -17,12 +17,12 @@ def test_af_output_constant() -> None:
     assert attributes.AF_OUTPUT == "agent_foundry.output"
 
 
-def test_af_primitive_type_constant() -> None:
-    assert attributes.AF_PRIMITIVE_TYPE == "agent_foundry.primitive_type"
+def test_af_construct_type_constant() -> None:
+    assert attributes.AF_PRIMITIVE_TYPE == "agent_foundry.construct_type"
 
 
-def test_af_primitive_name_constant() -> None:
-    assert attributes.AF_PRIMITIVE_NAME == "agent_foundry.primitive_name"
+def test_af_construct_name_constant() -> None:
+    assert attributes.AF_PRIMITIVE_NAME == "agent_foundry.construct_name"
 
 
 def test_af_run_id_constant() -> None:

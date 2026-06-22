@@ -6,15 +6,15 @@ Deliver MLflow's tracing and run capability in Agent Foundry without coupling th
 
 ## Goals
 
-- AF emits OpenTelemetry spans at primitive boundaries.
-- Each AF run (execution of a primitive plan via `run_primitive_plan`) maps to one MLflow Run with product-declared params, metrics, tags, and artifacts.
+- AF emits OpenTelemetry spans at construct boundaries.
+- Each AF run (execution of a construct process via `run_process`) maps to one MLflow Run with product-declared params, metrics, tags, and artifacts.
 - Products configure emission per environment via their own deployment infra; AF reads no environment variables.
 - Sensitive fields can be redacted before they leave AF.
 - Spans land in a self-hosted MLflow instance and render with typed span types, structured inputs/outputs, and run association.
 
 ## Non-goals
 
-- Span coverage on every primitive type (this stage covers `AgentAction` only; other primitives land later).
+- Span coverage on every construct type (this stage covers `AgentAction` only; other constructs land later).
 - Sampling.
 - AI Gateway / multi-provider routing.
 - Prompt Registry backing for callable fields.
@@ -59,11 +59,11 @@ AF core never imports `mlflow`. The string `mlflow` only appears inside the adap
 
 ## Run boundary
 
-AF already has a per-plan-execution context — currently named `AgentRunContext` in `src/agent_foundry/orchestration/run_context.py` — with `run_id`, `artifacts_dir`, `lifecycle_writer`. The "Agent" prefix is a misnomer left over from an earlier iteration: the context is constructed in `run_primitive_plan` *before* the compiled graph runs and stays active for every primitive (`Sequence`, `Loop`, `AgentAction`, `FunctionAction`, …) the plan executes. AF already uses the noun "run" to mean a full plan execution (`run_id`, `RUN_STARTED` lifecycle event, `run_primitive_plan`, `current_run_context` ContextVar).
+AF already has a per-process-execution context — currently named `AgentRunContext` in `src/agent_foundry/orchestration/run_context.py` — with `run_id`, `artifacts_dir`, `lifecycle_writer`. The "Agent" prefix is a misnomer left over from an earlier iteration: the context is constructed in `run_process` *before* the compiled graph runs and stays active for every construct (`Sequence`, `Loop`, `AgentAction`, `FunctionAction`, …) the process executes. AF already uses the noun "run" to mean a full process execution (`run_id`, `RUN_STARTED` lifecycle event, `run_process`, `current_run_context` ContextVar).
 
 **This work renames the class `AgentRunContext` → `RunContext`** to drop the misleading prefix and match AF's own vocabulary. References in `container_executor.py`, `runner.py`, and `runtime/__init__.py` move with it. Mechanical change; the symbol and its 9 call sites are enumerated by LSP `findReferences`.
 
-For this stage, **one `RunContext` lifecycle = one MLflow Run**. The boundary is the platform invocation. Products that need finer or coarser boundaries within a single invocation are out of scope; that need is addressed later by an in-tree scope primitive if it materializes.
+For this stage, **one `RunContext` lifecycle = one MLflow Run**. The boundary is the platform invocation. Products that need finer or coarser boundaries within a single invocation are out of scope; that need is addressed later by an in-tree scope construct if it materializes.
 
 ## RunDefinition
 
@@ -78,7 +78,7 @@ class RunDefinition(BaseModel):
     artifacts: list[ArtifactSpec] = Field(default_factory=list)
 ```
 
-Each callable receives the plan's input model (the same `I` the root primitive declares). `metrics` additionally receives a `RunStats` summary computed at run close (total spans, duration, error count, aggregate token usage from spans).
+Each callable receives the process's input model (the same `I` the root construct declares). `metrics` additionally receives a `RunStats` summary computed at run close (total spans, duration, error count, aggregate token usage from spans).
 
 `ArtifactSpec` describes a file path on disk to log to the MLflow run as an artifact (commonly `artifacts_dir / something`).
 
@@ -107,7 +107,7 @@ config = TelemetryConfig(
     run_definition=ARCHIPELAGO_RUN_DEFINITION,
 ) if "AF_OTLP_ENDPOINT" in os.environ else None
 
-await run_primitive_plan(plan, input, telemetry=config, ...)
+await run_process(process, input, telemetry=config, ...)
 ```
 
 Per-environment enable/disable lives in the product's deployment infra (env vars, k8s configmaps, etc.). The platform reads no environment.
@@ -121,8 +121,8 @@ AF emits attributes in two namespaces:
 
 | Attribute                          | Source     | Set by               | Purpose                                       |
 |------------------------------------|------------|----------------------|-----------------------------------------------|
-| `agent_foundry.primitive_type`     | AF         | telemetry            | "AgentAction", "Sequence", …                  |
-| `agent_foundry.primitive_name`     | AF         | telemetry            | The primitive's `name` field if present       |
+| `agent_foundry.construct_type`     | AF         | telemetry            | "AgentAction", "Sequence", …                  |
+| `agent_foundry.construct_name`     | AF         | telemetry            | The construct's `name` field if present       |
 | `agent_foundry.input`              | AF         | telemetry            | JSON of input model (post-redaction)          |
 | `agent_foundry.output`             | AF         | telemetry            | JSON of output model (post-redaction)         |
 | `agent_foundry.run_id`             | AF         | telemetry            | The `RunContext.run_id`                  |
@@ -154,7 +154,7 @@ The compiler wraps `AgentAction` node functions with span emission. Span boundar
 - **Start** — entering `_compile_agent_action`'s `node_fn_async` / `node_fn_sync`.
 - **End** — when the executor returns (success) or raises (error). Status reflects the outcome.
 
-Other primitives (`Sequence`, `Loop`, `Retry`, `Conditional`, `FunctionAction`, `GateAction`) emit no spans this stage. Their span coverage is the next stage's work.
+Other constructs (`Sequence`, `Loop`, `Retry`, `Conditional`, `FunctionAction`, `GateAction`) emit no spans this stage. Their span coverage is the next stage's work.
 
 ## Redaction
 
@@ -176,8 +176,8 @@ For this stage, redaction is wired through but products may pass `None` and acce
 
 The adapter listens to `RunContext` lifecycle events. Two existing observation points are sufficient:
 
-- **Open** — when `run_primitive_plan` constructs the `RunContext` and sets it on the `current_run_context` ContextVar.
-- **Close** — when the plan exits (success or exception).
+- **Open** — when `run_process` constructs the `RunContext` and sets it on the `current_run_context` ContextVar.
+- **Close** — when the process exits (success or exception).
 
 On open:
 1. Resolve the active `RunDefinition` from `TelemetryConfig`.
@@ -227,8 +227,8 @@ The dead `ExecutionTracer` in `src/agent_foundry/observability/tracer.py` is del
 End-to-end demo that proves every interface boundary in this design works together. This is not a scope-limiting slice; it is the acceptance gate for the design as a whole — a compact scenario that, when passing, demonstrates the full design works as specified.
 
 1. `TelemetryConfig` constructed in a small example product.
-2. One `AgentAction` declared, wrapped in a plan.
-3. Plan invoked via `run_primitive_plan(...)` with `telemetry=config`.
+2. One `AgentAction` declared, wrapped in a process.
+3. Plan invoked via `run_process(...)` with `telemetry=config`.
 4. Compiler emits an OTel span for the `AgentAction` execution.
 5. Span exports over OTLP/HTTP to a local MLflow server.
 6. MLflow adapter creates a Run on `RunContext` open, ends it on close, logs the product's declared params/metrics/tags.
@@ -237,7 +237,7 @@ End-to-end demo that proves every interface boundary in this design works togeth
 Verification:
 
 - Visual: MLflow UI shows the run, the trace, and the span with structured I/O.
-- Programmatic: a smoke test that runs the example plan and queries MLflow's API for the resulting run and trace, asserts on the recorded params and metrics.
+- Programmatic: a smoke test that runs the example process and queries MLflow's API for the resulting run and trace, asserts on the recorded params and metrics.
 
 ## Open items
 
@@ -251,7 +251,7 @@ Verification:
 
 ### Coverage
 
-Span emission on every primitive boundary: `Sequence`, `Loop`, `Retry`, `Conditional`, `FunctionAction`, `GateAction`. Token-usage rollup at composite boundaries. Tail-based sampling.
+Span emission on every construct boundary: `Sequence`, `Loop`, `Retry`, `Conditional`, `FunctionAction`, `GateAction`. Token-usage rollup at composite boundaries. Tail-based sampling.
 
 ### Prompt Registry
 
@@ -259,7 +259,7 @@ Callable-field backing for `prompt_builder` / `instructions_provider` resolved f
 
 ### Evaluation and curation
 
-`mlflow.evaluate` integration: any AF primitive compiles to a `predict_fn` runnable against an evaluation dataset. Built-in scorers for AF properties (schema fidelity, instruction adherence, latency / cost budgets) plus a custom-scorer extension point. LLM-judge writeback of assessments. Human-feedback writeback via `GateAction`-shaped patterns. Dataset promotion workflow — sampling interesting traces, attaching expected outputs, growing the regression set. This is where the compounding evaluation loop becomes available.
+`mlflow.evaluate` integration: any AF construct compiles to a `predict_fn` runnable against an evaluation dataset. Built-in scorers for AF properties (schema fidelity, instruction adherence, latency / cost budgets) plus a custom-scorer extension point. LLM-judge writeback of assessments. Human-feedback writeback via `GateAction`-shaped patterns. Dataset promotion workflow — sampling interesting traces, attaching expected outputs, growing the regression set. This is where the compounding evaluation loop becomes available.
 
 ### AI Gateway
 
@@ -275,11 +275,11 @@ Standardized capture of useful AF by-products into MLflow run artifacts: rendere
 
 ### Tags and namespaces
 
-Codified experiment-naming convention (e.g. `<product>/<env>`) and tag schema (tenant, primitive_id, AF version, prompt alias). Product-side helpers without AF imposing defaults.
+Codified experiment-naming convention (e.g. `<product>/<env>`) and tag schema (tenant, construct_id, AF version, prompt alias). Product-side helpers without AF imposing defaults.
 
 ### Custom run boundaries
 
-In-tree scope primitive for products that need run boundaries that don't align with `run_primitive_plan` invocations (e.g. one platform invocation processing many logical units). Lands when a product actually needs it.
+In-tree scope construct for products that need run boundaries that don't align with `run_process` invocations (e.g. one platform invocation processing many logical units). Lands when a product actually needs it.
 
 ### Non-MLflow backend validation
 
@@ -292,5 +292,5 @@ Auth, RBAC, deployment patterns for self-hosted MLflow at scale. Triggered by mu
 ### Out of scope until further notice
 
 - Classical experiment-tracking workflows (notebook hyperparam sweeps).
-- MLflow Model Registry for primitive declarations (force-fit; runs and aliases cover the same ground).
+- MLflow Model Registry for construct declarations (force-fit; runs and aliases cover the same ground).
 - MLflow Models packaging / Agent Server hosting (wrong shape for AF).

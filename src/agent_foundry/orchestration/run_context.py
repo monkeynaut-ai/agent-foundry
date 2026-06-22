@@ -1,8 +1,8 @@
-"""RunContext — the per-plan-execution context carried through compiled plans.
+"""RunContext — the per-process-execution context carried through compiled processes.
 
-Constructed once at plan start (in ``run_primitive_plan``) before the compiled
-graph runs and remains active through every primitive (Sequence, Loop,
-AgentAction, FunctionAction, …). Carries plan-level state: ``run_id``,
+Constructed once at process start (in ``run_process``) before the compiled
+graph runs and remains active through every construct (Sequence, Loop,
+AgentAction, FunctionAction, …). Carries process-level state: ``run_id``,
 ``artifacts_dir``, ``lifecycle_writer``, ``cancel_event``, container
 registry, responder provider, env.
 
@@ -65,7 +65,7 @@ def _default_artifacts_dir() -> Path:
     directory itself, and so leaked dirs stay scoped to the project
     rather than scattered across the system tmp. ``.tmp/`` is gitignored
     by convention in this repo (and consumers should add it to their
-    own ``.gitignore``). Production code (``run_primitive_plan``) always
+    own ``.gitignore``). Production code (``run_process``) always
     supplies an explicit ``artifacts_dir``.
     """
     parent = Path.cwd() / ".tmp"
@@ -74,7 +74,7 @@ def _default_artifacts_dir() -> Path:
 
 
 class RunContext(BaseModel):
-    """Per-plan-execution context threaded through compiled plan execution.
+    """Per-process-execution context threaded through compiled process execution.
 
     Fields:
       - ``run_id``: unique identifier for this run (non-empty)
@@ -92,7 +92,7 @@ class RunContext(BaseModel):
     run_id: str = Field(min_length=1)
     # ``artifacts_dir``, ``responder_provider``, and ``cancel_event`` ship
     # with defaults so minimal call sites (and their tests) continue to
-    # work; real construction sites (``run_primitive_plan``) pass
+    # work; real construction sites (``run_process``) pass
     # explicit values for all three.
     artifacts_dir: Path = Field(default_factory=_default_artifacts_dir)
     container_registry: Any
@@ -172,7 +172,7 @@ class RunContext(BaseModel):
     telemetry_provider: SDKTracerProvider | None = None
     """Per-run OTel TracerProvider, or None if telemetry is disabled.
 
-    Per-run isolation: each ``run_primitive_plan`` invocation builds its own
+    Per-run isolation: each ``run_process`` invocation builds its own
     provider and stores it here. ``emit_span`` resolves the active
     ``RunContext.telemetry_provider`` via the ContextVar — no process-global
     tracer-provider state is touched. This is what makes concurrent runs in

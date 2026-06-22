@@ -1,6 +1,6 @@
 # Agent Foundry Evals
 
-A typed, declarative eval system for the primitives Agent Foundry
+A typed, declarative eval system for the constructs Agent Foundry
 defines. Products built on Agent Foundry
 use this package to score the behavior of their AI calls and agents
 against curated datasets.
@@ -230,9 +230,9 @@ per-worker memory cost of the eval framework.
 
 The package today is intentionally agent-foundry-shaped: targets are
 `AICall` and `AgentAction`, the registry holds `AICall`, the API
-server's `TargetSpec` extracts schemas from agent-foundry primitives.
+server's `TargetSpec` extracts schemas from agent-foundry constructs.
 A future generalization could lift those couplings and let the eval
-system evaluate anything, not just agent-foundry primitives.
+system evaluate anything, not just agent-foundry constructs.
 
 ### What couples the package to agent-foundry today
 
@@ -240,14 +240,14 @@ Five modules import from `agent_foundry.*` outside `evals/`:
 
 | Module | Imports from outside evals | Purpose |
 |---|---|---|
-| `models/targets.py` | `primitives.ai_call.AICall`, `primitives.models.AgentAction` | `AgentTarget` and `AICallTarget` wrap these as evaluation targets. |
-| `registry.py` | `primitives.ai_call.AICall` | `AICallRegistry` is typed against `AICall`. |
-| `api/schemas.py` | `primitives.ai_call.AICall`, `primitives.models.get_type_args` | `TargetSpec` extracts input/output JSON schemas from an AICall. |
-| `agent_foundry_tasks.py` | `ai_models.execute.invoke`, `primitives.*`, `orchestration.*`, `responders.*` | Builds runnable tasks from `AICall` and `AgentAction`. |
+| `models/targets.py` | `constructs.ai_call.AICall`, `constructs.models.AgentAction` | `AgentTarget` and `AICallTarget` wrap these as evaluation targets. |
+| `registry.py` | `constructs.ai_call.AICall` | `AICallRegistry` is typed against `AICall`. |
+| `api/schemas.py` | `constructs.ai_call.AICall`, `constructs.models.get_type_args` | `TargetSpec` extracts input/output JSON schemas from an AICall. |
+| `agent_foundry_tasks.py` | `ai_models.execute.invoke`, `constructs.*`, `orchestration.*`, `responders.*` | Builds runnable tasks from `AICall` and `AgentAction`. |
 | `runners/pydantic_evals.py` | `pydantic_evals.*` (third-party) | Backend implementation. (Already a designated boundary; not a generalization concern.) |
 
 The first four bind the eval system's data model and adapter surface
-to specific agent-foundry primitives.
+to specific agent-foundry constructs.
 
 ### How to eliminate those dependencies
 

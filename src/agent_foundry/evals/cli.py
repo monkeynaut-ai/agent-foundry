@@ -15,7 +15,7 @@ Target-specific arg requirements:
 
 - ``AgentTarget`` — ``--artifacts-dir``, ``--workspace-volume``, and
   ``--base-image-tag`` are required (the agent runs in a container via
-  ``run_primitive_plan``).
+  ``run_process``).
 - ``AICallTarget`` — those three are not used; ``invoke_ai_call`` runs
   in-process without container infrastructure.
 """
@@ -32,7 +32,7 @@ from dotenv import load_dotenv
 
 from agent_foundry.evals.agent_foundry_tasks import (
     build_invoke_ai_call_task,
-    build_run_primitive_plan_task,
+    build_run_process_task,
 )
 from agent_foundry.evals.models import (
     AgentTarget,
@@ -147,7 +147,7 @@ def build_task_for_suite(suite: EvalSuite, args: argparse.Namespace) -> Task:
         ]
         if missing:
             raise MissingTargetArgsError(f"AgentTarget suite requires {', '.join(missing)}")
-        return build_run_primitive_plan_task(
+        return build_run_process_task(
             target.agent,
             artifacts_dir=args.artifacts_dir,
             workspace_volume=args.workspace_volume,

@@ -1,4 +1,4 @@
-"""Primitive compiler: translates typed primitive graphs into executable LangGraph."""
+"""Construct compiler: translates typed construct graphs into executable LangGraph."""
 
 from __future__ import annotations
 
@@ -16,26 +16,23 @@ from pydantic import BaseModel, ValidationError
 # invoke_ai_call is safe at module level: invoke.py imports AICall only under
 # TYPE_CHECKING, so no runtime cycle exists.
 from agent_foundry.ai_models.execute.invoke import invoke_ai_call
-from agent_foundry.models.usage import TokenUsage
-from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
-from agent_foundry.orchestration.run_context import current_run_context, require_current_run_context
-from agent_foundry.primitives.ai_call import AICall
-from agent_foundry.primitives.errors import PrimitiveCompilationError
-from agent_foundry.primitives.models import (
+from agent_foundry.constructs.ai_call import AICall
+from agent_foundry.constructs.errors import ConstructCompilationError
+from agent_foundry.constructs.models import (
     AgentAction,
     AsyncFunctionAction,
     Conditional,
+    Construct,
     FunctionAction,
     GateAction,
     Loop,
-    Primitive,
     Retry,
     RetryExceptionPolicy,
     Sequence,
     get_type_args,
 )
-from agent_foundry.primitives.plan import PrimitivePlan
-from agent_foundry.primitives.retry_types import (
+from agent_foundry.constructs.process import Process
+from agent_foundry.constructs.retry_types import (
     WELL_KNOWN_METADATA_FIELDS,
     AttemptFailure,
     AttemptOutcome,
@@ -46,6 +43,9 @@ from agent_foundry.primitives.retry_types import (
     RetryExhaustionReason,
     RetryRoute,
 )
+from agent_foundry.models.usage import TokenUsage
+from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+from agent_foundry.orchestration.run_context import current_run_context, require_current_run_context
 from agent_foundry.telemetry.spans import emit_span
 
 # Flat (non-prefixed) state key the resolver node writes its ResolverDisposition
@@ -63,7 +63,7 @@ class CompileContext:
     ``prefix`` names the current node scope. ``gate_ids`` is a shared
     accumulator — child contexts must carry the same list instance so
     that gate node ids collected deep in the tree are visible to
-    ``compile_runtime_plan`` at the top.
+    ``compile_process`` at the top.
     """
 
     prefix: str
@@ -83,16 +83,16 @@ class CompileResult(NamedTuple):
 
 type _CompilerStorage = Callable[[StateGraph, Any, CompileContext], CompileResult]
 
-_compiler_registry: dict[type[Primitive], _CompilerStorage] = {}
+_compiler_registry: dict[type[Construct], _CompilerStorage] = {}
 
 
-def register_compiler[P: Primitive](
+def register_compiler[P: Construct](
     prim_type: type[P],
     compiler_fn: Callable[[StateGraph, P, CompileContext], CompileResult],
 ) -> None:
-    """Register a compiler function for a primitive type.
+    """Register a compiler function for a construct type.
 
-    The function's primitive parameter type is checked against ``prim_type``
+    The function's construct parameter type is checked against ``prim_type``
     at the call site, so ``register_compiler(Sequence, _compile_sequence)``
     statically verifies ``_compile_sequence`` accepts ``Sequence``.
 
@@ -131,7 +131,7 @@ def _derive_state_type(input_type: type[BaseModel], output_type: type[BaseModel]
     for model in (input_type, output_type):
         for name in model.model_fields:
             fields[name] = Any
-    return TypedDict("PrimitiveState", fields, total=False)  # type: ignore[call-overload]
+    return TypedDict("ConstructState", fields, total=False)  # type: ignore[call-overload]
 
 
 def _retry_channels(prefix: str) -> dict[str, Any]:
@@ -166,7 +166,7 @@ def _retry_channels(prefix: str) -> dict[str, Any]:
 # the next node. Correctness depends on no second Retry writing these names
 # between that write and read. Today nothing can: all execution is sequential
 # (Sequence is linear, Loop awaits each iteration in turn, Conditional takes one
-# branch, and there is no parallel primitive), so no two Retries' write->read
+# branch, and there is no parallel construct), so no two Retries' write->read
 # windows ever overlap — not siblings, not nested. The shared names would only
 # collide if two Retries became live in the same scope at once, e.g. a Retry
 # inside another Retry's resolver, or concurrent execution were ever introduced.
@@ -175,8 +175,8 @@ WELL_KNOWN_ATTEMPT_FAILURES = "attempt_failures"
 WELL_KNOWN_METADATA_CHANNELS: dict[str, Any] = dict.fromkeys(WELL_KNOWN_METADATA_FIELDS, Any)
 
 
-def _collect_retry_channels(prim: Primitive, prefix: str) -> dict[str, Any]:
-    """Walk the plan tree and collect outer-state channels every Retry needs.
+def _collect_retry_channels(prim: Construct, prefix: str) -> dict[str, Any]:
+    """Walk the process tree and collect outer-state channels every Retry needs.
 
     A Retry contributes its prefix-namespaced internal channels and the fixed
     well-known metadata channels; child enumeration recurses through
@@ -195,10 +195,10 @@ def _collect_retry_channels(prim: Primitive, prefix: str) -> dict[str, Any]:
 
 
 def _state_type_with_retry_channels(
-    name: str, fields: dict[str, Any], children: list[tuple[Primitive, str]]
+    name: str, fields: dict[str, Any], children: list[tuple[Construct, str]]
 ) -> type:
     """Build a TypedDict(total=False) from ``fields`` plus the retry channels of
-    each ``(child_primitive, child_prefix)`` compiled into this subgraph.
+    each ``(child_construct, child_prefix)`` compiled into this subgraph.
 
     A subgraph's schema is fixed at ``StateGraph(...)`` construction; any Retry
     compiled into it (at arbitrary nesting depth below its direct children)
@@ -213,7 +213,7 @@ def _state_type_with_retry_channels(
 def _compile_body_subgraph(
     state_type_name: str,
     io_types: list[type[BaseModel]],
-    body: Primitive,
+    body: Construct,
     body_prefix: str,
     ctx: CompileContext,
 ) -> Any:
@@ -242,7 +242,7 @@ def _scope_in(parent_state: dict[str, Any], child_input_type: type[BaseModel]) -
     try:
         child_input_type.model_validate(scoped)
     except ValidationError as e:
-        raise PrimitiveCompilationError(f"Scope-in failed: {e}", primitive_type="scope_in") from e
+        raise ConstructCompilationError(f"Scope-in failed: {e}", construct_type="scope_in") from e
     return scoped
 
 
@@ -253,7 +253,7 @@ def _scope_out(child_result: dict[str, Any], child_output_type: type[BaseModel])
     try:
         child_output_type.model_validate(scoped)
     except ValidationError as e:
-        raise PrimitiveCompilationError(f"Scope-out failed: {e}", primitive_type="scope_out") from e
+        raise ConstructCompilationError(f"Scope-out failed: {e}", construct_type="scope_out") from e
     return scoped
 
 
@@ -266,7 +266,7 @@ def _validate_scoped_input(
     compiler's behavior independent of the input model's ``extra``
     config — extras are dropped before validation regardless.
     Required-field errors include ``node_id`` so a developer reading
-    the failure can locate the offending step in a multi-primitive plan.
+    the failure can locate the offending step in a multi-construct process.
 
     This is the inbound counterpart to ``_scope_out``.
     """
@@ -275,9 +275,9 @@ def _validate_scoped_input(
     try:
         return input_type.model_validate(scoped)
     except ValidationError as e:
-        raise PrimitiveCompilationError(
+        raise ConstructCompilationError(
             f"Boundary validation failed at {node_id}: {e}",
-            primitive_type=node_id,
+            construct_type=node_id,
         ) from e
 
 
@@ -299,9 +299,9 @@ def _read_retry_route(state: dict[str, Any], route_key: str, node_id: str) -> Re
     """
     raw = state.get(route_key)
     if raw is None:
-        raise PrimitiveCompilationError(
+        raise ConstructCompilationError(
             f"Retry {node_id}: missing route marker '{route_key}'",
-            primitive_type=node_id,
+            construct_type=node_id,
         )
     return RetryRoute(raw)
 
@@ -336,8 +336,8 @@ def _outcome_from_body(
     return merged, (AttemptOutcome.PASSED if until_fn(model) else AttemptOutcome.NOT_PASSED)
 
 
-def _compile_node(graph: StateGraph, prim: Primitive, ctx: CompileContext) -> CompileResult:
-    """Compile a primitive into graph nodes/edges."""
+def _compile_node(graph: StateGraph, prim: Construct, ctx: CompileContext) -> CompileResult:
+    """Compile a construct into graph nodes/edges."""
     # Parameterized generics (e.g., FunctionAction[A, B]) create new classes.
     # Walk MRO to find the registered base type.
     prim_type = type(prim)
@@ -345,30 +345,30 @@ def _compile_node(graph: StateGraph, prim: Primitive, ctx: CompileContext) -> Co
         compiler = _compiler_registry.get(cls)
         if compiler is not None:
             return compiler(graph, prim, ctx)
-    raise PrimitiveCompilationError(
+    raise ConstructCompilationError(
         f"No compiler registered for {prim_type.__name__}",
-        primitive_type=prim_type.__name__,
+        construct_type=prim_type.__name__,
     )
 
 
 # -- Entry point --
 
 
-def compile_runtime_plan(plan: PrimitivePlan) -> Any:
-    """Build the executable graph for a plan.
+def compile_process(process: Process) -> Any:
+    """Build the executable graph for a process.
 
-    Not part of the public API — products use :func:`run_primitive_plan`.
+    Not part of the public API — products use :func:`run_process`.
     The returned object is opaque; calling methods on it directly is
     unsupported.
     """
-    plan.validate()
-    root = plan.root
+    process.validate()
+    root = process.root
     root_in, root_out = get_type_args(root)
     state_type = _derive_state_type(root_in, root_out)
     extra = _collect_retry_channels(root, "root")
     if extra:
         merged = {**dict.fromkeys(state_type.__annotations__, Any), **extra}
-        state_type = TypedDict("PrimitiveState", merged, total=False)  # type: ignore[call-overload]
+        state_type = TypedDict("ConstructState", merged, total=False)  # type: ignore[call-overload]
     graph = StateGraph(state_type)
 
     ctx = CompileContext(prefix="root")
@@ -571,7 +571,7 @@ def _compile_conditional(
     # prefix derivation; the suffix per branch is looked up by object identity.
     suffix_for = {id(child): suffix for child, suffix in cond.child_specs()}
     then_prefix = f"{ctx.prefix}_{suffix_for[id(cond.then_branch)]}"
-    branch_children: list[tuple[Primitive, str]] = [(cond.then_branch, then_prefix)]
+    branch_children: list[tuple[Construct, str]] = [(cond.then_branch, then_prefix)]
     if cond.else_branch is not None:
         else_prefix = f"{ctx.prefix}_{suffix_for[id(cond.else_branch)]}"
         branch_children.append((cond.else_branch, else_prefix))
@@ -890,16 +890,16 @@ def _compile_retry(
     def disposition_router(state: dict[str, Any]) -> str:
         raw = state.get(DISPOSITION_KEY)
         if raw is None:
-            raise PrimitiveCompilationError(
+            raise ConstructCompilationError(
                 f"Retry {retry_id}: resolver produced no '{DISPOSITION_KEY}' field",
-                primitive_type=retry_id,
+                construct_type=retry_id,
             )
         try:
             disposition = _coerce_disposition(raw)
         except ValidationError as exc:
-            raise PrimitiveCompilationError(
+            raise ConstructCompilationError(
                 f"Retry {retry_id}: '{DISPOSITION_KEY}' is not a ResolverDisposition: {exc}",
-                primitive_type=retry_id,
+                construct_type=retry_id,
             ) from exc
         _emit_lifecycle(
             LifecycleEvent.RESOLVER_DISPOSITION,
@@ -1012,10 +1012,10 @@ def _compile_agent_action(
 
     def _validate_typed(result: Any) -> BaseModel:
         if not isinstance(result, output_type):
-            raise PrimitiveCompilationError(
+            raise ConstructCompilationError(
                 f"AgentAction {node_id}: executor returned "
                 f"{type(result).__name__}, expected {output_type.__name__}",
-                primitive_type=node_id,
+                construct_type=node_id,
             )
         return result
 
@@ -1029,20 +1029,20 @@ def _compile_agent_action(
     if executor_is_async:
 
         async def node_fn_async(state: dict[str, Any]) -> dict[str, Any]:
-            primitive, prompt, instructions, run_ctx, model_input = _prepare(state)
+            construct, prompt, instructions, run_ctx, model_input = _prepare(state)
             redaction = run_ctx.telemetry.redaction if run_ctx.telemetry is not None else None
 
             with emit_span(
                 name=f"agent_foundry.AgentAction.{action.name}",
-                primitive_type="AgentAction",
-                primitive_name=action.name,
+                construct_type="AgentAction",
+                construct_name=action.name,
                 input_model=model_input,
                 run_id=run_ctx.run_id,
                 redaction=redaction,
             ) as handle:
                 handle.set_operation_name("chat")
                 result = await executor(
-                    primitive=primitive,
+                    construct=construct,
                     prompt=prompt,
                     instructions=instructions,
                     run_ctx=run_ctx,
@@ -1051,27 +1051,27 @@ def _compile_agent_action(
                 handle.set_output(typed)
                 return typed.model_dump()
 
-        # No sync function — attempting ``graph.invoke`` on a plan with
+        # No sync function — attempting ``graph.invoke`` on a process with
         # an async AgentAction raises a clear TypeError from LangGraph
-        # pointing callers at ``ainvoke`` / ``run_primitive_plan``.
+        # pointing callers at ``ainvoke`` / ``run_process``.
         graph.add_node(node_id, node_fn_async)  # type: ignore[arg-type]
     else:
 
         def node_fn_sync(state: dict[str, Any]) -> dict[str, Any]:
-            primitive, prompt, instructions, run_ctx, model_input = _prepare(state)
+            construct, prompt, instructions, run_ctx, model_input = _prepare(state)
             redaction = run_ctx.telemetry.redaction if run_ctx.telemetry is not None else None
 
             with emit_span(
                 name=f"agent_foundry.AgentAction.{action.name}",
-                primitive_type="AgentAction",
-                primitive_name=action.name,
+                construct_type="AgentAction",
+                construct_name=action.name,
                 input_model=model_input,
                 run_id=run_ctx.run_id,
                 redaction=redaction,
             ) as handle:
                 handle.set_operation_name("chat")
                 result = executor(
-                    primitive=primitive,
+                    construct=construct,
                     prompt=prompt,
                     instructions=instructions,
                     run_ctx=run_ctx,
@@ -1100,17 +1100,17 @@ def _compile_ai_call(
     executor = action.executor
 
     if executor is not None and not _is_async_callable(executor):
-        raise PrimitiveCompilationError(
+        raise ConstructCompilationError(
             f"AICall {node_id}: executor must be async (async def or class with async __call__)",
-            primitive_type=node_id,
+            construct_type=node_id,
         )
 
     def _validate_typed(result: Any) -> BaseModel:
         if not isinstance(result, output_type):
-            raise PrimitiveCompilationError(
+            raise ConstructCompilationError(
                 f"AICall {node_id}: executor returned "
                 f"{type(result).__name__}, expected {output_type.__name__}",
-                primitive_type=node_id,
+                construct_type=node_id,
             )
         return result
 
@@ -1134,8 +1134,8 @@ def _compile_ai_call(
 
         with emit_span(
             name=f"agent_foundry.AICall.{label}",
-            primitive_type="AICall",
-            primitive_name=label,
+            construct_type="AICall",
+            construct_name=label,
             input_model=model_input,
             run_id=run_id,
             redaction=redaction,
@@ -1144,11 +1144,11 @@ def _compile_ai_call(
             usage: TokenUsage | None = None
             try:
                 if executor is None:
-                    call_result = await invoke_ai_call(primitive=action, model_input=model_input)
+                    call_result = await invoke_ai_call(construct=action, model_input=model_input)
                     result = call_result.output
                     usage = call_result.usage
                 else:
-                    result = await executor(primitive=action, model_input=model_input)
+                    result = await executor(construct=action, model_input=model_input)
                 typed = _validate_typed(result)
             except TypeError as exc:
                 # TypeError here typically means the executor's return value was not
@@ -1163,9 +1163,9 @@ def _compile_ai_call(
                         name=label,
                         reason=str(exc),
                     )
-                raise PrimitiveCompilationError(
+                raise ConstructCompilationError(
                     f"AICall {node_id}: {exc}",
-                    primitive_type=node_id,
+                    construct_type=node_id,
                 ) from exc
             except Exception as exc:
                 if ctx_opt is not None:

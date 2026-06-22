@@ -3,7 +3,7 @@
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from agent_foundry.primitives.mcp import (
+from agent_foundry.constructs.mcp import (
     McpServer,
     McpTransport,
     StdioMcpServer,
@@ -98,8 +98,8 @@ class TestMcpServerUnion:
 
 
 class TestPublicAPI:
-    def test_mcp_types_importable_from_primitives(self):
-        from agent_foundry.primitives import (
+    def test_mcp_types_importable_from_constructs(self):
+        from agent_foundry.constructs import (
             McpServer,
             McpTransport,
             StdioMcpServer,

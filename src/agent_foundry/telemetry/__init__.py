@@ -1,6 +1,6 @@
 """Telemetry — OpenTelemetry emission, vendor-neutral.
 
-AF emits OTel spans at primitive boundaries. The ``mlflow_adapter`` (under
+AF emits OTel spans at construct boundaries. The ``mlflow_adapter`` (under
 the optional ``[mlflow]`` extra) is a separate module that consumes these
 spans; the telemetry module never imports MLflow.
 """

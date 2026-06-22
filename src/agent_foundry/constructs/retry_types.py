@@ -20,7 +20,7 @@ WELL_KNOWN_METADATA_FIELDS: frozenset[str] = frozenset({"exhaustion_reason", "at
 
 
 class AttemptOutcome(StrEnum):
-    """Whether a single attempt passed the Retry primitive's until() condition.
+    """Whether a single attempt passed the Retry construct's until() condition.
 
     A raise is mapped to NOT_PASSED by exception_policy; there is no errored member.
     """
@@ -43,7 +43,7 @@ class RetryRoute(StrEnum):
 
 
 class RetryExhaustionReason(StrEnum):
-    """Why a Retry primitive exhausted all attempts without until() returning True.
+    """Why a Retry construct exhausted all attempts without until() returning True.
 
     - CONDITION_NOT_MET: all attempts ran to completion; until() never returned True.
     - BODY_EXCEPTIONS: every attempt raised under the CATCH_AND_CONTINUE policy;
@@ -90,7 +90,7 @@ class DispositionKind(StrEnum):
 
 
 class ResolverDisposition(BaseModel):
-    """Routing signal a resolver primitive emits when the automated phase exhausts.
+    """Routing signal a resolver construct emits when the automated phase exhausts.
 
     Pure routing — carries no state. The state the compiler continues/accepts/re-runs
     with is the resolver node's own merged output state, already in graph state. The
@@ -106,7 +106,7 @@ class RetryAborted(Exception):
     """Raised when a resolver returns ABORT. Carries the abort reason.
 
     An internal unwind signal: the runner catches it and converts it to a
-    RunAborted outcome; it does not escape run_primitive_plan.
+    RunAborted outcome; it does not escape run_process.
     """
 
     def __init__(self, reason: str) -> None:

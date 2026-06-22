@@ -1,8 +1,8 @@
 # Agent Foundry
 
 **A platform for building agentic workflow systems.** Agent Foundry provides composable,
-typed primitives that compile to executable [LangGraph](https://github.com/langchain-ai/langgraph)
-graphs. You declare a workflow as a tree of primitives; the platform handles compilation,
+typed constructs that compile to executable [LangGraph](https://github.com/langchain-ai/langgraph)
+graphs. You declare a workflow as a tree of constructs; the platform handles compilation,
 execution, state management, container lifecycle, and observability.
 
 > **Status: alpha.** The platform foundation is in active development. APIs may change.
@@ -13,28 +13,28 @@ execution, state management, container lifecycle, and observability.
 Agentic systems share a large body of infrastructure — container lifecycle, protocol
 handling, structured output, lockdown, compilation, state flow, recovery. Rebuilding it
 per product is wasteful and error-prone. Agent Foundry centralizes that machinery so
-building a new agentic system means *composing primitives and declaring agent behavior*,
+building a new agentic system means *composing constructs and declaring agent behavior*,
 not reimplementing infrastructure. The things you change most often — prompts,
-instructions, schemas, executors — are callable fields on a primitive, so trying a
+instructions, schemas, executors — are callable fields on a construct, so trying a
 variation is a one-line change in a declaration.
 
 ## Core concepts
 
-A workflow is a **tree of primitives**, composed by direct object reference:
+A workflow is a **tree of constructs**, composed by direct object reference:
 
-**Control-flow primitives** structure the graph:
+**Control-flow constructs** structure the graph:
 - **Sequence** — linear execution of steps
 - **Loop** — iterate over a collection
 - **Retry** — repeat until a condition is met or attempts are exhausted
 - **Conditional** — branch on state
 
-**Action primitives** do work at the leaves:
+**Action constructs** do work at the leaves:
 - **FunctionAction** — in-process function call
 - **GateAction** — block for human interaction, return the response as typed output
 - **AgentAction** — run a containerized AI agent
 
-State flows between primitives as typed Pydantic models. Each step declares the input
-fields it reads and the output fields it merges back; composite primitives accumulate
+State flows between constructs as typed Pydantic models. Each step declares the input
+fields it reads and the output fields it merges back; composite constructs accumulate
 state within their subgraph and select which fields leave scope.
 
 ## Install
@@ -49,8 +49,8 @@ Requires Python 3.14.
 ## Quickstart
 
 See **[docs/guides/getting-started.md](docs/guides/getting-started.md)** for defining
-state models, composing a primitive tree, running a plan, and extending the platform with
-custom primitives. A complete runnable example (with telemetry wiring) lives in
+state models, composing a construct tree, running a process, and extending the platform with
+custom constructs. A complete runnable example (with telemetry wiring) lives in
 [`examples/mlflow_demo/`](examples/mlflow_demo/).
 
 ## Documentation
@@ -104,7 +104,7 @@ Rule of thumb: if the event describes something the platform does (start a conta
 
 ## MLflow Integration
 
-Agent Foundry can emit OpenTelemetry spans at primitive boundaries and bind each plan run to an MLflow Run. The integration ships in two pieces:
+Agent Foundry can emit OpenTelemetry spans at construct boundaries and bind each process run to an MLflow Run. The integration ships in two pieces:
 
 - **`agent_foundry.telemetry`** (always installed) — vendor-neutral OTel emission. Exports `TelemetryConfig`, `RunDefinition`, `RedactionPolicy`, `RunStats`, `ArtifactSpec`, `build_tracer_provider`, and `emit_span`. The compiler wraps every `AgentAction` execution with `emit_span`, sets `gen_ai.operation.name = "chat"`, and applies any product-supplied redaction.
 - **`agent_foundry.mlflow_adapter`** (optional, requires the `[mlflow]` extra) — translates AF span attributes to MLflow's namespace at emit time and binds MLflow Run start/end to the run lifecycle.
@@ -121,14 +121,14 @@ The bare install excludes MLflow. Importing `agent_foundry.mlflow_adapter` witho
 
 Two sides of the integration share an experiment but configure separately because they target different APIs:
 
-- **Trace spans** flow over OTLP/HTTP. Routing to a specific MLflow experiment uses the `x-mlflow-experiment-id` header on `TelemetryConfig.otlp_headers`. The runner builds the OTLP exporter with these headers when you call `run_primitive_plan(..., telemetry=config)`, so set them before the run starts.
+- **Trace spans** flow over OTLP/HTTP. Routing to a specific MLflow experiment uses the `x-mlflow-experiment-id` header on `TelemetryConfig.otlp_headers`. The runner builds the OTLP exporter with these headers when you call `run_process(..., telemetry=config)`, so set them before the run starts.
 - **Run data** (params, metrics, tags, artifacts via `mlflow.log_*`) uses the `mlflow` client library's global state. `enable()` sets that state for you when you pass `tracking_uri` and `experiment_id`.
 
 ```python
 import os
 
 from agent_foundry.mlflow_adapter import MLFLOW_TRANSLATIONS, enable as enable_mlflow_adapter
-from agent_foundry.orchestration.runner import run_primitive_plan
+from agent_foundry.orchestration.runner import run_process
 from agent_foundry.telemetry import RunDefinition, TelemetryConfig
 
 MLFLOW_BASE_URL = os.environ.get("MLFLOW_BASE_URL", "http://localhost:5000")
@@ -162,8 +162,8 @@ def attach_mlflow(event) -> None:
     )
 
 
-await run_primitive_plan(
-    plan,
+await run_process(
+    process,
     initial_state=plan_input,
     artifacts_dir=artifacts_dir,
     workspace_volume=workspace_volume,
@@ -192,7 +192,7 @@ If you skip the `tracking_uri` and `experiment_id` kwargs to `enable()`, the MLf
 
 ### Turning telemetry on and off
 
-`telemetry` is an opt-in parameter on `run_primitive_plan`. Pass `None` (or omit) and AF emits no spans, builds no provider, and never imports MLflow. Pass a `TelemetryConfig` and AF builds a per-run `TracerProvider`, anchors it on `RunContext.telemetry_provider`, runs the plan with span emission active, and shuts the provider down on exit. Per-run isolation: the runner never calls `trace.set_tracer_provider`, so concurrent runs in the same process never overwrite each other's providers.
+`telemetry` is an opt-in parameter on `run_process`. Pass `None` (or omit) and AF emits no spans, builds no provider, and never imports MLflow. Pass a `TelemetryConfig` and AF builds a per-run `TracerProvider`, anchors it on `RunContext.telemetry_provider`, runs the process with span emission active, and shuts the provider down on exit. Per-run isolation: the runner never calls `trace.set_tracer_provider`, so concurrent runs in the same process never overwrite each other's providers.
 
 The MLflow adapter is independent — call `enable_mlflow_adapter` from an `on_run_starting` hook only when you want MLflow Run binding. Span emission works without the adapter (you just don't get a wrapping MLflow Run with params/metrics/artifacts).
 

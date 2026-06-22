@@ -192,7 +192,7 @@ def test_on_run_ended_calls_end_run_even_when_metrics_callable_raises(
     for hook in ctx.on_run_starting:
         hook(_starting(ctx))
     for hook in ctx.on_run_ended:
-        hook(_ended(ctx, exc=RuntimeError("plan failed"), output=None))
+        hook(_ended(ctx, exc=RuntimeError("process failed"), output=None))
 
     assert fake_mlflow.end_run_calls == ["FAILED"]
 

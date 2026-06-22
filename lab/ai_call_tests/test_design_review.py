@@ -1,7 +1,7 @@
-"""Lab: AICall primitive — design review harness.
+"""Lab: AICall construct — design review harness.
 
 Exercises AICall with the Anthropic provider via the Model registry.
-Declares a design_review primitive that takes a design document as input
+Declares a design_review construct that takes a design document as input
 and returns a structured review result.
 
 Run:
@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from agent_foundry.ai_models.inference import InferenceParameters, InferenceRequest
 from agent_foundry.ai_models.model import Model
-from agent_foundry.primitives.ai_call import AICall, ModelInput
+from agent_foundry.constructs.ai_call import AICall, ModelInput
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(_REPO_ROOT / ".env")
@@ -50,23 +50,23 @@ class DesignReviewOutput(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-async def run_ai_call(primitive: AICall, state: BaseModel) -> BaseModel:
+async def run_ai_call(construct: AICall, state: BaseModel) -> BaseModel:
     instructions = (
-        primitive.model_input.instructions(state)
-        if callable(primitive.model_input.instructions)
-        else primitive.model_input.instructions
+        construct.model_input.instructions(state)
+        if callable(construct.model_input.instructions)
+        else construct.model_input.instructions
     )
     prompt = (
-        primitive.model_input.prompt(state)
-        if callable(primitive.model_input.prompt)
-        else primitive.model_input.prompt
+        construct.model_input.prompt(state)
+        if callable(construct.model_input.prompt)
+        else construct.model_input.prompt
     )
     parameters = (
-        primitive.parameters(state) if callable(primitive.parameters) else primitive.parameters
+        construct.parameters(state) if callable(construct.parameters) else construct.parameters
     )
-    model_entry = primitive.model(state) if callable(primitive.model) else primitive.model
+    model_entry = construct.model(state) if callable(construct.model) else construct.model
 
-    _, output_type = _get_type_args(primitive)
+    _, output_type = _get_type_args(construct)
 
     request = InferenceRequest(
         instructions=instructions,
@@ -77,8 +77,8 @@ async def run_ai_call(primitive: AICall, state: BaseModel) -> BaseModel:
     return await model_entry.provider(request)
 
 
-def _get_type_args(primitive: AICall) -> tuple[type[BaseModel], type[BaseModel]]:
-    metadata = type(primitive).__pydantic_generic_metadata__
+def _get_type_args(construct: AICall) -> tuple[type[BaseModel], type[BaseModel]]:
+    metadata = type(construct).__pydantic_generic_metadata__
     args = metadata["args"]
     if not args:
         raise TypeError("AICall must be parameterized")
@@ -86,7 +86,7 @@ def _get_type_args(primitive: AICall) -> tuple[type[BaseModel], type[BaseModel]]
 
 
 # ---------------------------------------------------------------------------
-# Primitive declaration
+# Construct declaration
 # ---------------------------------------------------------------------------
 
 _INSTRUCTIONS = """\

@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import (
+from agent_foundry.compiler.compiler import (
     DISPOSITION_KEY,
     _coerce_disposition,
     _derive_exhaustion_reason,
@@ -18,8 +18,8 @@ from agent_foundry.compiler.primitive_compiler import (
     _reentry_route_key,
     _retry_route_key,
 )
-from agent_foundry.primitives.errors import PrimitiveCompilationError
-from agent_foundry.primitives.retry_types import (
+from agent_foundry.constructs.errors import ConstructCompilationError
+from agent_foundry.constructs.retry_types import (
     AttemptOutcome,
     DispositionKind,
     ResolverDisposition,
@@ -63,7 +63,7 @@ def test_read_retry_route_returns_marker(stored: object, expected: RetryRoute) -
 
 
 def test_read_retry_route_raises_when_absent() -> None:
-    with pytest.raises(PrimitiveCompilationError, match="missing route marker 'k'"):
+    with pytest.raises(ConstructCompilationError, match="missing route marker 'k'"):
         _read_retry_route({}, "k", "node")
 
 

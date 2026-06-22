@@ -23,10 +23,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from agent_foundry.constructs.ai_call import AICall
+from agent_foundry.constructs.models import AgentAction
+from agent_foundry.constructs.process import Process
 from agent_foundry.evals.models import Task
-from agent_foundry.primitives.ai_call import AICall
-from agent_foundry.primitives.models import AgentAction
-from agent_foundry.primitives.plan import PrimitivePlan
 from agent_foundry.responders.models import (
     ResponderContext,
     ResponderRequest,
@@ -51,7 +51,7 @@ class EvalRunNotCompletedError(RuntimeError):
 class RaiseOnInvokeResponder(Responder):
     """Responder that raises on every invocation.
 
-    Plugs into :func:`agent_foundry.orchestration.runner.run_primitive_plan`
+    Plugs into :func:`agent_foundry.orchestration.runner.run_process`
     via :func:`agent_foundry.responders.protocol.static_provider`.
     """
 
@@ -66,22 +66,22 @@ class RaiseOnInvokeResponder(Responder):
         )
 
 
-def build_run_primitive_plan_task(
+def build_run_process_task(
     agent: AgentAction,
     *,
     artifacts_dir: Path,
     workspace_volume: str,
     base_image_tag: str,
 ) -> Task:
-    """Build a task that invokes ``agent`` via ``run_primitive_plan``.
+    """Build a task that invokes ``agent`` via ``run_process``.
 
-    Wraps the agent in a :class:`PrimitivePlan` and delegates to Agent
+    Wraps the agent in a :class:`Process` and delegates to Agent
     Foundry's orchestration entry point. The eval-strict
     :class:`RaiseOnInvokeResponder` is installed; a case that triggers
     a responder interaction raises and surfaces as a per-case failure
     in the runner's report.
 
-    ``run_primitive_plan`` returns a ``RunOutcome``; the Inspect ``Task``
+    ``run_process`` returns a ``RunOutcome``; the Inspect ``Task``
     contract is exception-based, so a completed run unwraps to its
     product output and a failed or aborted run raises.
     """
@@ -95,12 +95,12 @@ def build_run_primitive_plan_task(
     )
     from agent_foundry.responders.protocol import static_provider
 
-    plan = PrimitivePlan(root=agent)
+    process = Process(root=agent)
     responder_provider = static_provider(RaiseOnInvokeResponder())
 
     async def task(input_state: Any) -> BaseModel:
-        outcome = await runner_mod.run_primitive_plan(
-            plan,
+        outcome = await runner_mod.run_process(
+            process,
             initial_state=input_state,
             artifacts_dir=artifacts_dir,
             workspace_volume=workspace_volume,
@@ -142,9 +142,9 @@ def build_invoke_ai_call_task(call: AICall) -> Task:
         if executor is None:
             from agent_foundry.ai_models.execute.invoke import invoke_ai_call
 
-            return (await invoke_ai_call(primitive=call, model_input=input_state)).output
+            return (await invoke_ai_call(construct=call, model_input=input_state)).output
         if executor_is_async:
-            return await executor(primitive=call, model_input=input_state)
-        return executor(primitive=call, model_input=input_state)  # type: ignore[return-value]
+            return await executor(construct=call, model_input=input_state)
+        return executor(construct=call, model_input=input_state)  # type: ignore[return-value]
 
     return task

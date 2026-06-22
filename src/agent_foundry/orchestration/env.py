@@ -10,11 +10,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from agent_foundry.primitives.models import AgentAction
+    from agent_foundry.constructs.models import AgentAction
 
 
 def build_container_env(
-    primitive: AgentAction,
+    construct: AgentAction,
     *,
     oauth_token: str,
     role_instructions_path: str,

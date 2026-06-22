@@ -1,4 +1,4 @@
-"""Tests for primitive compiler."""
+"""Tests for construct compiler."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import compile_runtime_plan, get_type_args
-from agent_foundry.primitives.errors import PrimitiveCompilationError
-from agent_foundry.primitives.models import (
+from agent_foundry.compiler.compiler import compile_process, get_type_args
+from agent_foundry.constructs.errors import ConstructCompilationError
+from agent_foundry.constructs.models import (
     Conditional,
     FunctionAction,
     GateAction,
@@ -17,14 +17,14 @@ from agent_foundry.primitives.models import (
     Retry,
     Sequence,
 )
-from agent_foundry.primitives.plan import PrimitivePlan
-from agent_foundry.primitives.retry_types import RetryAborted
+from agent_foundry.constructs.process import Process
+from agent_foundry.constructs.retry_types import RetryAborted
 
 
-async def compile_and_run(plan: PrimitivePlan, state: BaseModel | None = None) -> Any:
+async def compile_and_run(process: Process, state: BaseModel | None = None) -> Any:
     """Minimal async test runner: compile and ainvoke without the full production pipeline."""
-    _, root_out = get_type_args(plan.root)
-    graph = compile_runtime_plan(plan)
+    _, root_out = get_type_args(process.root)
+    graph = compile_process(process)
     input_dict = state.model_dump() if state is not None else {}
     result_dict = await graph.ainvoke(input_dict)
     return root_out.model_validate(result_dict)
@@ -52,12 +52,12 @@ class CounterState(BaseModel):
 # ======================================================================
 
 
-class TestPrimitiveCompilationError:
+class TestConstructCompilationError:
     def test_is_exception(self):
-        err = PrimitiveCompilationError("compilation failed", primitive_type="FunctionAction")
+        err = ConstructCompilationError("compilation failed", construct_type="FunctionAction")
         assert isinstance(err, Exception)
         assert str(err) == "compilation failed"
-        assert err.primitive_type == "FunctionAction"
+        assert err.construct_type == "FunctionAction"
 
 
 # ======================================================================
@@ -67,7 +67,7 @@ class TestPrimitiveCompilationError:
 
 class TestDeriveStateType:
     def test_single_model(self):
-        from agent_foundry.compiler.primitive_compiler import _derive_state_type
+        from agent_foundry.compiler.compiler import _derive_state_type
 
         state_type = _derive_state_type(CounterState, CounterState)
         hints = state_type.__annotations__
@@ -75,7 +75,7 @@ class TestDeriveStateType:
         assert "count" in hints
 
     def test_unions_input_and_output_fields(self):
-        from agent_foundry.compiler.primitive_compiler import _derive_state_type
+        from agent_foundry.compiler.compiler import _derive_state_type
 
         state_type = _derive_state_type(InputState, OutputState)
         hints = state_type.__annotations__
@@ -83,7 +83,7 @@ class TestDeriveStateType:
         assert "result" in hints
 
     def test_annotations_are_any(self):
-        from agent_foundry.compiler.primitive_compiler import _derive_state_type
+        from agent_foundry.compiler.compiler import _derive_state_type
 
         state_type = _derive_state_type(InputState, OutputState)
         hints = state_type.__annotations__
@@ -98,8 +98,8 @@ class TestDeriveStateType:
 
 class TestCompilerRegistry:
     def test_register_and_retrieve(self):
-        from agent_foundry.compiler.primitive_compiler import _compiler_registry
-        from agent_foundry.primitives.models import FunctionAction
+        from agent_foundry.compiler.compiler import _compiler_registry
+        from agent_foundry.constructs.models import FunctionAction
 
         # FunctionAction should be registered by module load
         assert FunctionAction in _compiler_registry
@@ -107,31 +107,31 @@ class TestCompilerRegistry:
     def test_unknown_type_raises(self):
         from pydantic import BaseModel
 
-        from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
-        from agent_foundry.primitives.models import Primitive
-        from agent_foundry.primitives.plan import PrimitivePlan
-        from agent_foundry.primitives.validators import register_validator
+        from agent_foundry.compiler.compiler import compile_process
+        from agent_foundry.constructs.models import Construct
+        from agent_foundry.constructs.process import Process
+        from agent_foundry.constructs.validators import register_validator
 
-        # A custom Primitive subclass with a registered validator (no-op) but
+        # A custom Construct subclass with a registered validator (no-op) but
         # no compiler registered — exercises the compiler's unknown-type path.
-        class _UncompiledPrim[I: BaseModel, O: BaseModel](Primitive[I, O]):
-            def child_specs(self) -> list[tuple[Primitive, str]]:
+        class _UncompiledPrim[I: BaseModel, O: BaseModel](Construct[I, O]):
+            def child_specs(self) -> list[tuple[Construct, str]]:
                 return []
 
         register_validator(_UncompiledPrim, lambda p: None)
 
         prim = _UncompiledPrim[InputState, InputState]()
-        plan = PrimitivePlan(root=prim)
-        with pytest.raises(PrimitiveCompilationError, match="No compiler registered"):
-            compile_runtime_plan(plan)
+        process = Process(root=prim)
+        with pytest.raises(ConstructCompilationError, match="No compiler registered"):
+            compile_process(process)
 
     def test_duplicate_registration_raises(self):
         """Re-registering a compiler for the same type is a footgun; raise instead of clobbering."""
-        from agent_foundry.compiler.primitive_compiler import register_compiler
-        from agent_foundry.primitives.models import Primitive
+        from agent_foundry.compiler.compiler import register_compiler
+        from agent_foundry.constructs.models import Construct
 
-        class _DuplicateCompilerPrim[I: BaseModel, O: BaseModel](Primitive[I, O]):
-            def child_specs(self) -> list[tuple[Primitive, str]]:
+        class _DuplicateCompilerPrim[I: BaseModel, O: BaseModel](Construct[I, O]):
+            def child_specs(self) -> list[tuple[Construct, str]]:
                 return []
 
         def _first(graph, prim, prefix, gate_ids):
@@ -152,7 +152,7 @@ class TestCompilerRegistry:
 
 class TestScopeIn:
     def test_extracts_only_model_fields(self):
-        from agent_foundry.compiler.primitive_compiler import _scope_in
+        from agent_foundry.compiler.compiler import _scope_in
 
         parent_state = {"query": "hello", "result": "world", "extra": "ignored"}
         scoped = _scope_in(parent_state, InputState)
@@ -161,15 +161,15 @@ class TestScopeIn:
         assert "extra" not in scoped
 
     def test_validates_required_fields(self):
-        from agent_foundry.compiler.primitive_compiler import _scope_in
+        from agent_foundry.compiler.compiler import _scope_in
 
-        with pytest.raises(PrimitiveCompilationError):
+        with pytest.raises(ConstructCompilationError):
             _scope_in({}, InputState)
 
 
 class TestScopeOut:
     def test_extracts_only_output_fields(self):
-        from agent_foundry.compiler.primitive_compiler import _scope_out
+        from agent_foundry.compiler.compiler import _scope_out
 
         child_result = {"query": "hello", "result": "HELLO", "internal": "temp"}
         scoped = _scope_out(child_result, OutputState)
@@ -177,21 +177,21 @@ class TestScopeOut:
         assert "internal" not in scoped
 
     def test_validates_output(self):
-        from agent_foundry.compiler.primitive_compiler import _scope_out
+        from agent_foundry.compiler.compiler import _scope_out
 
-        with pytest.raises(PrimitiveCompilationError):
+        with pytest.raises(ConstructCompilationError):
             _scope_out({}, OutputState)  # missing required fields
 
 
 class TestValidateScopedInput:
     """`_validate_scoped_input` is the project-then-validate helper used
-    inside per-primitive compile functions to obtain a typed input model
+    inside per-construct compile functions to obtain a typed input model
     from accumulated state. Equivalent to `_scope_in` + a single
     `model_validate` call, returning the model instance instead of the
     filtered dict — callers want the model, not the dict."""
 
     def test_given_state_with_extras_when_scoped_then_returns_validated_model(self):
-        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+        from agent_foundry.compiler.compiler import _validate_scoped_input
 
         state = {"query": "hello", "extra": "ignored"}
         model = _validate_scoped_input(state, InputState, "test_node")
@@ -199,16 +199,16 @@ class TestValidateScopedInput:
         assert model.query == "hello"
 
     def test_given_state_missing_required_field_when_scoped_then_raises(self):
-        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+        from agent_foundry.compiler.compiler import _validate_scoped_input
 
-        with pytest.raises(PrimitiveCompilationError) as excinfo:
+        with pytest.raises(ConstructCompilationError) as excinfo:
             _validate_scoped_input({}, InputState, "test_node")
         # The node_id appears in the error so a developer can locate the
-        # offending step in a multi-primitive plan.
+        # offending step in a multi-construct process.
         assert "test_node" in str(excinfo.value)
 
     def test_given_state_missing_optional_field_when_scoped_then_default_applied(self):
-        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+        from agent_foundry.compiler.compiler import _validate_scoped_input
 
         class WithOptional(BaseModel):
             required: str
@@ -224,7 +224,7 @@ class TestValidateScopedInput:
         them before validation so the call still succeeds."""
         from pydantic import ConfigDict
 
-        from agent_foundry.compiler.primitive_compiler import _validate_scoped_input
+        from agent_foundry.compiler.compiler import _validate_scoped_input
 
         class StrictInput(BaseModel):
             model_config = ConfigDict(extra="forbid")
@@ -249,9 +249,9 @@ class TestCompileFunctionAction:
         action = FunctionAction[InputState, TransformOutput](
             function=lambda s: TransformOutput(result=s.query.upper()),
         )
-        plan = PrimitivePlan(root=action)
-        graph = compile_runtime_plan(plan)
-        with pytest.raises(PrimitiveCompilationError):
+        process = Process(root=action)
+        graph = compile_process(process)
+        with pytest.raises(ConstructCompilationError):
             graph.invoke({})  # missing required 'query'
 
     @pytest.mark.asyncio
@@ -282,8 +282,8 @@ class TestCompileFunctionAction:
             function=lambda s: TransformOutput(result=s.query.upper()),
         )
         seq = Sequence[InputState, TransformOutput](steps=[step1, step2])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, InputState(query="hello"))
+        process = Process(root=seq)
+        result = await compile_and_run(process, InputState(query="hello"))
         assert result.result == "HELLO"
 
     @pytest.mark.asyncio
@@ -292,8 +292,8 @@ class TestCompileFunctionAction:
         action = FunctionAction[InputState, TransformOutput](
             function=lambda s: TransformOutput(result=s.query.upper()),
         )
-        plan = PrimitivePlan(root=action)
-        result = await compile_and_run(plan, InputState(query="hello"))
+        process = Process(root=action)
+        result = await compile_and_run(process, InputState(query="hello"))
         assert isinstance(result, TransformOutput)
         assert result.result == "HELLO"
 
@@ -309,8 +309,8 @@ class TestCompileFunctionAction:
         action = FunctionAction[DefaultInput, DefaultOutput](
             function=lambda s: DefaultOutput(value=s.value, result=s.value.upper()),
         )
-        plan = PrimitivePlan(root=action)
-        result = await compile_and_run(plan)
+        process = Process(root=action)
+        result = await compile_and_run(process)
         assert isinstance(result, DefaultOutput)
         assert result.result == "DEFAULT"
 
@@ -329,8 +329,8 @@ class TestCompileFunctionAction:
             return DateOut(today=date(2026, 4, 6))
 
         action = FunctionAction[Empty, DateOut](function=get_today)
-        plan = PrimitivePlan(root=action)
-        result = await compile_and_run(plan)
+        process = Process(root=action)
+        result = await compile_and_run(process)
         assert isinstance(result, DateOut)
         assert result.today == date(2026, 4, 6)
 
@@ -355,8 +355,8 @@ class TestCompileSequence:
             function=lambda s: OutputState(query=s.mid, result=f"processed:{s.mid}"),
         )
         seq = Sequence[InputState, OutputState](steps=[step1, step2])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, InputState(query="hello"))
+        process = Process(root=seq)
+        result = await compile_and_run(process, InputState(query="hello"))
         assert result.result == "processed:HELLO"
 
     @pytest.mark.asyncio
@@ -379,8 +379,8 @@ class TestCompileSequence:
         s2 = FunctionAction[ListState, ListState](function=append_b)
         s3 = FunctionAction[ListState, ListState](function=append_c)
         seq = Sequence[ListState, ListState](steps=[s1, s2, s3])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, ListState(items=[]))
+        process = Process(root=seq)
+        result = await compile_and_run(process, ListState(items=[]))
         assert result.items == ["a", "b", "c"]
 
     @pytest.mark.asyncio
@@ -411,8 +411,8 @@ class TestCompileSequence:
         step1 = FunctionAction[SeqIn, DateState](function=get_today)
         step2 = FunctionAction[ResultState, SeqOut](function=add_days)
         seq = Sequence[SeqIn, SeqOut](steps=[step1, step2])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, SeqIn(offset=3))
+        process = Process(root=seq)
+        result = await compile_and_run(process, SeqIn(offset=3))
         assert result.result == "2026-04-09"
 
     @pytest.mark.asyncio
@@ -439,8 +439,8 @@ class TestCompileSequence:
             function=lambda s: Final(final_value=f"done:{s.mid_value}"),
         )
         seq = Sequence[In, Out](steps=[step1, step2])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, In(x="hello"))
+        process = Process(root=seq)
+        result = await compile_and_run(process, In(x="hello"))
         assert result.mid_value == "HELLO"
         assert result.final_value == "done:HELLO"
 
@@ -482,15 +482,15 @@ class TestCompileSequence:
             function=lambda s: COut(c=s.a + "_" + s.b + "_c"),
         )
         seq = Sequence[StepIn, SeqOut](steps=[step1, step2, step3])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, StepIn(seed="x"))
+        process = Process(root=seq)
+        result = await compile_and_run(process, StepIn(seed="x"))
         assert result.a == "x_a"
         assert result.b == "x_a_b"
         assert result.c == "x_a_x_a_b_c"
 
     def test_validation_error_missing_field(self):
         """Step declares a required field not in accumulated state — fails at validation."""
-        from agent_foundry.primitives.errors import TypeMismatchError
+        from agent_foundry.constructs.errors import TypeMismatchError
 
         class In(BaseModel):
             x: str
@@ -506,9 +506,9 @@ class TestCompileSequence:
             function=lambda s: Out(result=str(s.y)),
         )
         seq = Sequence[In, Out](steps=[step1, step2])
-        plan = PrimitivePlan(root=seq)
+        process = Process(root=seq)
         with pytest.raises(TypeMismatchError, match=r"requires fields.*y.*not available"):
-            compile_runtime_plan(plan)
+            compile_process(process)
 
 
 # ======================================================================
@@ -535,8 +535,8 @@ class TestCompileConditional:
             then_branch=then,
             else_branch=else_,
         )
-        plan = PrimitivePlan(root=cond)
-        result = await compile_and_run(plan, BranchState(value="start", flag=True))
+        process = Process(root=cond)
+        result = await compile_and_run(process, BranchState(value="start", flag=True))
         assert result.value == "then"
 
     @pytest.mark.asyncio
@@ -552,8 +552,8 @@ class TestCompileConditional:
             then_branch=then,
             else_branch=else_,
         )
-        plan = PrimitivePlan(root=cond)
-        result = await compile_and_run(plan, BranchState(value="start", flag=False))
+        process = Process(root=cond)
+        result = await compile_and_run(process, BranchState(value="start", flag=False))
         assert result.value == "else"
 
     @pytest.mark.asyncio
@@ -565,8 +565,8 @@ class TestCompileConditional:
             condition=lambda s: s.flag,
             then_branch=then,
         )
-        plan = PrimitivePlan(root=cond)
-        result = await compile_and_run(plan, BranchState(value="original", flag=False))
+        process = Process(root=cond)
+        result = await compile_and_run(process, BranchState(value="original", flag=False))
         assert result.value == "original"
 
     @pytest.mark.asyncio
@@ -578,8 +578,8 @@ class TestCompileConditional:
             condition=lambda s: s.flag,
             then_branch=then,
         )
-        plan = PrimitivePlan(root=cond)
-        result = await compile_and_run(plan, BranchState(value="original", flag=True))
+        process = Process(root=cond)
+        result = await compile_and_run(process, BranchState(value="original", flag=True))
         assert result.value == "detoured"
 
     @pytest.mark.asyncio
@@ -618,8 +618,8 @@ class TestCompileConditional:
             then_branch=then_branch,
         )
         seq = Sequence[SeqIn, StrictBranchState](steps=[step1, cond])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, SeqIn(value="start", flag=True))
+        process = Process(root=seq)
+        result = await compile_and_run(process, SeqIn(value="start", flag=True))
         assert result.value == "then"
 
 
@@ -649,8 +649,8 @@ class TestCompileLoop:
             item_key="current_item",
             body=body,
         )
-        plan = PrimitivePlan(root=loop)
-        result = await compile_and_run(plan, LoopInput(items=["a", "b", "c"], processed=[]))
+        process = Process(root=loop)
+        result = await compile_and_run(process, LoopInput(items=["a", "b", "c"], processed=[]))
         assert result.processed == ["A", "B", "C"]
 
     @pytest.mark.asyncio
@@ -668,9 +668,9 @@ class TestCompileLoop:
             body=body,
             max_iterations=2,
         )
-        plan = PrimitivePlan(root=loop)
+        process = Process(root=loop)
         result = await compile_and_run(
-            plan, LoopInput(items=["a", "b", "c", "d", "e"], processed=[])
+            process, LoopInput(items=["a", "b", "c", "d", "e"], processed=[])
         )
         assert len(result.processed) == 2
 
@@ -688,8 +688,8 @@ class TestCompileLoop:
             item_key="current_item",
             body=body,
         )
-        plan = PrimitivePlan(root=loop)
-        result = await compile_and_run(plan, LoopInput(items=[], processed=[]))
+        process = Process(root=loop)
+        result = await compile_and_run(process, LoopInput(items=[], processed=[]))
         assert result.processed == []
 
     @pytest.mark.asyncio
@@ -706,8 +706,8 @@ class TestCompileLoop:
             item_key="current_item",
             body=body,
         )
-        plan = PrimitivePlan(root=loop)
-        result = await compile_and_run(plan, LoopInput(items=["x"], processed=[]))
+        process = Process(root=loop)
+        result = await compile_and_run(process, LoopInput(items=["x"], processed=[]))
         assert result.processed == ["X"]
 
     @pytest.mark.asyncio
@@ -753,8 +753,8 @@ class TestCompileLoop:
             function=lambda s: Step1Out(items=s.items, extra_from_step1="leak"),
         )
         seq = Sequence[SeqIn, StrictLoopIn](steps=[step1, loop])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, SeqIn(items=["a", "b"]))
+        process = Process(root=seq)
+        result = await compile_and_run(process, SeqIn(items=["a", "b"]))
         assert result.processed == ["A", "B"]
 
 
@@ -779,8 +779,8 @@ class TestCompileRetry:
             until=lambda s: s.done,
             body=body,
         )
-        plan = PrimitivePlan(root=retry)
-        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
+        process = Process(root=retry)
+        result = await compile_and_run(process, RetryState(attempts=0, done=False))
         assert result.attempts == 1
         assert result.done is True
 
@@ -798,8 +798,8 @@ class TestCompileRetry:
             until=lambda s: s.done,
             body=body,
         )
-        plan = PrimitivePlan(root=retry)
-        result = await compile_and_run(plan, RetryState(attempts=0, done=False))
+        process = Process(root=retry)
+        result = await compile_and_run(process, RetryState(attempts=0, done=False))
         assert result.attempts == 2
         assert result.done is True
 
@@ -814,9 +814,9 @@ class TestCompileRetry:
             until=lambda s: s.done,
             body=body,
         )
-        plan = PrimitivePlan(root=retry)
+        process = Process(root=retry)
         with pytest.raises(RetryAborted):
-            await compile_and_run(plan, RetryState(attempts=0, done=False))
+            await compile_and_run(process, RetryState(attempts=0, done=False))
 
     @pytest.mark.asyncio
     async def test_max_attempts_one_exhaustion_is_fail_closed(self):
@@ -828,9 +828,9 @@ class TestCompileRetry:
             until=lambda s: s.done,
             body=body,
         )
-        plan = PrimitivePlan(root=retry)
+        process = Process(root=retry)
         with pytest.raises(RetryAborted):
-            await compile_and_run(plan, RetryState(attempts=0, done=False))
+            await compile_and_run(process, RetryState(attempts=0, done=False))
 
     @pytest.mark.asyncio
     async def test_retry_in_with_extra_forbid_runs_when_accumulated_state_has_extras(self):
@@ -864,8 +864,8 @@ class TestCompileRetry:
             max_attempts=3, until=lambda s: s.done, body=body
         )
         seq = Sequence[SeqIn, StrictRetryState](steps=[step1, retry])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, SeqIn(attempts=0, done=False))
+        process = Process(root=seq)
+        result = await compile_and_run(process, SeqIn(attempts=0, done=False))
         assert result.attempts == 1
         assert result.done is True
 
@@ -893,8 +893,8 @@ class TestCompileGateAction:
             interaction="human_stdin",
             prompt_key="escalation_context",
         )
-        plan = PrimitivePlan(root=gate)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=gate)
+        graph = compile_process(process)
         assert graph is not None
 
     def test_interrupts_execution(self):
@@ -902,8 +902,8 @@ class TestCompileGateAction:
             interaction="human_stdin",
             prompt_key="escalation_context",
         )
-        plan = PrimitivePlan(root=gate)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=gate)
+        graph = compile_process(process)
         result = graph.invoke(
             {"escalation_context": "need help", "value": "stuck"},
             config={"configurable": {"thread_id": "test-1"}},
@@ -915,8 +915,8 @@ class TestCompileGateAction:
             interaction="human_stdin",
             prompt_key="escalation_context",
         )
-        plan = PrimitivePlan(root=gate)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=gate)
+        graph = compile_process(process)
         result = graph.invoke(
             {"escalation_context": "review failed twice", "value": "blocked"},
             config={"configurable": {"thread_id": "test-2"}},
@@ -939,8 +939,8 @@ class TestNestedComposition:
         s2 = FunctionAction[S, S](function=lambda s: S(n=s.n + 10))
         s3 = FunctionAction[S, S](function=lambda s: S(n=s.n + 100))
         seq = Sequence[S, S](steps=[s1, s2, s3])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, S(n=0))
+        process = Process(root=seq)
+        result = await compile_and_run(process, S(n=0))
         assert result.n == 111
 
     @pytest.mark.asyncio
@@ -966,8 +966,8 @@ class TestNestedComposition:
         )
         body = Sequence[S, S](steps=[step1, step2])
         loop = Loop[S, S](over=lambda s: s.items, item_key="current_item", body=body)
-        plan = PrimitivePlan(root=loop)
-        result = await compile_and_run(plan, S(items=["a", "b"], processed=[]))
+        process = Process(root=loop)
+        result = await compile_and_run(process, S(items=["a", "b"], processed=[]))
         assert result.processed == ["A", "B"]
 
     @pytest.mark.asyncio
@@ -986,9 +986,9 @@ class TestNestedComposition:
             function=lambda s: S(n=s.n, done=True),
         )
         seq = Sequence[S, S](steps=[retry, downstream])
-        plan = PrimitivePlan(root=seq)
+        process = Process(root=seq)
         with pytest.raises(RetryAborted):
-            await compile_and_run(plan, S(n=0, done=False))
+            await compile_and_run(process, S(n=0, done=False))
 
     @pytest.mark.asyncio
     async def test_sequence_containing_conditional(self):
@@ -1006,8 +1006,8 @@ class TestNestedComposition:
         )
         step3 = FunctionAction[S, S](function=lambda s: S(value=s.value + "_done", flag=s.flag))
         seq = Sequence[S, S](steps=[step1, cond, step3])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, S(value="", flag=True))
+        process = Process(root=seq)
+        result = await compile_and_run(process, S(value="", flag=True))
         assert result.value == "step1_then_done"
 
 
@@ -1048,8 +1048,8 @@ class TestStateIsolation:
             then_branch=then,
             else_branch=else_,
         )
-        plan = PrimitivePlan(root=cond)
-        result = await compile_and_run(plan, CondState(flag=True, value="start"))
+        process = Process(root=cond)
+        result = await compile_and_run(process, CondState(flag=True, value="start"))
         assert result.value == "then"
         assert "branch_temp" not in result.model_dump()
 
@@ -1079,13 +1079,13 @@ class TestStateIsolation:
             until=lambda s: s.done,
             body=body,
         )
-        plan = PrimitivePlan(root=retry)
-        result = await compile_and_run(plan, RS(attempts=0, done=False))
+        process = Process(root=retry)
+        result = await compile_and_run(process, RS(attempts=0, done=False))
         assert result.attempts == 1
         assert "debug_info" not in result.model_dump()
 
     @pytest.mark.asyncio
-    async def test_sibling_primitives_dont_interfere(self):
+    async def test_sibling_constructs_dont_interfere(self):
         """Two sequential steps using the same internal field name don't collide."""
 
         class StepIn(BaseModel):
@@ -1105,8 +1105,8 @@ class TestStateIsolation:
             function=lambda s: StepOut(value=s.value + "_b"),
         )
         seq = Sequence[StepIn, StepOut](steps=[step1, step2])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, StepIn(value="start"))
+        process = Process(root=seq)
+        result = await compile_and_run(process, StepIn(value="start"))
         assert result.value == "start_a_b"
         assert "temp" not in result.model_dump()
 
@@ -1153,8 +1153,8 @@ class TestStateIsolation:
             ),
         )
         seq = Sequence[SeqState, SeqState](steps=[pre, loop, post])
-        plan = PrimitivePlan(root=seq)
-        result = await compile_and_run(plan, SeqState(items=["a", "b"], results=[]))
+        process = Process(root=seq)
+        result = await compile_and_run(process, SeqState(items=["a", "b"], results=[]))
         assert result.results == ["pre", "A", "B", "post"]
         assert "processing_temp" not in result.model_dump()
 
@@ -1197,8 +1197,8 @@ class TestStateIsolation:
             item_key="current_item",
             body=body,
         )
-        plan = PrimitivePlan(root=loop)
-        result = await compile_and_run(plan, LoopIO(items=["a", "b", "c"], results=[]))
+        process = Process(root=loop)
+        result = await compile_and_run(process, LoopIO(items=["a", "b", "c"], results=[]))
         assert result.results == ["a", "b", "c"]
         assert "temp" not in result.model_dump()
 
@@ -1239,7 +1239,7 @@ class TestStateIsolation:
             body=inner_seq,
         )
         outer_seq = Sequence[Outer, Outer](steps=[loop])
-        plan = PrimitivePlan(root=outer_seq)
-        result = await compile_and_run(plan, Outer(items=["x", "y"], final=[]))
+        process = Process(root=outer_seq)
+        result = await compile_and_run(process, Outer(items=["x", "y"], final=[]))
         assert result.final == ["X", "Y"]
         assert "inner_temp" not in result.model_dump()

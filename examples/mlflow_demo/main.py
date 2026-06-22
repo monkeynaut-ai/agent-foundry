@@ -1,7 +1,7 @@
 """End-to-end verification demo for MLflow tracing integration.
 
-Wires a tiny AgentAction plan with a deterministic fake executor, configures
-telemetry pointing at a local MLflow server, runs the plan, and exits.
+Wires a tiny AgentAction process with a deterministic fake executor, configures
+telemetry pointing at a local MLflow server, runs the process, and exits.
 
 Expects MLflow at http://localhost:5000 (see docker-compose.yaml). Reads
 the experiment id from the env var ``AF_MLFLOW_EXPERIMENT_ID``.
@@ -15,15 +15,15 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
+from agent_foundry.constructs.process import Process
 from agent_foundry.mlflow_adapter import (
     MLFLOW_TRANSLATIONS,
 )
 from agent_foundry.mlflow_adapter import (
     enable as enable_mlflow_adapter,
 )
-from agent_foundry.orchestration.runner import run_primitive_plan
-from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
-from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.orchestration.runner import run_process
 from agent_foundry.telemetry import RunDefinition, TelemetryConfig
 
 
@@ -38,12 +38,12 @@ class TicketOutput(BaseModel):
 
 
 def fake_executor(
-    *, primitive: AgentAction, prompt: str, instructions: str, run_ctx
+    *, construct: AgentAction, prompt: str, instructions: str, run_ctx
 ) -> TicketOutput:
     return TicketOutput(success=True, summary=f"handled: {prompt[:60]}")
 
 
-def build_plan() -> PrimitivePlan:
+def build_plan() -> Process:
     action = AgentAction[TicketInput, TicketOutput](
         name="reviewer",
         prompt_builder=lambda inp: f"review ticket {inp.ticket_id} ({inp.kind})",
@@ -51,7 +51,7 @@ def build_plan() -> PrimitivePlan:
         executor=fake_executor,
         reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     )
-    return PrimitivePlan(root=action)
+    return Process(root=action)
 
 
 MLFLOW_BASE_URL = os.environ.get("AF_MLFLOW_BASE_URL", "http://localhost:5000")
@@ -81,7 +81,7 @@ def build_telemetry() -> TelemetryConfig:
 
 
 async def main(run_id: str | None = None) -> TicketOutput:
-    """Run the demo plan once and return the result.
+    """Run the demo process once and return the result.
 
     Accepts an optional ``run_id`` so the live smoke test can call ``main``
     multiple times with distinct IDs (each run bootstraps its own
@@ -94,7 +94,7 @@ async def main(run_id: str | None = None) -> TicketOutput:
     artifacts_dir = Path.cwd() / ".tmp" / "mlflow-demo"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    plan = build_plan()
+    process = build_plan()
     config = build_telemetry()
     input_model = TicketInput(ticket_id="42", kind="feature")
 
@@ -107,8 +107,8 @@ async def main(run_id: str | None = None) -> TicketOutput:
             experiment_id=MLFLOW_EXPERIMENT_ID,
         )
 
-    result = await run_primitive_plan(
-        plan,
+    result = await run_process(
+        process,
         initial_state=input_model,
         artifacts_dir=artifacts_dir,
         workspace_volume="archipelago-demo",

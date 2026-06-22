@@ -1,10 +1,10 @@
-"""Run-level orchestration for primitive plans.
+"""Run-level orchestration for construct processes.
 
-:func:`run_primitive_plan` is the single public entry point: async, full
+:func:`run_process` is the single public entry point: async, full
 orchestration wiring (RunContext, container registry, lifecycle writer,
 signal handlers, artifacts).
 
-Orchestration depends on the compiler (calls ``compile_runtime_plan`` to
+Orchestration depends on the compiler (calls ``compile_process`` to
 build the executable graph), not the other way around. The compiler
 knows nothing about runs, contexts, responders, or containers.
 """
@@ -24,7 +24,13 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
+from agent_foundry.compiler.compiler import compile_process
+from agent_foundry.constructs.models import get_type_args
+from agent_foundry.constructs.process import Process
+from agent_foundry.constructs.retry_types import (
+    ResolverDidNotConvergeError,
+    RetryAborted,
+)
 from agent_foundry.orchestration.artifacts import bootstrap_run_artifacts
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import JsonlLifecycleWriter
@@ -45,12 +51,6 @@ from agent_foundry.orchestration.run_outcome import (
     RunOutcome,
 )
 from agent_foundry.orchestration.summary import render_summary
-from agent_foundry.primitives.models import get_type_args
-from agent_foundry.primitives.plan import PrimitivePlan
-from agent_foundry.primitives.retry_types import (
-    ResolverDidNotConvergeError,
-    RetryAborted,
-)
 from agent_foundry.responders.protocol import ResponderProvider
 from agent_foundry.telemetry import setup as telemetry_setup
 from agent_foundry.telemetry.config import TelemetryConfig
@@ -84,8 +84,8 @@ def _safe_invoke_hooks(
             logger.exception("RunContext %s hook raised; continuing", label)
 
 
-async def run_primitive_plan(
-    plan: PrimitivePlan,
+async def run_process(
+    process: Process,
     *,
     initial_state: BaseModel,
     artifacts_dir: Path,
@@ -99,7 +99,7 @@ async def run_primitive_plan(
     extra_env: dict[str, str] | None = None,
     extra_volumes: dict[str, dict[str, str]] | None = None,
 ) -> RunOutcome:
-    """Execute a :class:`PrimitivePlan` with full orchestration wiring.
+    """Execute a :class:`Process` with full orchestration wiring.
 
     Bootstraps the run artifacts directory, builds a
     :class:`JsonlLifecycleWriter` and :class:`AgentContainerRegistry`,
@@ -151,7 +151,7 @@ async def run_primitive_plan(
             _shutil.rmtree(run_dir, ignore_errors=True)
             raise
 
-    _, root_out = get_type_args(plan.root)
+    _, root_out = get_type_args(process.root)
 
     lifecycle = JsonlLifecycleWriter(run_id=resolved_run_id, path=run_dir / "lifecycle.jsonl")
 
@@ -212,7 +212,7 @@ async def run_primitive_plan(
     # ResolverDidNotConvergeError must precede the broad except BaseException,
     # else they fall into the CRASH path.
     try:
-        graph = compile_runtime_plan(plan)
+        graph = compile_process(process)
         result_dict = await graph.ainvoke(initial_state.model_dump())
         final_output = root_out.model_validate(result_dict)
         outcome = RunCompleted(output=final_output)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from agent_foundry.primitives.models import AsyncFunctionAction
+from agent_foundry.constructs.models import AsyncFunctionAction
 
 
 class InputModel(BaseModel):

@@ -1,33 +1,33 @@
-"""Composable, typed plan primitives for Agent Foundry."""
+"""Composable, typed process constructs for Agent Foundry."""
 
-from agent_foundry.primitives.claude_code import ClaudeEffort, ClaudeModel, list_claude_models
-from agent_foundry.primitives.errors import (
+from agent_foundry.constructs.claude_code import ClaudeEffort, ClaudeModel, list_claude_models
+from agent_foundry.constructs.errors import (
+    ConstructCompilationError,
+    ConstructValidationError,
     InvalidPromptKeyError,
-    PrimitiveCompilationError,
-    PrimitiveValidationError,
     TypeMismatchError,
-    UnregisteredPrimitiveError,
+    UnregisteredConstructError,
 )
-from agent_foundry.primitives.mcp import (
+from agent_foundry.constructs.mcp import (
     McpServer,
     McpTransport,
     StdioMcpServer,
     StreamableHttpMcpServer,
 )
-from agent_foundry.primitives.models import (
+from agent_foundry.constructs.models import (
     AgentAction,
     AsyncFunctionAction,
     Conditional,
+    Construct,
     ContainerReusePolicy,
     FunctionAction,
     GateAction,
     Loop,
-    Primitive,
     Retry,
     Sequence,
 )
-from agent_foundry.primitives.plan import PrimitivePlan
-from agent_foundry.primitives.retry_types import (
+from agent_foundry.constructs.process import Process
+from agent_foundry.constructs.retry_types import (
     AttemptFailure,
     AttemptOutcome,
     DispositionKind,
@@ -36,7 +36,7 @@ from agent_foundry.primitives.retry_types import (
     RetryAborted,
     RetryExhaustionReason,
 )
-from agent_foundry.primitives.validators import register_validator, validate_primitive
+from agent_foundry.constructs.validators import register_validator, validate_construct
 
 __all__ = [
     "AgentAction",
@@ -46,6 +46,9 @@ __all__ = [
     "ClaudeEffort",
     "ClaudeModel",
     "Conditional",
+    "Construct",
+    "ConstructCompilationError",
+    "ConstructValidationError",
     "ContainerReusePolicy",
     "DispositionKind",
     "FunctionAction",
@@ -54,10 +57,7 @@ __all__ = [
     "Loop",
     "McpServer",
     "McpTransport",
-    "Primitive",
-    "PrimitiveCompilationError",
-    "PrimitivePlan",
-    "PrimitiveValidationError",
+    "Process",
     "ResolverDidNotConvergeError",
     "ResolverDisposition",
     "Retry",
@@ -67,8 +67,8 @@ __all__ = [
     "StdioMcpServer",
     "StreamableHttpMcpServer",
     "TypeMismatchError",
-    "UnregisteredPrimitiveError",
+    "UnregisteredConstructError",
     "list_claude_models",
     "register_validator",
-    "validate_primitive",
+    "validate_construct",
 ]

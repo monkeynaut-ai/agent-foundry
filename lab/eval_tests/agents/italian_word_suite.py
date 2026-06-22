@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
 from agent_foundry.evals.models import (
     AgentTarget,
     Case,
@@ -27,7 +28,6 @@ from agent_foundry.evals.models import (
     EvalSuite,
 )
 from agent_foundry.orchestration.container_executor import run_agent_in_container
-from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
 # ---------------------------------------------------------------------------
 # Typed boundary models
@@ -134,7 +134,7 @@ italian_word_agent = AgentAction[ItalianWordInput, ItalianWordAnswer](
     prompt_builder=_build_prompt,
     instructions_provider=_build_instructions,
     # run_agent_in_container is typed against the generic BaseModel return; the
-    # primitive constrains the actual return type at runtime via output_type.
+    # construct constrains the actual return type at runtime via output_type.
     executor=run_agent_in_container,  # type: ignore[arg-type]
     reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
     model="claude-haiku-4-5-20251001",

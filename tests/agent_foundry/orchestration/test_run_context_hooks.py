@@ -100,10 +100,10 @@ class _State(BaseModel):
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_invokes_on_run_starting_in_order(tmp_path: Path) -> None:
-    from agent_foundry.orchestration.runner import run_primitive_plan
-    from agent_foundry.primitives.models import FunctionAction
-    from agent_foundry.primitives.plan import PrimitivePlan
+async def test_run_process_invokes_on_run_starting_in_order(tmp_path: Path) -> None:
+    from agent_foundry.constructs.models import FunctionAction
+    from agent_foundry.constructs.process import Process
+    from agent_foundry.orchestration.runner import run_process
 
     observed: list[str] = []
     hooks = [
@@ -115,10 +115,10 @@ async def test_run_primitive_plan_invokes_on_run_starting_in_order(tmp_path: Pat
         return _State(value=s.value)
 
     action = FunctionAction[_State, _State](function=fn)
-    plan = PrimitivePlan(root=action)
+    process = Process(root=action)
 
-    await run_primitive_plan(
-        plan,
+    await run_process(
+        process,
         initial_state=_State(),
         artifacts_dir=tmp_path,
         workspace_volume="vol",
@@ -132,12 +132,12 @@ async def test_run_primitive_plan_invokes_on_run_starting_in_order(tmp_path: Pat
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_invokes_on_run_ended_with_exception_none_and_output_on_success(
+async def test_run_process_invokes_on_run_ended_with_exception_none_and_output_on_success(
     tmp_path: Path,
 ) -> None:
-    from agent_foundry.orchestration.runner import run_primitive_plan
-    from agent_foundry.primitives.models import FunctionAction
-    from agent_foundry.primitives.plan import PrimitivePlan
+    from agent_foundry.constructs.models import FunctionAction
+    from agent_foundry.constructs.process import Process
+    from agent_foundry.orchestration.runner import run_process
 
     observed: list[RunEndedEvent] = []
 
@@ -145,10 +145,10 @@ async def test_run_primitive_plan_invokes_on_run_ended_with_exception_none_and_o
         return _State(value=s.value)
 
     action = FunctionAction[_State, _State](function=fn)
-    plan = PrimitivePlan(root=action)
+    process = Process(root=action)
 
-    await run_primitive_plan(
-        plan,
+    await run_process(
+        process,
         initial_state=_State(),
         artifacts_dir=tmp_path,
         workspace_volume="vol",
@@ -165,12 +165,12 @@ async def test_run_primitive_plan_invokes_on_run_ended_with_exception_none_and_o
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_invokes_on_run_ended_with_exception_and_none_output_on_failure(
+async def test_run_process_invokes_on_run_ended_with_exception_and_none_output_on_failure(
     tmp_path: Path,
 ) -> None:
-    from agent_foundry.orchestration.runner import run_primitive_plan
-    from agent_foundry.primitives.models import FunctionAction
-    from agent_foundry.primitives.plan import PrimitivePlan
+    from agent_foundry.constructs.models import FunctionAction
+    from agent_foundry.constructs.process import Process
+    from agent_foundry.orchestration.runner import run_process
 
     observed: list[RunEndedEvent] = []
 
@@ -178,10 +178,10 @@ async def test_run_primitive_plan_invokes_on_run_ended_with_exception_and_none_o
         raise RuntimeError("boom")
 
     action = FunctionAction[_State, _State](function=boom)
-    plan = PrimitivePlan(root=action)
+    process = Process(root=action)
 
-    result = await run_primitive_plan(
-        plan,
+    result = await run_process(
+        process,
         initial_state=_State(),
         artifacts_dir=tmp_path,
         workspace_volume="vol",
@@ -203,7 +203,7 @@ async def test_run_primitive_plan_invokes_on_run_ended_with_exception_and_none_o
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_writes_run_failed_lifecycle_event(
+async def test_run_process_writes_run_failed_lifecycle_event(
     tmp_path: Path,
 ) -> None:
     """The lifecycle JSONL must end with RUN_FAILED on the failure path
@@ -211,19 +211,19 @@ async def test_run_primitive_plan_writes_run_failed_lifecycle_event(
     """
     import json
 
+    from agent_foundry.constructs.models import FunctionAction
+    from agent_foundry.constructs.process import Process
     from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
-    from agent_foundry.orchestration.runner import run_primitive_plan
-    from agent_foundry.primitives.models import FunctionAction
-    from agent_foundry.primitives.plan import PrimitivePlan
+    from agent_foundry.orchestration.runner import run_process
 
     def boom(_: _State) -> _State:
         raise RuntimeError("boom")
 
     action = FunctionAction[_State, _State](function=boom)
-    plan = PrimitivePlan(root=action)
+    process = Process(root=action)
 
-    result = await run_primitive_plan(
-        plan,
+    result = await run_process(
+        process,
         initial_state=_State(),
         artifacts_dir=tmp_path,
         workspace_volume="vol",
@@ -243,24 +243,24 @@ async def test_run_primitive_plan_writes_run_failed_lifecycle_event(
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_writes_run_ended_lifecycle_event_on_success(
+async def test_run_process_writes_run_ended_lifecycle_event_on_success(
     tmp_path: Path,
 ) -> None:
     import json
 
+    from agent_foundry.constructs.models import FunctionAction
+    from agent_foundry.constructs.process import Process
     from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
-    from agent_foundry.orchestration.runner import run_primitive_plan
-    from agent_foundry.primitives.models import FunctionAction
-    from agent_foundry.primitives.plan import PrimitivePlan
+    from agent_foundry.orchestration.runner import run_process
 
     def fn(s: _State) -> _State:
         return _State(value=s.value)
 
     action = FunctionAction[_State, _State](function=fn)
-    plan = PrimitivePlan(root=action)
+    process = Process(root=action)
 
-    await run_primitive_plan(
-        plan,
+    await run_process(
+        process,
         initial_state=_State(),
         artifacts_dir=tmp_path,
         workspace_volume="vol",
@@ -278,12 +278,12 @@ async def test_run_primitive_plan_writes_run_ended_lifecycle_event_on_success(
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_isolates_hook_exceptions(
+async def test_run_process_isolates_hook_exceptions(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    from agent_foundry.orchestration.runner import run_primitive_plan
-    from agent_foundry.primitives.models import FunctionAction
-    from agent_foundry.primitives.plan import PrimitivePlan
+    from agent_foundry.constructs.models import FunctionAction
+    from agent_foundry.constructs.process import Process
+    from agent_foundry.orchestration.runner import run_process
 
     observed: list[str] = []
 
@@ -291,7 +291,7 @@ async def test_run_primitive_plan_isolates_hook_exceptions(
         return _State(value=s.value)
 
     action = FunctionAction[_State, _State](function=fn)
-    plan = PrimitivePlan(root=action)
+    process = Process(root=action)
 
     def bad(_evt: RunStartingEvent) -> None:
         raise ValueError("hook-1 failed")
@@ -300,8 +300,8 @@ async def test_run_primitive_plan_isolates_hook_exceptions(
         observed.append("hook-2 ran")
 
     with caplog.at_level(logging.ERROR):
-        await run_primitive_plan(
-            plan,
+        await run_process(
+            process,
             initial_state=_State(),
             artifacts_dir=tmp_path,
             workspace_volume="vol",

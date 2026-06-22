@@ -17,8 +17,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from agent_foundry.primitives.ai_call import AICall
-from agent_foundry.primitives.models import AgentAction
+from agent_foundry.constructs.ai_call import AICall
+from agent_foundry.constructs.models import AgentAction
 
 
 class EvalTargetKind(StrEnum):

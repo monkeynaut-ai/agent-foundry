@@ -3,7 +3,7 @@ See `jig.config.md` for pipeline configuration.
 
 # Agent Foundry
 
-A platform for building agentic workflow systems. Agent Foundry provides composable, typed primitives that compile to executable LangGraph graphs. Users define workflows as primitive trees; the platform handles compilation, execution, and state management.
+A platform for building agentic workflow systems. Agent Foundry provides composable, typed constructs that compile to executable LangGraph graphs. Users define workflows as construct trees; the platform handles compilation, execution, and state management.
 
 ## Foundational Motivation
 
@@ -11,49 +11,49 @@ A platform for building agentic workflow systems. Agent Foundry provides composa
 
 Agent Foundry exists for two intertwined reasons:
 
-**To accelerate development of high-quality agentic systems.** Agentic systems share a large body of infrastructure — container lifecycle, protocol handling, structured output, lockdown, compilation, state flow, recovery. Products should not rebuild this. Agent Foundry centralizes the mechanics. Building a new agentic system means composing primitives and declaring agent behavior, not reimplementing infrastructure. Centralize hardening, testing, and security fixes. Any improvement in one place benefits every product built on the platform.
+**To accelerate development of high-quality agentic systems.** Agentic systems share a large body of infrastructure — container lifecycle, protocol handling, structured output, lockdown, compilation, state flow, recovery. Products should not rebuild this. Agent Foundry centralizes the mechanics. Building a new agentic system means composing constructs and declaring agent behavior, not reimplementing infrastructure. Centralize hardening, testing, and security fixes. Any improvement in one place benefits every product built on the platform.
 
 **To make experimenting with agentic system design fast.** LLMs and systems of agents are new; the best designs aren't known yet, and they will be discovered by iterating through experiments. Every capability Agent Foundry offers is shaped by this goal: shorten the cycle between "I want to try a change" and "I can see the outcome."
 
 Concretely, this means:
 
-- **Rich primitive and execution-strategy menu.** The platform ships a broad set of control-flow primitives, action primitives, and execution strategies (container, SDK, API). Products compose and recombine these rather than building execution infrastructure.
-- **Easy agent-behavior swaps.** The things products want to change most often — prompts, instructions, schema descriptions, response channels, executors — are callable fields on the primitive. Swapping any of them is a one-line change in a product declaration. No framework code is modified to try a different prompt.
-- **Open to application extension.** Products can define their own `Primitive` subclasses, register their own compilers and validators, and introduce their own executors. The platform is extensible through registries and field callables, not by editing its core.
-- **Support for tracking change outcomes.** The primitive is a data structure — a declaration. Future capabilities (naming/versioning agent configurations, associating parameters and instructions with a version, attaching outcome grades to a run) build on this: the declaration is the unit being versioned and graded.
+- **Rich construct and execution-strategy menu.** The platform ships a broad set of control-flow constructs, action constructs, and execution strategies (container, SDK, API). Products compose and recombine these rather than building execution infrastructure.
+- **Easy agent-behavior swaps.** The things products want to change most often — prompts, instructions, schema descriptions, response channels, executors — are callable fields on the construct. Swapping any of them is a one-line change in a product declaration. No framework code is modified to try a different prompt.
+- **Open to application extension.** Products can define their own `Construct` subclasses, register their own compilers and validators, and introduce their own executors. The platform is extensible through registries and field callables, not by editing its core.
+- **Support for tracking change outcomes.** The construct is a data structure — a declaration. Future capabilities (naming/versioning agent configurations, associating parameters and instructions with a version, attaching outcome grades to a run) build on this: the declaration is the unit being versioned and graded.
 
 ## Platform Principles
 
-**Agent Foundry is a platform, not a library.** Users (like Archipelago) build custom primitive types, action variants, and agent implementations on top of it. Design every API surface for extension.
+**Agent Foundry is a platform, not a library.** Users (like Archipelago) build custom construct types, action variants, and agent implementations on top of it. Design every API surface for extension.
 
-**Agent Foundry is a declarative platform.** The product's primitive declaration is the *complete, authoritative specification* of an agent (or any primitive) — prompt logic, instructions, response channel, execution strategy, access rights, reuse policy. Reading a product's declaration tells you what the primitive does and how it runs. The platform is machinery that executes what's declared; it does not make product decisions through defaults. Any behavior-defining choice that matters to the product must live on the primitive, not in platform code. When the platform offers multiple ways to do a thing (e.g., container vs. SDK vs. API execution), every way is a library capability the product picks from — none is "the default."
+**Agent Foundry is a declarative platform.** The product's construct declaration is the *complete, authoritative specification* of an agent (or any construct) — prompt logic, instructions, response channel, execution strategy, access rights, reuse policy. Reading a product's declaration tells you what the construct does and how it runs. The platform is machinery that executes what's declared; it does not make product decisions through defaults. Any behavior-defining choice that matters to the product must live on the construct, not in platform code. When the platform offers multiple ways to do a thing (e.g., container vs. SDK vs. API execution), every way is a library capability the product picks from — none is "the default."
 
 **Agent Foundry is safe by default.** For any field where absence of configuration could mean "more access" or "less access," absence means "less access." Filesystem visibility, writability, permissions, and similar controls default to deny; the product explicitly opts in to each grant. For fields where the choice carries semantic weight (e.g., response channel, executor), there is no default — the product must choose. Misconfiguration produces loud, localized failures ("permission denied writing to /workspace/src"), never silent grants of authority or implicit behavior.
 
-**Strict typing at all boundaries.** Public APIs accept and return Pydantic models, never raw dicts. LangGraph's dict-based internals are encapsulated within the compiler. State flows between primitives as typed models — no string-keyed dictionaries, no hard-coded keys, no untyped smuggling of internal bookkeeping through state.
+**Strict typing at all boundaries.** Public APIs accept and return Pydantic models, never raw dicts. LangGraph's dict-based internals are encapsulated within the compiler. State flows between constructs as typed models — no string-keyed dictionaries, no hard-coded keys, no untyped smuggling of internal bookkeeping through state.
 
-**Extensibility via registries.** The compiler dispatches to per-type compiler functions via a registry, not `isinstance` chains. The validator does the same. New primitive types register their own compiler and validator without modifying core code. Unknown types raise loudly — silent fallback is rejected. Same pattern applies to future extension points (action executors, interaction handlers).
+**Extensibility via registries.** The compiler dispatches to per-type compiler functions via a registry, not `isinstance` chains. The validator does the same. New construct types register their own compiler and validator without modifying core code. Unknown types raise loudly — silent fallback is rejected. Same pattern applies to future extension points (action executors, interaction handlers).
 
 **Composition over inheritance for state models.** State models use Pydantic BaseModel with composition. No subclass hierarchies between state types. Type boundaries use exact identity checks (`is`), not subtype checks (`issubclass`).
 
-**Primitives are a tree, not a graph.** Composition is by direct object reference. No string-based names or IDs for cross-referencing. Scope is local — a primitive's children are self-contained subtrees. This guarantees that validation is local and compilation is recursive.
+**Constructs are a tree, not a graph.** Composition is by direct object reference. No string-based names or IDs for cross-referencing. Scope is local — a construct's children are self-contained subtrees. This guarantees that validation is local and compilation is recursive.
 
-**Accumulated state, not pipeline.** Composite primitives (Sequence, Loop, Retry, Conditional) maintain accumulated state within their subgraph. Each step reads its declared input fields from the accumulated state and merges its output fields back. State grows — it never shrinks within a subgraph. The composite's output type selects which fields leave the subgraph scope. This enables function reusability: a step only declares the fields it needs, not the full composite input.
+**Accumulated state, not pipeline.** Composite constructs (Sequence, Loop, Retry, Conditional) maintain accumulated state within their subgraph. Each step reads its declared input fields from the accumulated state and merges its output fields back. State grows — it never shrinks within a subgraph. The composite's output type selects which fields leave the subgraph scope. This enables function reusability: a step only declares the fields it needs, not the full composite input.
 
-## Primitive Taxonomy
+## Construct Taxonomy
 
-**Control flow primitives** structure the graph:
+**Control flow constructs** structure the graph:
 - **Sequence** — linear execution of steps
 - **Loop** — iterate over a collection
 - **Retry** — repeat until condition met or attempts exhausted
 - **Conditional** — branch based on state
 
-**Action primitives** do work at the leaves:
+**Action constructs** do work at the leaves:
 - **FunctionAction** — synchronous in-process function call
 - **GateAction** — block for human interaction, return response as typed output
 - Future: ServiceAction (API calls), AgentAction (containerized agents), etc.
 
-Control flow primitives compose other primitives (including other control flow). Action primitives are leaves — they transform typed input to typed output.
+Control flow constructs compose other constructs (including other control flow). Action constructs are leaves — they transform typed input to typed output.
 
 ## Archipelago
 

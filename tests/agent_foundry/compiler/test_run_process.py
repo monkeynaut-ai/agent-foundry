@@ -1,8 +1,8 @@
-"""End-to-end tests for the async ``run_primitive_plan`` entry point.
+"""End-to-end tests for the async ``run_process`` entry point.
 
 The async entry point builds a ``RunContext`` from explicit
 parameters, installs signal handlers (best-effort), sets the
-``current_run_context`` ContextVar, compiles the plan, runs it via
+``current_run_context`` ContextVar, compiles the process, runs it via
 ``graph.ainvoke``, and writes ``summary.txt`` in a ``finally`` block.
 
 These tests drive the new contract with a scripted
@@ -20,6 +20,15 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from agent_foundry.constructs.models import (
+    AgentAction,
+    ContainerReusePolicy,
+    FunctionAction,
+    Retry,
+    Sequence,
+)
+from agent_foundry.constructs.process import Process
+from agent_foundry.constructs.retry_types import DispositionKind, ResolverDisposition
 from agent_foundry.orchestration import container_executor
 from agent_foundry.orchestration.container_executor import run_agent_in_container
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
@@ -29,15 +38,6 @@ from agent_foundry.orchestration.run_outcome import (
     RunCompleted,
     RunFailed,
 )
-from agent_foundry.primitives.models import (
-    AgentAction,
-    ContainerReusePolicy,
-    FunctionAction,
-    Retry,
-    Sequence,
-)
-from agent_foundry.primitives.plan import PrimitivePlan
-from agent_foundry.primitives.retry_types import DispositionKind, ResolverDisposition
 from agent_foundry.responders.protocol import static_provider
 
 from ..orchestration.fakes import (
@@ -98,7 +98,7 @@ def install_driver(monkeypatch):
 @pytest.fixture
 def patch_registry_manager(monkeypatch, fake_manager: FakeContainerManager):
     """Force every ``AgentContainerRegistry`` built inside
-    ``run_primitive_plan`` to use our ``FakeContainerManager``
+    ``run_process`` to use our ``FakeContainerManager``
     regardless of how the entry point constructs the registry.
     """
     from agent_foundry.orchestration import registry as registry_mod
@@ -127,10 +127,10 @@ def patch_registry_manager(monkeypatch, fake_manager: FakeContainerManager):
     return fake_manager
 
 
-# --- Primitive builders -----------------------------------------------------
+# --- Construct builders -----------------------------------------------------
 
 
-def _agent_primitive() -> AgentAction:
+def _agent_construct() -> AgentAction:
     return AgentAction[PlanInput, AgentOut](
         name="planner",
         model="claude-sonnet-4-6",
@@ -145,22 +145,22 @@ def _double_fn(state: AgentOut) -> PlanOutput:
     return PlanOutput(x=state.x * 2)
 
 
-def _plan_sequence() -> PrimitivePlan:
+def _plan_sequence() -> Process:
     class _SeqMid(BaseModel):
         task: str
         x: int
 
-    agent = _agent_primitive()
+    agent = _agent_construct()
     fn = FunctionAction[AgentOut, PlanOutput](function=_double_fn)
     seq = Sequence[PlanInput, PlanOutput](steps=[agent, fn])
-    return PrimitivePlan(root=seq)
+    return Process(root=seq)
 
 
-# --- Resolver/crash plan builders (no container needed) ---------------------
+# --- Resolver/crash process builders (no container needed) ---------------------
 
 
 class _RetryState(BaseModel):
-    """State for the resolver Retry plans: the automated reviewer never passes
+    """State for the resolver Retry processes: the automated reviewer never passes
     until() so the resolver seat is always consulted."""
 
     verdict: str = "fail"
@@ -174,7 +174,7 @@ def _never_passing_body() -> FunctionAction:
     return FunctionAction[_RetryState, _RetryState](function=_fn)
 
 
-def _plan_with_abort_resolver(reason: str) -> PrimitivePlan:
+def _plan_with_abort_resolver(reason: str) -> Process:
     """A Retry whose resolver ABORTs on the first consult."""
 
     def _abort(s: _RetryState) -> _RetryState:
@@ -189,10 +189,10 @@ def _plan_with_abort_resolver(reason: str) -> PrimitivePlan:
         body=_never_passing_body(),
         on_max_attempts_resolver=FunctionAction[_RetryState, _RetryState](function=_abort),
     )
-    return PrimitivePlan(root=retry)
+    return Process(root=retry)
 
 
-def _plan_that_never_converges() -> PrimitivePlan:
+def _plan_that_never_converges() -> Process:
     """A Retry whose resolver always RETRYs and whose body never passes until(),
     with a small backstop ceiling so ResolverDidNotConvergeError trips."""
 
@@ -209,19 +209,19 @@ def _plan_that_never_converges() -> PrimitivePlan:
         on_max_attempts_resolver=FunctionAction[_RetryState, _RetryState](function=_always_retry),
         resolver_max_reentries=3,
     )
-    return PrimitivePlan(root=retry)
+    return Process(root=retry)
 
 
 class _CrashOut(BaseModel):
     ok: bool = True
 
 
-def _plan_with_raising_action(message: str) -> PrimitivePlan:
+def _plan_with_raising_action(message: str) -> Process:
     def _boom(_: PlanInput) -> _CrashOut:
         raise RuntimeError(message)
 
     action = FunctionAction[PlanInput, _CrashOut](function=_boom)
-    return PrimitivePlan(root=action)
+    return Process(root=action)
 
 
 def _lifecycle_types(run_dir: Path) -> list[str]:
@@ -229,12 +229,12 @@ def _lifecycle_types(run_dir: Path) -> list[str]:
     return [json.loads(line)["type"] for line in jsonl.read_text().splitlines() if line.strip()]
 
 
-async def _run_resolver_plan(plan: PrimitivePlan, *, run_id: str, artifacts_dir: Path, **kwargs):
-    """Run a resolver/crash plan (no container) via run_primitive_plan."""
-    from agent_foundry.orchestration.runner import run_primitive_plan
+async def _run_resolver_plan(process: Process, *, run_id: str, artifacts_dir: Path, **kwargs):
+    """Run a resolver/crash process (no container) via run_process."""
+    from agent_foundry.orchestration.runner import run_process
 
-    return await run_primitive_plan(
-        plan,
+    return await run_process(
+        process,
         initial_state=_RetryState() if not kwargs.pop("crash", False) else PlanInput(task="x"),
         artifacts_dir=artifacts_dir,
         workspace_volume="vol",
@@ -257,7 +257,7 @@ async def test_happy_path_runs_end_to_end(
     """One AgentAction + one FunctionAction run; final state has x==2;
     lifecycle.jsonl contains RUN_STARTED and RUN_ENDED; summary.txt written.
     """
-    from agent_foundry.orchestration.runner import run_primitive_plan
+    from agent_foundry.orchestration.runner import run_process
 
     driver = FakeClaudeCodeDriver(turn_script=[_success_env(x=1)])
     install_driver(driver)
@@ -265,7 +265,7 @@ async def test_happy_path_runs_end_to_end(
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
 
-    result = await run_primitive_plan(
+    result = await run_process(
         _plan_sequence(),
         initial_state=PlanInput(task="hello"),
         artifacts_dir=artifacts_dir,
@@ -296,7 +296,7 @@ async def test_explicit_run_id_honored(
     install_driver,
     patch_registry_manager,
 ):
-    from agent_foundry.orchestration.runner import run_primitive_plan
+    from agent_foundry.orchestration.runner import run_process
 
     driver = FakeClaudeCodeDriver(turn_script=[_success_env(x=1)])
     install_driver(driver)
@@ -304,7 +304,7 @@ async def test_explicit_run_id_honored(
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
 
-    await run_primitive_plan(
+    await run_process(
         _plan_sequence(),
         initial_state=PlanInput(task="hi"),
         artifacts_dir=artifacts_dir,
@@ -323,14 +323,14 @@ async def test_implicit_run_id_unique_per_invocation(
     install_driver,
     patch_registry_manager,
 ):
-    from agent_foundry.orchestration.runner import run_primitive_plan
+    from agent_foundry.orchestration.runner import run_process
 
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
 
     # Two back-to-back invocations with no run_id → two distinct run dirs.
     install_driver(FakeClaudeCodeDriver(turn_script=[_success_env(x=1)]))
-    await run_primitive_plan(
+    await run_process(
         _plan_sequence(),
         initial_state=PlanInput(task="a"),
         artifacts_dir=artifacts_dir,
@@ -340,7 +340,7 @@ async def test_implicit_run_id_unique_per_invocation(
     )
 
     install_driver(FakeClaudeCodeDriver(turn_script=[_success_env(x=1)]))
-    await run_primitive_plan(
+    await run_process(
         _plan_sequence(),
         initial_state=PlanInput(task="b"),
         artifacts_dir=artifacts_dir,
@@ -366,7 +366,7 @@ async def test_cancel_mid_run_propagates_and_cleans_up(
     """
     from agent_foundry.orchestration import registry as registry_mod
     from agent_foundry.orchestration.run_context import current_run_context
-    from agent_foundry.orchestration.runner import run_primitive_plan
+    from agent_foundry.orchestration.runner import run_process
 
     driver = FakeClaudeCodeDriver(turn_script=[_success_env(x=1)])
     install_driver(driver)
@@ -375,14 +375,14 @@ async def test_cancel_mid_run_propagates_and_cleans_up(
     artifacts_dir.mkdir()
 
     # Set the run_ctx.cancel_event at registry get_or_create time — this
-    # is the first executor touchpoint after run_primitive_plan has set
+    # is the first executor touchpoint after run_process has set
     # the current_run_context ContextVar. The executor's pre-turn check
     # then sees a set event and raises AgentFailedError("cancelled").
     real_get = registry_mod.AgentContainerRegistry.get_or_create
 
     async def _cancelling_get(
         self,
-        primitive,
+        construct,
         *,
         lifecycle_writer,
         agent_name,
@@ -392,7 +392,7 @@ async def test_cancel_mid_run_propagates_and_cleans_up(
     ):
         live = await real_get(
             self,
-            primitive,
+            construct,
             lifecycle_writer=lifecycle_writer,
             agent_name=agent_name,
             instructions=instructions,
@@ -404,7 +404,7 @@ async def test_cancel_mid_run_propagates_and_cleans_up(
 
     monkeypatch.setattr(registry_mod.AgentContainerRegistry, "get_or_create", _cancelling_get)
 
-    result = await run_primitive_plan(
+    result = await run_process(
         _plan_sequence(),
         initial_state=PlanInput(task="hi"),
         artifacts_dir=artifacts_dir,
@@ -440,7 +440,7 @@ async def test_exception_mid_run_propagates_and_cleans_up(
     RunFailed(CRASH) (no re-raise); teardown still runs: registry handled
     + summary.txt written.
     """
-    from agent_foundry.orchestration.runner import run_primitive_plan
+    from agent_foundry.orchestration.runner import run_process
 
     driver = FakeClaudeCodeDriver(turn_script=[_failure_env("boom")])
     install_driver(driver)
@@ -448,7 +448,7 @@ async def test_exception_mid_run_propagates_and_cleans_up(
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
 
-    result = await run_primitive_plan(
+    result = await run_process(
         _plan_sequence(),
         initial_state=PlanInput(task="hi"),
         artifacts_dir=artifacts_dir,
@@ -482,9 +482,9 @@ async def test_completed_returns_run_completed(
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
 
-    from agent_foundry.orchestration.runner import run_primitive_plan
+    from agent_foundry.orchestration.runner import run_process
 
-    result = await run_primitive_plan(
+    result = await run_process(
         _plan_sequence(),
         initial_state=PlanInput(task="hello"),
         artifacts_dir=artifacts_dir,

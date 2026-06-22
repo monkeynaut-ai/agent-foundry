@@ -1,7 +1,7 @@
 """Tests for MCP settings builder."""
 
 from agent_foundry.agents.mcp_settings import build_claude_json_project_entry, build_mcp_permissions
-from agent_foundry.primitives.mcp import StdioMcpServer, StreamableHttpMcpServer
+from agent_foundry.constructs.mcp import StdioMcpServer, StreamableHttpMcpServer
 
 
 class TestBuildMcpSettings:

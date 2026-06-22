@@ -13,7 +13,7 @@ Archipelago dependency:
 
 These tests exercise the resolver seat as a general capability: an ordinary
 FunctionAction and a callable-class instance both fill the role with zero
-change to the primitive or compiler.
+change to the construct or compiler.
 """
 
 from __future__ import annotations
@@ -25,16 +25,16 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import compile_runtime_plan, get_type_args
-from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
-from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
-from agent_foundry.primitives.models import FunctionAction, Retry
-from agent_foundry.primitives.plan import PrimitivePlan
-from agent_foundry.primitives.retry_types import (
+from agent_foundry.compiler.compiler import compile_process, get_type_args
+from agent_foundry.constructs.models import FunctionAction, Retry
+from agent_foundry.constructs.process import Process
+from agent_foundry.constructs.retry_types import (
     DispositionKind,
     ResolverDisposition,
     RetryAborted,
 )
+from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
+from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
 
 # ---------------------------------------------------------------------------
 # Workflow state
@@ -107,7 +107,7 @@ async def _compile_and_run(retry: Retry, initial: W, writer: LifecycleWriter | N
     token = ctx_var.set(ctx)
     try:
         _, root_out = get_type_args(retry)
-        graph = compile_runtime_plan(PrimitivePlan(root=retry))
+        graph = compile_process(Process(root=retry))
         result = await graph.ainvoke(initial.model_dump())
         return root_out.model_validate(result)
     finally:
@@ -231,7 +231,7 @@ class DeterministicResolver:
 @pytest.mark.asyncio
 async def test_callable_class_resolver_matches_function_behavior() -> None:
     """A callable-class instance wrapped in FunctionAction fills the resolver seat
-    with identical re-entry/termination behavior — zero change to the primitive."""
+    with identical re-entry/termination behavior — zero change to the construct."""
     body_sink = {"runs": 0}
     resolver = DeterministicResolver(guidance="reviewer-supplied-guidance")
 
@@ -262,7 +262,7 @@ async def test_resolver_emits_same_lifecycle_shape_as_body_node() -> None:
     """The resolver FunctionAction emits FUNCTION_ACTION_STARTED/_COMPLETED with
     the same field shape as the body FunctionAction node — confirming it is a
     standard compiled node on the state-merge + lifecycle path, not a special
-    case bolted onto the primitive."""
+    case bolted onto the construct."""
     writer = _CapturingWriter()
     body_sink = {"runs": 0}
     resolver_sink = {"resolver_visits": 0}

@@ -42,12 +42,12 @@ from agent_foundry.ai_models.inference import (
     InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
-from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
+from agent_foundry.compiler.compiler import compile_process
+from agent_foundry.constructs.ai_call import AICall, ModelInput
+from agent_foundry.constructs.models import FunctionAction, Retry, RetryExceptionPolicy, Sequence
+from agent_foundry.constructs.process import Process
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
-from agent_foundry.primitives.ai_call import AICall, ModelInput
-from agent_foundry.primitives.models import FunctionAction, Retry, RetryExceptionPolicy, Sequence
-from agent_foundry.primitives.plan import PrimitivePlan
 
 # ---------------------------------------------------------------------------
 # State model
@@ -114,7 +114,7 @@ def _workflow():
     # returns a synthesized "fallback" verdict. This verifies I1-a.
     executor_calls: list[dict] = []
 
-    async def catching_executor(*, primitive: Any, model_input: Any) -> _ReviewState:
+    async def catching_executor(*, construct: Any, model_input: Any) -> _ReviewState:
         executor_calls.append({"model_input": model_input})
         try:
             # Deliberately call the underlying provider via its model_entry —
@@ -195,8 +195,8 @@ async def _run(retry: Retry, writer: _CapturingWriter) -> _ReviewState:
     )
     token = current_run_context.set(ctx)
     try:
-        plan = PrimitivePlan(root=retry)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=retry)
+        graph = compile_process(process)
         result = await graph.ainvoke(_ReviewState().model_dump())
         return _ReviewState.model_validate(result)
     finally:

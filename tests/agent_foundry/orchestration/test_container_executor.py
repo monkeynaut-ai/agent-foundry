@@ -27,6 +27,7 @@ import pytest
 from pydantic import BaseModel
 
 from agent_foundry.agents.lifecycle import ExecResult as _ExecResult
+from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
 from agent_foundry.models.markers import AgentFilePath
 from agent_foundry.orchestration import container_executor
 from agent_foundry.orchestration.artifacts import bootstrap_run_artifacts
@@ -45,7 +46,6 @@ from agent_foundry.orchestration.registry import (
     LiveContainer as _LiveContainer,
 )
 from agent_foundry.orchestration.run_context import RunContext
-from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 from agent_foundry.responders.protocol import static_provider
 
 from .fakes import (
@@ -89,7 +89,7 @@ class OutputWithFile(BaseModel):
     note: str
 
 
-def _make_primitive(
+def _make_construct(
     *,
     reuse_policy: ContainerReusePolicy = ContainerReusePolicy.REUSE_NEW_SESSION,
     output_type: type[BaseModel] = OutputModel,
@@ -187,7 +187,7 @@ def _install_driver(
     matching the signature of :func:`container_executor._run_claude_turn`.
     Monkeypatching the module-level default at that symbol is equivalent
     to passing ``run_turn=<fake>`` to :func:`run_agent_in_container` and
-    works for the indirect path via ``run_primitive_plan`` where the
+    works for the indirect path via ``run_process`` where the
     kwarg cannot be threaded through the compiler.
     """
     monkeypatch.setattr(container_executor, "_run_claude_turn", driver)
@@ -207,8 +207,8 @@ async def test_clarification_round_trip(monkeypatch, tmp_path) -> None:
     responder = FakeResponder(answers=["rebase"])
     ctx, _, writer = _make_ctx(tmp_path=tmp_path, responder=responder)
 
-    primitive = _make_primitive()
-    result = await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    construct = _make_construct()
+    result = await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
 
     assert isinstance(result, OutputModel)
     assert result.answer == "merged"
@@ -234,8 +234,8 @@ async def test_permission_round_trip(monkeypatch, tmp_path) -> None:
     responder = FakeResponder(answers=["allow"])
     ctx, _, writer = _make_ctx(tmp_path=tmp_path, responder=responder)
 
-    primitive = _make_primitive()
-    result = await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    construct = _make_construct()
+    result = await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
 
     assert isinstance(result, OutputModel)
     assert result.answer == "done"
@@ -252,9 +252,9 @@ async def test_failure_outcome_raises_agent_failed(monkeypatch, tmp_path) -> Non
     _install_driver(monkeypatch, driver)
     ctx, _, writer = _make_ctx(tmp_path=tmp_path)
 
-    primitive = _make_primitive()
+    construct = _make_construct()
     with pytest.raises(AgentFailedError) as excinfo:
-        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+        await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
     assert "cannot proceed" in excinfo.value.reason
     assert LifecycleEvent.AGENT_INVOCATION_FAILED in writer.types()
 
@@ -266,9 +266,9 @@ async def test_responder_exception_wrapped_as_agent_failed(monkeypatch, tmp_path
     responder = FakeResponder(raise_on_call=TimeoutError("responder timed out"))
     ctx, _, writer = _make_ctx(tmp_path=tmp_path, responder=responder)
 
-    primitive = _make_primitive()
+    construct = _make_construct()
     with pytest.raises(AgentFailedError) as excinfo:
-        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+        await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
     assert "responder failed" in excinfo.value.reason
     assert LifecycleEvent.AGENT_INVOCATION_FAILED in writer.types()
 
@@ -293,9 +293,9 @@ async def test_cancel_event_between_turns(monkeypatch, tmp_path) -> None:
     _install_driver(monkeypatch, driver)
     ctx, _, _ = _make_ctx(tmp_path=tmp_path, responder=responder, cancel_event=cancel)
 
-    primitive = _make_primitive()
+    construct = _make_construct()
     with pytest.raises(AgentFailedError) as excinfo:
-        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+        await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
     assert "cancel" in excinfo.value.reason.lower()
 
 
@@ -309,9 +309,9 @@ async def test_reuse_resume_passes_session_id_on_second_call(monkeypatch, tmp_pa
     _install_driver(monkeypatch, driver)
     ctx, _registry, _ = _make_ctx(tmp_path=tmp_path)
 
-    primitive = _make_primitive(reuse_policy=ContainerReusePolicy.REUSE_RESUME)
-    r1 = await run_agent_in_container(primitive=primitive, prompt="go 1", run_ctx=ctx)
-    r2 = await run_agent_in_container(primitive=primitive, prompt="go 2", run_ctx=ctx)
+    construct = _make_construct(reuse_policy=ContainerReusePolicy.REUSE_RESUME)
+    r1 = await run_agent_in_container(construct=construct, prompt="go 1", run_ctx=ctx)
+    r2 = await run_agent_in_container(construct=construct, prompt="go 2", run_ctx=ctx)
 
     assert r1.answer == "first"  # type: ignore[attr-defined]
     assert r2.answer == "second"  # type: ignore[attr-defined]
@@ -330,9 +330,9 @@ async def test_reuse_new_session_never_resumes(monkeypatch, tmp_path) -> None:
     _install_driver(monkeypatch, driver)
     ctx, _, _ = _make_ctx(tmp_path=tmp_path)
 
-    primitive = _make_primitive(reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION)
-    await run_agent_in_container(primitive=primitive, prompt="go 1", run_ctx=ctx)
-    await run_agent_in_container(primitive=primitive, prompt="go 2", run_ctx=ctx)
+    construct = _make_construct(reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION)
+    await run_agent_in_container(construct=construct, prompt="go 1", run_ctx=ctx)
+    await run_agent_in_container(construct=construct, prompt="go 2", run_ctx=ctx)
 
     assert driver.calls[0]["resume"] is None
     assert driver.calls[1]["resume"] is None
@@ -349,9 +349,9 @@ async def test_max_responder_loops_exceeded(monkeypatch, tmp_path) -> None:
     responder = FakeResponder(answers=["answer"] * 25)
     ctx, _, _ = _make_ctx(tmp_path=tmp_path, responder=responder)
 
-    primitive = _make_primitive()
+    construct = _make_construct()
     with pytest.raises(AgentFailedError) as excinfo:
-        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+        await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
     assert "responder loop exceeded max iterations" in excinfo.value.reason
     # Bound is 20 — should have invoked the driver no more than 21 times.
     assert len(driver.calls) <= 21
@@ -378,11 +378,11 @@ async def test_file_snapshotting_on_success(monkeypatch, tmp_path) -> None:
     # Also seed read_file_from_container so host-side file-path verification passes.
     fake_mgr.read_file_script = {"/workspace/out.txt": ["hello"]}
 
-    primitive = _make_primitive(output_type=OutputWithFile)
-    result = await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    construct = _make_construct(output_type=OutputWithFile)
+    result = await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
     assert isinstance(result, OutputWithFile)
 
-    agent_name = primitive.name
+    agent_name = construct.name
     snapshot = ctx.artifacts_dir / agent_name / "turns" / "1" / "collected_files" / "out.txt"
     assert snapshot.exists(), f"expected snapshot at {snapshot}"
     assert snapshot.read_text() == "hello"
@@ -398,11 +398,11 @@ async def test_session_id_recorded_on_live_container(monkeypatch, tmp_path) -> N
     _install_driver(monkeypatch, driver)
     ctx, registry, _ = _make_ctx(tmp_path=tmp_path)
 
-    primitive = _make_primitive(reuse_policy=ContainerReusePolicy.REUSE_RESUME)
-    await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    construct = _make_construct(reuse_policy=ContainerReusePolicy.REUSE_RESUME)
+    await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
 
-    live = registry._containers.get(id(primitive))
-    assert live is not None, "primitive should have been registered"
+    live = registry._containers.get(id(construct))
+    assert live is not None, "construct should have been registered"
     assert live.session_id == "sess-fake-123"
 
 
@@ -416,8 +416,8 @@ async def test_lifecycle_event_sequence_on_success(monkeypatch, tmp_path) -> Non
     _install_driver(monkeypatch, driver)
     ctx, _, writer = _make_ctx(tmp_path=tmp_path)
 
-    primitive = _make_primitive()
-    await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    construct = _make_construct()
+    await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
 
     types = writer.types()
     expected = [
@@ -443,7 +443,7 @@ async def test_lifecycle_event_sequence_on_success(monkeypatch, tmp_path) -> Non
 # a single-turn success and a single-turn failure.
 
 
-def _make_smoke_primitive() -> AgentAction[InputModel, OutputModel]:
+def _make_smoke_construct() -> AgentAction[InputModel, OutputModel]:
     return AgentAction[InputModel, OutputModel](
         name="test-agent",
         model="claude-sonnet-4-6",
@@ -478,8 +478,8 @@ async def test_run_agent_in_container_happy_path(monkeypatch) -> None:
         lifecycle_writer=NoOpLifecycleWriter(),
         env={"CLAUDE_CODE_OAUTH_TOKEN": "tok"},
     )
-    primitive = _make_smoke_primitive()
-    result = await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    construct = _make_smoke_construct()
+    result = await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
     assert isinstance(result, OutputModel)
     assert result.answer == "42"
     # Container was created and is running; the lifecycle keeps the
@@ -522,9 +522,9 @@ async def test_run_agent_in_container_failure_outcome_raises(monkeypatch) -> Non
         lifecycle_writer=NoOpLifecycleWriter(),
         env={"CLAUDE_CODE_OAUTH_TOKEN": "t"},
     )
-    primitive = _make_smoke_primitive()
+    construct = _make_smoke_construct()
     with pytest.raises(AgentFailedError) as excinfo:
-        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+        await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
     assert "cannot proceed" in excinfo.value.reason
 
 
@@ -699,8 +699,8 @@ async def test_invocation_completed_carries_usage_and_cost(monkeypatch, tmp_path
 
     monkeypatch.setattr(container_executor, "_run_claude_turn", driver)
     ctx, _, writer = _make_ctx(tmp_path=tmp_path)
-    primitive = _make_primitive()
-    await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    construct = _make_construct()
+    await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
 
     completed = next(
         e for e in writer.events if e["type"] == LifecycleEvent.AGENT_INVOCATION_COMPLETED
@@ -718,8 +718,8 @@ async def test_invocation_completed_omits_usage_when_absent(monkeypatch, tmp_pat
     driver = FakeClaudeCodeDriver(turn_script=[_success_env("done")], session_ids=["sess-d"])
     _install_driver(monkeypatch, driver)
     ctx, _, writer = _make_ctx(tmp_path=tmp_path)
-    primitive = _make_primitive()
-    await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx)
+    construct = _make_construct()
+    await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx)
 
     completed = next(
         e for e in writer.events if e["type"] == LifecycleEvent.AGENT_INVOCATION_COMPLETED
@@ -868,25 +868,25 @@ class TestRunClaudeTurnSkipPermissions:
 
 
 class TestRunAgentInContainerSkipPermissionsThreading:
-    """run_agent_in_container threads primitive.skip_permissions to run_turn."""
+    """run_agent_in_container threads construct.skip_permissions to run_turn."""
 
     @pytest.mark.asyncio
-    async def test_given_primitive_skip_true_then_run_turn_receives_true(self, tmp_path) -> None:
+    async def test_given_construct_skip_true_then_run_turn_receives_true(self, tmp_path) -> None:
         driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive(skip_permissions=True)
+        construct = _make_construct(skip_permissions=True)
 
-        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+        await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx, run_turn=driver)
 
         assert driver.calls[0]["skip_permissions"] is True
 
     @pytest.mark.asyncio
-    async def test_given_primitive_skip_false_then_run_turn_receives_false(self, tmp_path) -> None:
+    async def test_given_construct_skip_false_then_run_turn_receives_false(self, tmp_path) -> None:
         driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive(skip_permissions=False)
+        construct = _make_construct(skip_permissions=False)
 
-        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+        await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx, run_turn=driver)
 
         assert driver.calls[0]["skip_permissions"] is False
 
@@ -928,15 +928,15 @@ class TestRunClaudeTurnModel:
 
 
 class TestRunAgentInContainerModelThreading:
-    """run_agent_in_container threads primitive.model to run_turn."""
+    """run_agent_in_container threads construct.model to run_turn."""
 
     @pytest.mark.asyncio
-    async def test_given_primitive_model_then_run_turn_receives_it(self, tmp_path) -> None:
+    async def test_given_construct_model_then_run_turn_receives_it(self, tmp_path) -> None:
         driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive(model="claude-opus-4-7")
+        construct = _make_construct(model="claude-opus-4-7")
 
-        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+        await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx, run_turn=driver)
 
         assert driver.calls[0]["model"] == "claude-opus-4-7"
 
@@ -1006,15 +1006,15 @@ class TestRunClaudeTurnEffort:
 
 
 class TestRunAgentInContainerEffortThreading:
-    """run_agent_in_container threads primitive.effort to run_turn."""
+    """run_agent_in_container threads construct.effort to run_turn."""
 
     @pytest.mark.asyncio
-    async def test_given_primitive_effort_then_run_turn_receives_it(self, tmp_path) -> None:
+    async def test_given_construct_effort_then_run_turn_receives_it(self, tmp_path) -> None:
         driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive(effort="high")
+        construct = _make_construct(effort="high")
 
-        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+        await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx, run_turn=driver)
 
         assert driver.calls[0]["effort"] == "high"
 
@@ -1022,9 +1022,9 @@ class TestRunAgentInContainerEffortThreading:
     async def test_given_no_effort_declared_then_run_turn_receives_none(self, tmp_path) -> None:
         driver = FakeClaudeCodeDriver(turn_script=[_success_env()])
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()  # effort not declared → defaults to None
+        construct = _make_construct()  # effort not declared → defaults to None
 
-        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+        await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx, run_turn=driver)
 
         assert driver.calls[0]["effort"] is None
 
@@ -1151,11 +1151,11 @@ class TestFailedTurnStreamJsonl:
             )
 
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
 
         with pytest.raises(AgentFailedError):
             await run_agent_in_container(
-                primitive=primitive,
+                construct=construct,
                 prompt="go",
                 run_ctx=ctx,
                 run_turn=failing_turn,
@@ -1186,11 +1186,11 @@ class TestFailedTurnStreamJsonl:
             )
 
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
 
         with pytest.raises(AgentFailedError):
             await run_agent_in_container(
-                primitive=primitive,
+                construct=construct,
                 prompt="go",
                 run_ctx=ctx,
                 run_turn=failing_turn,
@@ -1241,7 +1241,7 @@ class TestAgentInvocationFailedEventEnrichment:
         # it with the actual id once the container is created. The test
         # here uses a special pre-script approach via create_container.
 
-        # Pre-create the container by registering primitive — done inside
+        # Pre-create the container by registering construct — done inside
         # run_agent_in_container, after our setup runs. To set the inspect
         # script for the right container_id, hook create_container.
         orig_create = fake_mgr.create_container
@@ -1260,11 +1260,11 @@ class TestAgentInvocationFailedEventEnrichment:
             ("cat", "/sys/fs/cgroup/memory.peak"): _ExecResult(exit_code=0, output=b"3221229568\n"),
         }
 
-        primitive = _make_primitive()
+        construct = _make_construct()
 
         with pytest.raises(AgentFailedError):
             await run_agent_in_container(
-                primitive=primitive,
+                construct=construct,
                 prompt="go",
                 run_ctx=ctx,
                 run_turn=failing_turn,
@@ -1309,11 +1309,11 @@ class TestAgentInvocationFailedEventEnrichment:
 
         fake_mgr.inspect = _raise_inspect  # type: ignore[method-assign]
 
-        primitive = _make_primitive()
+        construct = _make_construct()
 
         with pytest.raises(AgentFailedError):
             await run_agent_in_container(
-                primitive=primitive,
+                construct=construct,
                 prompt="go",
                 run_ctx=ctx,
                 run_turn=failing_turn,
@@ -1361,10 +1361,10 @@ class TestInspectContainerScript:
         ctx_default, _, _ = _make_ctx(tmp_path=tmp_path)
         ctx = ctx_default.model_copy(update={"pause_on_failure": True})
 
-        primitive = _make_primitive()
+        construct = _make_construct()
         with pytest.raises(AgentFailedError):
             await run_agent_in_container(
-                primitive=primitive,
+                construct=construct,
                 prompt="go",
                 run_ctx=ctx,
                 run_turn=failing_turn,
@@ -1394,11 +1394,11 @@ class TestInspectContainerScript:
         ctx_default, _, _ = _make_ctx(tmp_path=tmp_path)
         # Default is pause_on_failure=True; override to False for this test.
         ctx = ctx_default.model_copy(update={"pause_on_failure": False})
-        primitive = _make_primitive()
+        construct = _make_construct()
 
         with pytest.raises(AgentFailedError):
             await run_agent_in_container(
-                primitive=primitive,
+                construct=construct,
                 prompt="go",
                 run_ctx=ctx,
                 run_turn=failing_turn,
@@ -1413,8 +1413,8 @@ class TestInspectContainerScript:
         ctx_default, _, _ = _make_ctx(tmp_path=tmp_path)
         ctx = ctx_default.model_copy(update={"pause_on_failure": True})
 
-        primitive = _make_primitive()
-        await run_agent_in_container(primitive=primitive, prompt="go", run_ctx=ctx, run_turn=driver)
+        construct = _make_construct()
+        await run_agent_in_container(construct=construct, prompt="go", run_ctx=ctx, run_turn=driver)
 
         script_path = ctx.artifacts_dir / "test-agent" / "inspect-container.sh"
         assert not script_path.exists()
@@ -1504,10 +1504,10 @@ class TestApiRetry:
             )
 
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
 
         result = await run_agent_in_container(
-            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+            construct=construct, prompt="go", run_ctx=ctx, run_turn=flaky_turn
         )
 
         assert isinstance(result, OutputModel)
@@ -1534,11 +1534,11 @@ class TestApiRetry:
             )
 
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
 
         with pytest.raises(AgentFailedError):
             await run_agent_in_container(
-                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=failing_turn
+                construct=construct, prompt="go", run_ctx=ctx, run_turn=failing_turn
             )
 
         assert calls["n"] == 1  # no retry
@@ -1563,11 +1563,11 @@ class TestApiRetry:
             )
 
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
 
         with pytest.raises(AgentFailedError):
             await run_agent_in_container(
-                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=always_fails
+                construct=construct, prompt="go", run_ctx=ctx, run_turn=always_fails
             )
 
         assert calls["n"] == 2  # one retry, then give up
@@ -1601,9 +1601,9 @@ class TestApiRetryArtifacts:
             )
 
         ctx, _, writer = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
         await run_agent_in_container(
-            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+            construct=construct, prompt="go", run_ctx=ctx, run_turn=flaky_turn
         )
 
         retry_events = [e for e in writer.events if e["type"] is LifecycleEvent.TURN_API_RETRIED]
@@ -1646,9 +1646,9 @@ class TestApiRetryArtifacts:
             )
 
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
         await run_agent_in_container(
-            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+            construct=construct, prompt="go", run_ctx=ctx, run_turn=flaky_turn
         )
 
         turn_dir = ctx.artifacts_dir / "test-agent" / "turns" / "1"
@@ -1688,9 +1688,9 @@ class TestApiErrorFieldsOnLifecycleEvents:
             )
 
         ctx, _, writer = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
         await run_agent_in_container(
-            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+            construct=construct, prompt="go", run_ctx=ctx, run_turn=flaky_turn
         )
 
         retry_events = [e for e in writer.events if e["type"] is LifecycleEvent.TURN_API_RETRIED]
@@ -1713,10 +1713,10 @@ class TestApiErrorFieldsOnLifecycleEvents:
             )
 
         ctx, _, writer = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
         with pytest.raises(AgentFailedError):
             await run_agent_in_container(
-                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=always_fails
+                construct=construct, prompt="go", run_ctx=ctx, run_turn=always_fails
             )
 
         failed = [e for e in writer.events if e["type"] is LifecycleEvent.AGENT_INVOCATION_FAILED]
@@ -1761,9 +1761,9 @@ class TestTransportErrorRetry:
             )
 
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
         result = await run_agent_in_container(
-            primitive=primitive, prompt="go", run_ctx=ctx, run_turn=flaky_turn
+            construct=construct, prompt="go", run_ctx=ctx, run_turn=flaky_turn
         )
 
         assert isinstance(result, OutputModel)
@@ -1793,10 +1793,10 @@ class TestTransportErrorRetry:
             )
 
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
         with pytest.raises(AgentFailedError):
             await run_agent_in_container(
-                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=killed_turn
+                construct=construct, prompt="go", run_ctx=ctx, run_turn=killed_turn
             )
         assert calls["n"] == 1  # no retry
 
@@ -1827,9 +1827,9 @@ class TestTransportErrorRetry:
             )
 
         ctx, _, _ = _make_ctx(tmp_path=tmp_path)
-        primitive = _make_primitive()
+        construct = _make_construct()
         with pytest.raises(AgentFailedError):
             await run_agent_in_container(
-                primitive=primitive, prompt="go", run_ctx=ctx, run_turn=killed_after_success
+                construct=construct, prompt="go", run_ctx=ctx, run_turn=killed_after_success
             )
         assert calls["n"] == 1  # no retry

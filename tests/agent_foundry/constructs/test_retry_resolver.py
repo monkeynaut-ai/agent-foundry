@@ -15,17 +15,17 @@ import asyncio
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import compile_runtime_plan, get_type_args
-from agent_foundry.primitives.errors import PrimitiveCompilationError
-from agent_foundry.primitives.models import (
+from agent_foundry.compiler.compiler import compile_process, get_type_args
+from agent_foundry.constructs.errors import ConstructCompilationError
+from agent_foundry.constructs.models import (
     FunctionAction,
     GateAction,
     Retry,
     RetryExceptionPolicy,
     Sequence,
 )
-from agent_foundry.primitives.plan import PrimitivePlan
-from agent_foundry.primitives.retry_types import (
+from agent_foundry.constructs.process import Process
+from agent_foundry.constructs.retry_types import (
     DispositionKind,
     ResolverDidNotConvergeError,
     ResolverDisposition,
@@ -76,7 +76,7 @@ async def _compile_and_run(retry: Retry, initial: RS) -> RS:
     token = ctx_var.set(ctx)
     try:
         _, root_out = get_type_args(retry)
-        graph = compile_runtime_plan(PrimitivePlan(root=retry))
+        graph = compile_process(Process(root=retry))
         result = await graph.ainvoke(initial.model_dump())
         return root_out.model_validate(result)
     finally:
@@ -365,7 +365,7 @@ async def test_ac9_backstop_runs_exactly_max_reentries_bodies() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Disposition shape contract — router raises PrimitiveCompilationError when a
+# Disposition shape contract — router raises ConstructCompilationError when a
 # resolver's output is not a coercible ResolverDisposition (validator does not
 # check resolver output, so this is only reachable at runtime).
 # ---------------------------------------------------------------------------
@@ -385,7 +385,7 @@ class StrDispState(BaseModel):
 @pytest.mark.asyncio
 async def test_resolver_output_without_disposition_field_raises() -> None:
     """A resolver whose output model has NO 'disposition' field leaves state's
-    disposition unset; the router raises PrimitiveCompilationError."""
+    disposition unset; the router raises ConstructCompilationError."""
     resolver = FunctionAction[RS, NoDispState](
         function=lambda s: NoDispState(n=s.n, verdict=s.verdict)
     )
@@ -396,7 +396,7 @@ async def test_resolver_output_without_disposition_field_raises() -> None:
         on_max_attempts_resolver=resolver,
     )
     with pytest.raises(
-        PrimitiveCompilationError,
+        ConstructCompilationError,
         match="resolver produced no 'disposition' field",
     ):
         await _compile_and_run(retry, RS(n=0))
@@ -405,7 +405,7 @@ async def test_resolver_output_without_disposition_field_raises() -> None:
 @pytest.mark.asyncio
 async def test_resolver_non_coercible_disposition_raises() -> None:
     """A resolver that writes a non-coercible 'disposition' (a bare string)
-    fails coercion; the router raises PrimitiveCompilationError."""
+    fails coercion; the router raises ConstructCompilationError."""
     resolver = FunctionAction[RS, StrDispState](
         function=lambda s: StrDispState(n=s.n, verdict=s.verdict, disposition="garbage")
     )
@@ -416,7 +416,7 @@ async def test_resolver_non_coercible_disposition_raises() -> None:
         on_max_attempts_resolver=resolver,
     )
     with pytest.raises(
-        PrimitiveCompilationError,
+        ConstructCompilationError,
         match="'disposition' is not a ResolverDisposition",
     ):
         await _compile_and_run(retry, RS(n=0))
@@ -441,7 +441,7 @@ def test_sync_invoke_routes_through_retry_reentry() -> None:
     token = ctx_var.set(ctx)
     try:
         _, root_out = get_type_args(retry)
-        graph = compile_runtime_plan(PrimitivePlan(root=retry))
+        graph = compile_process(Process(root=retry))
         result = root_out.model_validate(graph.invoke(RS(n=0).model_dump()))
     finally:
         ctx_var.reset(token)
@@ -467,7 +467,7 @@ class TestGateResolver:
             body=FunctionAction[RS, RS](function=lambda s: s),
             on_max_attempts_resolver=gate,
         )
-        graph = compile_runtime_plan(PrimitivePlan(root=r))
+        graph = compile_process(Process(root=r))
         config = {"configurable": {"thread_id": "gate-resolver-abort"}}
         graph.invoke({"verdict": "fail"}, config=config)
         snap = graph.get_state(config)
@@ -494,7 +494,7 @@ class TestGateResolver:
             body=FunctionAction[RS, RS](function=lambda s: s),
             on_max_attempts_resolver=gate,
         )
-        graph = compile_runtime_plan(PrimitivePlan(root=r))
+        graph = compile_process(Process(root=r))
         config = {"configurable": {"thread_id": "gate-resolver-accept"}}
         graph.invoke({"verdict": "fail", "n": 5}, config=config)
         snap = graph.get_state(config)
@@ -522,7 +522,7 @@ def test_nested_retry_channels_declared_in_outer_schema() -> None:
     channels (backstop / routing) plus the fixed well-known metadata channels
     collected. This fails if the prefix scheme diverges from the compiler's
     child-prefix scheme."""
-    from agent_foundry.compiler.primitive_compiler import _collect_retry_channels
+    from agent_foundry.compiler.compiler import _collect_retry_channels
 
     inner_retry = Retry[RS, RS](
         max_attempts=1,
@@ -547,7 +547,7 @@ def test_retry_in_resolver_subtree_channels_collected() -> None:
     """A Retry whose resolver subtree itself contains a Retry has the inner
     Retry's channels collected under the resolver prefix. Guards the
     resolver-branch recursion path that the inline scheme special-cased."""
-    from agent_foundry.compiler.primitive_compiler import _collect_retry_channels
+    from agent_foundry.compiler.compiler import _collect_retry_channels
 
     resolver_inner_retry = Retry[RS, RS](
         max_attempts=1,
@@ -576,7 +576,7 @@ async def _compile_and_run_seq(seq: Sequence, initial: RS) -> RS:
     token = ctx_var.set(ctx)
     try:
         _, root_out = get_type_args(seq)
-        graph = compile_runtime_plan(PrimitivePlan(root=seq))
+        graph = compile_process(Process(root=seq))
         result = await graph.ainvoke(initial.model_dump())
         return root_out.model_validate(result)
     finally:

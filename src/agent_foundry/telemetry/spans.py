@@ -1,4 +1,4 @@
-"""Span emission helper used by the compiler at primitive boundaries."""
+"""Span emission helper used by the compiler at construct boundaries."""
 
 from __future__ import annotations
 
@@ -91,13 +91,13 @@ def _resolve_provider_and_translations() -> tuple[SDKTracerProvider | None, dict
 def emit_span(
     *,
     name: str,
-    primitive_type: str,
-    primitive_name: str | None,
+    construct_type: str,
+    construct_name: str | None,
     input_model: BaseModel,
     run_id: str | None,
     redaction: RedactionPolicy | None,
 ) -> Iterator[SpanHandle]:
-    """Emit one OTel span for a primitive's execution.
+    """Emit one OTel span for a construct's execution.
 
     Sets ``agent_foundry.*`` attributes on entry. Exceptions in the body
     are recorded on the span and re-raised. The yielded handle exposes
@@ -124,9 +124,9 @@ def emit_span(
 
     tracer = provider.get_tracer("agent_foundry")
     with tracer.start_as_current_span(name) as span:
-        _set_with_mirror(span, attributes.AF_PRIMITIVE_TYPE, primitive_type)
-        if primitive_name is not None:
-            _set_with_mirror(span, attributes.AF_PRIMITIVE_NAME, primitive_name)
+        _set_with_mirror(span, attributes.AF_PRIMITIVE_TYPE, construct_type)
+        if construct_name is not None:
+            _set_with_mirror(span, attributes.AF_PRIMITIVE_NAME, construct_name)
         if run_id is not None:
             _set_with_mirror(span, attributes.AF_RUN_ID, run_id)
 

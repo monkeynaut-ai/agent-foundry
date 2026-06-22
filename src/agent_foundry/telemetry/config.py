@@ -50,7 +50,7 @@ class ArtifactSpec(BaseModel):
 
 
 class RedactionPolicy(BaseModel):
-    """Per-primitive redaction callables applied before serialisation to spans."""
+    """Per-construct redaction callables applied before serialisation to spans."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -66,10 +66,10 @@ class RedactionPolicy(BaseModel):
 class RunDefinition(BaseModel):
     """Product-declared shape of one MLflow run.
 
-    ``name``, ``params``, and ``tags`` callables receive the plan's *input*
+    ``name``, ``params``, and ``tags`` callables receive the process's *input*
     model and produce the corresponding MLflow concept at run open.
 
-    ``metrics`` is different — it receives the plan's *final output* model
+    ``metrics`` is different — it receives the process's *final output* model
     (or None on the failure path) and a ``RunStats`` summary, and returns the
     metrics to log at run close. The runner passes the actual output through
     ``RunContext.on_close`` to make this work.
@@ -82,19 +82,19 @@ class RunDefinition(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     name: Callable[[BaseModel], str]
-    """Receives the plan's input model. Returns the MLflow run name."""
+    """Receives the process's input model. Returns the MLflow run name."""
 
     params: Callable[[BaseModel], dict[str, Any]]
-    """Receives the plan's input model. Returns params to log at run open
+    """Receives the process's input model. Returns params to log at run open
     (logged via ``mlflow.log_params``). Apply ``RedactionPolicy.redact_input``
     before reading sensitive fields."""
 
     tags: dict[str, str] | Callable[[BaseModel], dict[str, str]]
-    """Static dict or callable receiving the plan's input model. Tags
+    """Static dict or callable receiving the process's input model. Tags
     attached to the run at open time."""
 
     metrics: Callable[[BaseModel | None, RunStats], dict[str, float]]
-    """Receives the plan's final OUTPUT model (or None on the failure path)
+    """Receives the process's final OUTPUT model (or None on the failure path)
     and a ``RunStats`` summary. Returns metrics to log at run close. Read
     output fields defensively — handle ``out is None`` for failed runs."""
 
@@ -104,7 +104,7 @@ class RunDefinition(BaseModel):
 
 class TelemetryConfig(BaseModel):
     """Product opt-in to telemetry emission. Construct in app startup, pass to
-    ``run_primitive_plan(..., telemetry=config)``. Absence (``None``) disables
+    ``run_process(..., telemetry=config)``. Absence (``None``) disables
     emission entirely.
     """
 

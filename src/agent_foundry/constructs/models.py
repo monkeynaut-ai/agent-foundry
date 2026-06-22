@@ -1,4 +1,4 @@
-"""Primitive Pydantic models — composable, typed building blocks."""
+"""Construct Pydantic models — composable, typed building blocks."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agent_foundry.agents.lifecycle import ContainerConfig
-from agent_foundry.primitives.mcp import McpServer
+from agent_foundry.constructs.mcp import McpServer
 
 
 class ContainerReusePolicy(StrEnum):
@@ -26,19 +26,19 @@ class ContainerReusePolicy(StrEnum):
     REUSE_NEW_SESSION = "reuse_new_session"
 
 
-class Primitive[I: BaseModel, O: BaseModel](BaseModel, ABC):
-    """Base class for all plan primitives.
+class Construct[I: BaseModel, O: BaseModel](BaseModel, ABC):
+    """Base class for all process constructs.
 
-    Every primitive is parameterized with input (I) and output (O) state
+    Every construct is parameterized with input (I) and output (O) state
     types.  These are Pydantic BaseModel subclasses that define the state
-    keys the primitive reads from and writes back to its parent scope.
+    keys the construct reads from and writes back to its parent scope.
     Type information is accessible at runtime via ``get_type_args()``.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def _require_parameterization(self) -> Primitive:
+    def _require_parameterization(self) -> Construct:
         metadata = type(self).__pydantic_generic_metadata__
         if not metadata["args"]:
             cls_name = type(self).__name__
@@ -48,8 +48,8 @@ class Primitive[I: BaseModel, O: BaseModel](BaseModel, ABC):
         return self
 
     @abstractmethod
-    def child_specs(self) -> list[tuple[Primitive, str]]:
-        """Return child primitives paired with their local compile-prefix suffix.
+    def child_specs(self) -> list[tuple[Construct, str]]:
+        """Return child constructs paired with their local compile-prefix suffix.
 
         Leaves return ``[]``. The suffix is a local label (``"step_0"``,
         ``"then"``, ``"body"``, ``"resolver"``); callers compose the full
@@ -57,16 +57,16 @@ class Primitive[I: BaseModel, O: BaseModel](BaseModel, ABC):
         """
 
 
-class Sequence[I: BaseModel, O: BaseModel](Primitive[I, O]):
+class Sequence[I: BaseModel, O: BaseModel](Construct[I, O]):
     """Execute steps in order, passing state between them."""
 
-    steps: list[Primitive] = Field(min_length=1)
+    steps: list[Construct] = Field(min_length=1)
 
-    def child_specs(self) -> list[tuple[Primitive, str]]:
+    def child_specs(self) -> list[tuple[Construct, str]]:
         return [(step, f"step_{i}") for i, step in enumerate(self.steps)]
 
 
-class Loop[I: BaseModel, O: BaseModel](Primitive[I, O]):
+class Loop[I: BaseModel, O: BaseModel](Construct[I, O]):
     """Iterate over a collection in state, executing body per item.
 
     The ``over`` callable extracts the collection from the input state.
@@ -76,10 +76,10 @@ class Loop[I: BaseModel, O: BaseModel](Primitive[I, O]):
 
     over: Callable[[I], list]
     item_key: str = Field(min_length=1)
-    body: Primitive
+    body: Construct
     max_iterations: int = Field(default=100, ge=1)
 
-    def child_specs(self) -> list[tuple[Primitive, str]]:
+    def child_specs(self) -> list[tuple[Construct, str]]:
         return [(self.body, "body")]
 
 
@@ -95,7 +95,7 @@ class RetryExceptionPolicy(StrEnum):
     CATCH_AND_CONTINUE = "catch_and_continue"
 
 
-class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):
+class Retry[I: BaseModel, O: BaseModel](Construct[I, O]):
     """Execute body, evaluate condition, repeat up to max_attempts times.
 
     The ``until`` callable checks a condition on the state — when it returns
@@ -106,11 +106,11 @@ class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):
 
     max_attempts: int = Field(ge=1)
     until: Callable[[I], bool]
-    body: Primitive
+    body: Construct
     exception_policy: RetryExceptionPolicy = RetryExceptionPolicy.PROPAGATE
     """Exception handling policy for body failures. Defaults to PROPAGATE (existing behaviour)."""
-    on_max_attempts_resolver: Primitive | None = None
-    """Primitive consulted when the automated loop exhausts max_attempts without until() passing.
+    on_max_attempts_resolver: Construct | None = None
+    """Construct consulted when the automated loop exhausts max_attempts without until() passing.
 
     The resolver runs as a normal outer-graph node and merges its output into graph state
     like any other node. Its output model must declare a ``disposition: ResolverDisposition``
@@ -127,33 +127,33 @@ class Retry[I: BaseModel, O: BaseModel](Primitive[I, O]):
     BODY_SUFFIX: ClassVar[str] = "body"
     RESOLVER_SUFFIX: ClassVar[str] = "resolver"
 
-    def child_specs(self) -> list[tuple[Primitive, str]]:
-        specs: list[tuple[Primitive, str]] = [(self.body, self.BODY_SUFFIX)]
+    def child_specs(self) -> list[tuple[Construct, str]]:
+        specs: list[tuple[Construct, str]] = [(self.body, self.BODY_SUFFIX)]
         if self.on_max_attempts_resolver is not None:
             specs.append((self.on_max_attempts_resolver, self.RESOLVER_SUFFIX))
         return specs
 
 
-class Conditional[I: BaseModel, O: BaseModel](Primitive[I, O]):
+class Conditional[I: BaseModel, O: BaseModel](Construct[I, O]):
     """Branch based on a state condition.
 
     The ``condition`` callable evaluates the state and returns a boolean.
     If True, ``then_branch`` executes.  If False and ``else_branch`` is
-    provided, it executes.  Otherwise, the primitive is a no-op.
+    provided, it executes.  Otherwise, the construct is a no-op.
     """
 
     condition: Callable[[I], bool]
-    then_branch: Primitive
-    else_branch: Primitive | None = None
+    then_branch: Construct
+    else_branch: Construct | None = None
 
-    def child_specs(self) -> list[tuple[Primitive, str]]:
-        specs: list[tuple[Primitive, str]] = [(self.then_branch, "then")]
+    def child_specs(self) -> list[tuple[Construct, str]]:
+        specs: list[tuple[Construct, str]] = [(self.then_branch, "then")]
         if self.else_branch is not None:
             specs.append((self.else_branch, "else"))
         return specs
 
 
-class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
+class FunctionAction[I: BaseModel, O: BaseModel](Construct[I, O]):
     """A synchronous, in-process function call.
 
     Wraps a plain function that transforms input state to output state.
@@ -181,11 +181,11 @@ class FunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     or lookup. Optional — when None the compiler falls back to the positional
     node_id."""
 
-    def child_specs(self) -> list[tuple[Primitive, str]]:
+    def child_specs(self) -> list[tuple[Construct, str]]:
         return []
 
 
-class AsyncFunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
+class AsyncFunctionAction[I: BaseModel, O: BaseModel](Construct[I, O]):
     """An asynchronous in-process function call that runs ON the event loop.
 
     Wraps a coroutine function transforming input state to output state.
@@ -220,11 +220,11 @@ class AsyncFunctionAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     or lookup. Optional — when None the compiler falls back to the positional
     node_id."""
 
-    def child_specs(self) -> list[tuple[Primitive, str]]:
+    def child_specs(self) -> list[tuple[Construct, str]]:
         return []
 
 
-class GateAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
+class GateAction[I: BaseModel, O: BaseModel](Construct[I, O]):
     """Block execution until external input is received.
 
     Always blocks when reached — routing to the gate is the parent's
@@ -236,11 +236,11 @@ class GateAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     interaction: str = Field(min_length=1)
     prompt_key: str = Field(min_length=1)
 
-    def child_specs(self) -> list[tuple[Primitive, str]]:
+    def child_specs(self) -> list[tuple[Construct, str]]:
         return []
 
 
-class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
+class AgentAction[I: BaseModel, O: BaseModel](Construct[I, O]):
     """Run an LLM agent in a container to transform input state to output state.
 
     Two-sided interface:
@@ -249,15 +249,15 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
       - Platform side handles container lifecycle, instruction injection,
         structured output, and response validation.
 
-    This primitive is a leaf (no children). The compiler registers a node
+    This construct is a leaf (no children). The compiler registers a node
     that calls the prompt builder, then delegates to the agent runner.
     The runner always returns an instance of ``O`` via structured output.
 
     The ``name`` field is a diagnostic label used for artifact directory
     names, lifecycle event payloads, and log prefixes. It is NOT used
-    for composition or lookup — primitives reference each other by
+    for composition or lookup — constructs reference each other by
     Python object reference, and the AgentContainerRegistry is keyed
-    by ``id(primitive)``. Two AgentActions with the same name are
+    by ``id(construct)``. Two AgentActions with the same name are
     technically legal but will collide in artifact paths and confuse
     logs; products are expected to pick unique, meaningful names
     (e.g. "reviewer", "planner", "implementer").
@@ -279,8 +279,8 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     # SDK/API executors will be additional callables products can choose.
     # Different agents in the same system can use different executors.
     #
-    # Contract: ``executor(*, primitive: AgentAction, prompt: str) -> O``.
-    # The compiler calls the executor with keyword arguments; the primitive
+    # Contract: ``executor(*, construct: AgentAction, prompt: str) -> O``.
+    # The compiler calls the executor with keyword arguments; the construct
     # passed in is the same ``AgentAction`` instance (the executor can read
     # ``instructions_provider``, container config, etc. from it).
     executor: Callable[..., O | Awaitable[O]]
@@ -326,23 +326,23 @@ class AgentAction[I: BaseModel, O: BaseModel](Primitive[I, O]):
     # ``mcp__<server_name>__<tool_name>``.
     mcp_servers: dict[str, McpServer] = Field(default_factory=dict)
 
-    def child_specs(self) -> list[tuple[Primitive, str]]:
+    def child_specs(self) -> list[tuple[Construct, str]]:
         return []
 
 
-def get_type_args(prim: Primitive) -> tuple[type[BaseModel], type[BaseModel]]:
-    """Extract (input_type, output_type) from a parameterized primitive.
+def get_type_args(prim: Construct) -> tuple[type[BaseModel], type[BaseModel]]:
+    """Extract (input_type, output_type) from a parameterized construct.
 
-    Raises TypeError if the primitive was not parameterized.
+    Raises TypeError if the construct was not parameterized.
     """
     metadata = type(prim).__pydantic_generic_metadata__
     args = metadata["args"]
     if not args:
-        raise TypeError("Primitive must be parameterized: use Primitive[InputType, OutputType]")
+        raise TypeError("Construct must be parameterized: use Construct[InputType, OutputType]")
     return args[0], args[1]
 
 
-# Resolve forward references for recursive primitive nesting.
+# Resolve forward references for recursive construct nesting.
 Sequence.model_rebuild()
 Loop.model_rebuild()
 Retry.model_rebuild()

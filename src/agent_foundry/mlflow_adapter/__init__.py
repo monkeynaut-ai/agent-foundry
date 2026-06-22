@@ -80,7 +80,7 @@ def enable(
     - **Trace spans** flow over OTLP/HTTP. Routing to a specific MLflow
       experiment uses the ``x-mlflow-experiment-id`` header; the product
       sets that on ``config.otlp_headers`` BEFORE calling
-      ``run_primitive_plan`` (the runner builds the OTLP exporter at that
+      ``run_process`` (the runner builds the OTLP exporter at that
       point, so post-build mutations don't reach it).
     - **Run data** (params, metrics, tags, artifacts via ``mlflow.log_*``)
       uses the ``mlflow`` client library's global state. ``enable()`` sets
@@ -93,10 +93,10 @@ def enable(
     unset). Setting one without the other is allowed but uncommon.
 
     **Ordering constraint**: must be called from a ``run_context.on_open``
-    hook (or any callsite that runs after ``run_primitive_plan`` has built
+    hook (or any callsite that runs after ``run_process`` has built
     a ``TracerProvider`` and anchored it on
     ``run_context.telemetry_provider``). Calling at process startup, before
-    ``run_primitive_plan``, raises ``RuntimeError`` because no per-run
+    ``run_process``, raises ``RuntimeError`` because no per-run
     provider exists yet.
 
     Idempotent within a process: registering the same ``run_context`` twice
@@ -118,7 +118,7 @@ def enable(
         raise RuntimeError(
             "agent_foundry.mlflow_adapter.enable() requires "
             "run_context.telemetry_provider to be set. "
-            "Pass telemetry=config to run_primitive_plan first."
+            "Pass telemetry=config to run_process first."
         )
 
     ctx_id = id(run_context)

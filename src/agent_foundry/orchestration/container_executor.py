@@ -46,6 +46,11 @@ from agent_foundry.agents.agent_turn_envelope import (
 )
 from agent_foundry.agents.lifecycle import ContainerHandleBase, ContainerManagerBase
 from agent_foundry.agents.schema_tools import to_claude_code_schema
+from agent_foundry.constructs.models import (
+    AgentAction,
+    ContainerReusePolicy,
+    get_type_args,
+)
 from agent_foundry.models.markers import (
     FilePathFieldSpec,
     extract_paths,
@@ -57,11 +62,6 @@ from agent_foundry.orchestration.errors import AgentFailedError
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.registry import LiveContainer
 from agent_foundry.orchestration.run_context import RunContext
-from agent_foundry.primitives.models import (
-    AgentAction,
-    ContainerReusePolicy,
-    get_type_args,
-)
 from agent_foundry.responders.models import (
     ResponderContext,
     build_request_from_outcome,
@@ -332,13 +332,13 @@ async def _run_claude_turn(
     return await asyncio.to_thread(_do_exec)
 
 
-def _agent_name(primitive: AgentAction) -> str:
+def _agent_name(construct: AgentAction) -> str:
     """Return the product-declared diagnostic label for the agent.
 
     Used for artifact directory naming, lifecycle event payloads,
     and log prefixes. Does not participate in composition or lookup.
     """
-    return primitive.name
+    return construct.name
 
 
 _CGROUP_MEMORY_FILES: tuple[str, ...] = (
@@ -587,7 +587,7 @@ async def _snapshot_files(
 ) -> None:
     """Copy every AgentFilePath-marked field into the turn's collected_files.
 
-    Failures are non-fatal — per the plan, verification has already
+    Failures are non-fatal — as planned, verification has already
     confirmed the file exists on the container, so a copy failure is
     logged and execution continues.
     """
@@ -622,20 +622,20 @@ async def _snapshot_files(
             )
 
 
-def _initial_resume_session_id(primitive: AgentAction, live: LiveContainer) -> str | None:
+def _initial_resume_session_id(construct: AgentAction, live: LiveContainer) -> str | None:
     """Pick the resume session id for the first turn of this invocation.
 
     ``REUSE_RESUME`` threads a previously captured session id (if any)
     into ``claude --resume``. ``REUSE_NEW_SESSION`` always starts fresh.
     """
-    if primitive.reuse_policy == ContainerReusePolicy.REUSE_RESUME:
+    if construct.reuse_policy == ContainerReusePolicy.REUSE_RESUME:
         return live.session_id
     return None
 
 
 async def run_agent_in_container(
     *,
-    primitive: AgentAction,
+    construct: AgentAction,
     prompt: str,
     run_ctx: RunContext,
     run_turn: RunTurn | None = None,
@@ -655,17 +655,17 @@ async def run_agent_in_container(
     """
     if run_turn is None:
         run_turn = _run_claude_turn
-    _input_type, output_type = get_type_args(primitive)
+    _input_type, output_type = get_type_args(construct)
     envelope_type = AgentTurnEnvelope[output_type]  # type: ignore[valid-type]
     schema = to_claude_code_schema(envelope_type)
     file_path_specs = walk_file_path_fields(output_type.model_json_schema())
-    agent_name = _agent_name(primitive)
+    agent_name = _agent_name(construct)
     registry = run_ctx.container_registry
     lifecycle = run_ctx.lifecycle_writer
 
-    # Acquire (or create) the per-primitive live container.
+    # Acquire (or create) the per-construct live container.
     live = await registry.get_or_create(
-        primitive,
+        construct,
         lifecycle_writer=lifecycle,
         agent_name=agent_name,
         instructions=instructions,
@@ -684,7 +684,7 @@ async def run_agent_in_container(
     )
 
     current_prompt = prompt
-    current_resume: str | None = _initial_resume_session_id(primitive, live)
+    current_resume: str | None = _initial_resume_session_id(construct, live)
     current_session_id: str | None = live.session_id
     turn_number = live.next_turn()
     responder_iterations = 0
@@ -732,10 +732,10 @@ async def run_agent_in_container(
                         prompt=current_prompt,
                         resume_session_id=current_resume,
                         schema=schema,
-                        model=primitive.model,
-                        effort=primitive.effort,
-                        skip_permissions=primitive.skip_permissions,
-                        cwd=primitive.cwd,
+                        model=construct.model,
+                        effort=construct.effort,
+                        skip_permissions=construct.skip_permissions,
+                        cwd=construct.cwd,
                     )
                     break
                 except AgentExecFailedError as exec_err:
@@ -839,7 +839,7 @@ async def run_agent_in_container(
             if result.session_id:
                 current_session_id = result.session_id
                 if live.session_id != result.session_id:
-                    registry.record_session_id(primitive, result.session_id)
+                    registry.record_session_id(construct, result.session_id)
 
             try:
                 envelope = envelope_type.model_validate(result.envelope)

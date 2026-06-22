@@ -6,7 +6,7 @@ Shell design. Requirements capture only; detailed architecture deferred.
 
 ## Problem
 
-`AICall` currently delegates a single inference attempt to the configured provider. When the provider fails transiently, callers must either let the exception abort the plan or build local wrapper executors that translate infrastructure failures into domain outputs.
+`AICall` currently delegates a single inference attempt to the configured provider. When the provider fails transiently, callers must either let the exception abort the process or build local wrapper executors that translate infrastructure failures into domain outputs.
 
 That pushes provider resilience into product-level designs. In Archipelago's design-review loop, for example, a transient reviewer failure can cause the surrounding `Retry` to rerun an expensive Designer step even though only the reviewer inference failed. Resilience should live at the `AICall` boundary so products can rely on consistent retry behavior for single-call inference.
 
@@ -20,7 +20,7 @@ That pushes provider resilience into product-level designs. In Archipelago's des
 
 ## Requirements
 
-- `AICall` can retry transient provider failures locally before surfacing failure to the parent primitive.
+- `AICall` can retry transient provider failures locally before surfacing failure to the parent construct.
 - Transient failures include, at minimum:
   - provider 5xx responses
   - request timeouts
@@ -42,7 +42,7 @@ That pushes provider resilience into product-level designs. In Archipelago's des
 ## Non-Goals
 
 - Do not add domain-specific fallback outputs to Agent Foundry. Products remain responsible for deciding whether an exhausted AICall should become a domain verdict, abort, or operator escalation.
-- Do not retry broad plan bodies. This feature is scoped to single-call inference resilience.
+- Do not retry broad process bodies. This feature is scoped to single-call inference resilience.
 - Do not mask non-transient configuration or programmer errors.
 
 ## Related: AICall output artifacts
@@ -64,7 +64,7 @@ in-process node already touches.
 **Suggested generic capability:** let `AICall` optionally persist its validated
 structured output to a per-node artifact directory, parallel to AgentActions —
 e.g. `runs/<id>/<name-or-node_id>/output.json` via `model_dump_json`. This
-would give every AICall a record for free, attributed by the primitive's
+would give every AICall a record for free, attributed by the construct's
 `name` (see leaf-node naming), without a custom executor.
 
 Design considerations to resolve if pursued:

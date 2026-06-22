@@ -1,12 +1,12 @@
-"""Tests for the AgentAction primitive model."""
+"""Tests for the AgentAction construct model."""
 
 from __future__ import annotations
 
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from agent_foundry.primitives import ClaudeEffort, ClaudeModel
-from agent_foundry.primitives.models import (
+from agent_foundry.constructs import ClaudeEffort, ClaudeModel
+from agent_foundry.constructs.models import (
     AgentAction,
     ContainerReusePolicy,
     get_type_args,
@@ -58,7 +58,7 @@ def _stub_instructions_provider(_state: object) -> str:
     return "# Agent instructions\n\nDo the thing."
 
 
-def _stub_executor_for_required(*, primitive, prompt) -> StubOutput:
+def _stub_executor_for_required(*, construct, prompt) -> StubOutput:
     return StubOutput(result="stub")
 
 
@@ -180,7 +180,7 @@ class TestAgentActionNoResponseChannel:
 # ======================================================================
 
 
-def _stub_executor(*, primitive, prompt) -> StubOutput:
+def _stub_executor(*, construct, prompt) -> StubOutput:
     return StubOutput(result="stub")
 
 
@@ -217,7 +217,7 @@ class TestAgentActionExecutor:
             executor=_stub_executor,
             reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         )
-        result = action.executor(primitive=action, prompt="hi")
+        result = action.executor(construct=action, prompt="hi")
         assert result == StubOutput(result="stub")
 
 

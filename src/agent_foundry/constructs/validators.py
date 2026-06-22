@@ -1,11 +1,11 @@
-"""Graph-level type compatibility validation for primitives.
+"""Graph-level type compatibility validation for constructs.
 
-Uses a registry keyed by primitive type. Built-in primitives register
+Uses a registry keyed by construct type. Built-in constructs register
 their validators at module import. Applications can define their own
-Primitive subclasses and register validators for them via
+Construct subclasses and register validators for them via
 ``register_validator``.
 
-Unknown primitive types raise ``UnregisteredPrimitiveError`` — silent
+Unknown construct types raise ``UnregisteredConstructError`` — silent
 no-op fallback is rejected to prevent misconfiguration.
 """
 
@@ -14,38 +14,38 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, cast
 
-from agent_foundry.primitives.ai_call import AICall
-from agent_foundry.primitives.errors import (
+from agent_foundry.constructs.ai_call import AICall
+from agent_foundry.constructs.errors import (
     InvalidPromptKeyError,
     TypeMismatchError,
-    UnregisteredPrimitiveError,
+    UnregisteredConstructError,
 )
-from agent_foundry.primitives.models import (
+from agent_foundry.constructs.models import (
     AgentAction,
     AsyncFunctionAction,
     Conditional,
+    Construct,
     FunctionAction,
     GateAction,
     Loop,
-    Primitive,
     Retry,
     Sequence,
     get_type_args,
 )
-from agent_foundry.primitives.retry_types import WELL_KNOWN_METADATA_FIELDS
+from agent_foundry.constructs.retry_types import WELL_KNOWN_METADATA_FIELDS
 
 # -- Registry --
 
 type _ValidatorStorage = Callable[[Any], None]
 
-_validator_registry: dict[type[Primitive], _ValidatorStorage] = {}
+_validator_registry: dict[type[Construct], _ValidatorStorage] = {}
 
 
-def register_validator[P: Primitive](
+def register_validator[P: Construct](
     prim_type: type[P],
     fn: Callable[[P], None],
 ) -> None:
-    """Register a validator function for a primitive type.
+    """Register a validator function for a construct type.
 
     The function's parameter type is checked against ``prim_type`` at the
     call site, so ``register_validator(Sequence, _validate_sequence)``
@@ -60,14 +60,14 @@ def register_validator[P: Primitive](
     _validator_registry[prim_type] = cast(_ValidatorStorage, fn)
 
 
-def validate_primitive(prim: Primitive) -> None:
-    """Validate a primitive (and recursively, its children).
+def validate_construct(prim: Construct) -> None:
+    """Validate a construct (and recursively, its children).
 
     Walks the type's MRO so a validator registered for a parent class
     handles subclasses unless a subclass has its own entry.
 
-    Raises ``UnregisteredPrimitiveError`` if no validator is registered
-    for any class in the primitive's MRO.
+    Raises ``UnregisteredConstructError`` if no validator is registered
+    for any class in the construct's MRO.
     """
     prim_type = type(prim)
     for cls in prim_type.__mro__:
@@ -75,15 +75,15 @@ def validate_primitive(prim: Primitive) -> None:
         if fn is not None:
             # Validator-first, then children: per-type validators do their
             # type-compatibility checks, then the dispatcher recurses into the
-            # primitive's declared children via the shared child_specs seam.
+            # construct's declared children via the shared child_specs seam.
             fn(prim)
             for child, _ in prim.child_specs():
-                validate_primitive(child)
+                validate_construct(child)
             return
-    raise UnregisteredPrimitiveError(
+    raise UnregisteredConstructError(
         f"No validator registered for {prim_type.__name__}; "
         f"register one with register_validator(...)",
-        primitive_type=prim_type,
+        construct_type=prim_type,
     )
 
 
@@ -130,7 +130,7 @@ def _validate_sequence(seq: Sequence) -> None:
 
 def _validate_loop(_loop: Loop) -> None:
     # Loop body type compatibility is deferred to the compiler (CS3).
-    # Child recursion is owned by the validate_primitive dispatcher.
+    # Child recursion is owned by the validate_construct dispatcher.
     return
 
 
@@ -293,20 +293,20 @@ def _validate_gate_action(gate: GateAction) -> None:
 
 
 def _validate_function_action(_action: FunctionAction) -> None:
-    # FunctionAction has no graph-level constraints beyond Primitive
+    # FunctionAction has no graph-level constraints beyond Construct
     # parameterization (enforced at construction).
     return
 
 
 def _validate_async_function_action(_action: AsyncFunctionAction) -> None:
-    # Leaf primitive — no graph-level constraints beyond Primitive
+    # Leaf construct — no graph-level constraints beyond Construct
     # parameterization (enforced at construction).
     return
 
 
 def _validate_agent_action(_action: AgentAction) -> None:
     # AgentAction is a leaf — no children to recurse into, no
-    # graph-level constraints beyond Primitive parameterization.
+    # graph-level constraints beyond Construct parameterization.
     return
 
 

@@ -1,6 +1,6 @@
 """Tests for the ``RunOutcome`` terminal-outcome envelope.
 
-``RunOutcome`` is the single typed value every ``run_primitive_plan``
+``RunOutcome`` is the single typed value every ``run_process``
 invocation ends with: a discriminated union of completed / aborted /
 failed, routed by a ``kind`` discriminator.
 """

@@ -60,9 +60,9 @@ def test_redact_input_replaces_sensitive_field_in_span_attribute(
     )
 
     with emit_span(
-        name="primitive",
-        primitive_type="X",
-        primitive_name=None,
+        name="construct",
+        construct_type="X",
+        construct_name=None,
         input_model=_Sensitive(ticket_id="1", api_key="sk-real"),
         run_id=None,
         redaction=policy,
@@ -85,9 +85,9 @@ def test_redact_output_replaces_sensitive_field_in_span_attribute(
     )
 
     with emit_span(
-        name="primitive",
-        primitive_type="X",
-        primitive_name=None,
+        name="construct",
+        construct_type="X",
+        construct_name=None,
         input_model=_Sensitive(ticket_id="1", api_key="sk-real"),
         run_id=None,
         redaction=policy,
@@ -111,9 +111,9 @@ def test_redact_input_returning_non_basemodel_raises(
     with (
         pytest.raises(TypeError, match="redact_input must return a Pydantic BaseModel"),
         emit_span(
-            name="primitive",
-            primitive_type="X",
-            primitive_name=None,
+            name="construct",
+            construct_type="X",
+            construct_name=None,
             input_model=_Sensitive(ticket_id="1", api_key="sk"),
             run_id=None,
             redaction=policy,
@@ -127,9 +127,9 @@ def test_no_redaction_policy_passes_input_through_unchanged(
 ) -> None:
     exporter.clear()
     with emit_span(
-        name="primitive",
-        primitive_type="X",
-        primitive_name=None,
+        name="construct",
+        construct_type="X",
+        construct_name=None,
         input_model=_Sensitive(ticket_id="1", api_key="sk-real"),
         run_id=None,
         redaction=None,

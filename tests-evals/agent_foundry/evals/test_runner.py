@@ -12,6 +12,8 @@ from agent_foundry.ai_models.inference import (
     InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
+from agent_foundry.constructs.ai_call import AICall, ModelInput
+from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
 from agent_foundry.evals.agent_foundry_tasks import build_invoke_ai_call_task
 from agent_foundry.evals.models import (
     AgentTarget,
@@ -23,8 +25,6 @@ from agent_foundry.evals.models import (
     RunResult,
 )
 from agent_foundry.evals.runners.pydantic_evals import PydanticEvalsRunner
-from agent_foundry.primitives.ai_call import AICall, ModelInput
-from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
 
 
 class _Input(BaseModel):
@@ -35,7 +35,7 @@ class _Output(BaseModel):
     result: str
 
 
-def _stub_executor(*, primitive, prompt, instructions, run_ctx) -> _Output:
+def _stub_executor(*, construct, prompt, instructions, run_ctx) -> _Output:
     return _Output(result="")
 
 

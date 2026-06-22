@@ -15,8 +15,8 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from agent_foundry.constructs.models import AgentAction
 from agent_foundry.evals import cli as cli_module
-from agent_foundry.primitives.models import AgentAction
 
 _SUITE_MODULE = '''
 """Minimal suite for CLI smoke test."""
@@ -30,7 +30,7 @@ from agent_foundry.evals.models import (
     EqualsExpectedSpec,
     EvalSuite,
 )
-from agent_foundry.primitives.models import AgentAction, ContainerReusePolicy
+from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
 
 
 class SmokeInput(BaseModel):
@@ -41,7 +41,7 @@ class SmokeOutput(BaseModel):
     result: str
 
 
-def _stub_executor(*, primitive, prompt, instructions, run_ctx):
+def _stub_executor(*, construct, prompt, instructions, run_ctx):
     return SmokeOutput(result="")
 
 
@@ -85,7 +85,7 @@ def test_cli_smoke_end_to_end(
         # Pull the agent's declared output type off its generic args so
         # this fake works for any AgentAction shape with a {"result": str}
         # output schema.
-        from agent_foundry.primitives.models import get_type_args
+        from agent_foundry.constructs.models import get_type_args
 
         _input_type, output_type = get_type_args(agent)
 
@@ -95,7 +95,7 @@ def test_cli_smoke_end_to_end(
 
         return task
 
-    monkeypatch.setattr(cli_module, "build_run_primitive_plan_task", fake_build_task)
+    monkeypatch.setattr(cli_module, "build_run_process_task", fake_build_task)
 
     out_dir = tmp_path / "runs"
     exit_code = cli_module.main(

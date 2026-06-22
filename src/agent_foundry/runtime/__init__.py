@@ -1,6 +1,6 @@
 """Runtime accessors for product code inside a running AgentAction / FunctionAction.
 
-Inside a running plan, product code can call these helpers to read or
+Inside a running process, product code can call these helpers to read or
 write run-scoped state without having to thread ``RunContext``
 through every function signature. The accessors resolve the active
 run context from the ``current_run_context`` ContextVar that the
@@ -8,7 +8,7 @@ compiler sets for every compiled node.
 
 Outside a run, every accessor returns a safe default (``None`` /
 ``False`` / no-op) rather than raising — so product code that might
-run both inside and outside a plan doesn't need special-case branches.
+run both inside and outside a process doesn't need special-case branches.
 """
 
 from __future__ import annotations

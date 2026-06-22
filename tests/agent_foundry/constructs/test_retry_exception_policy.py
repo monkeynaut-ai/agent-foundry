@@ -16,12 +16,12 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.compiler.primitive_compiler import compile_runtime_plan, get_type_args
+from agent_foundry.compiler.compiler import compile_process, get_type_args
+from agent_foundry.constructs.models import FunctionAction, Retry, RetryExceptionPolicy
+from agent_foundry.constructs.process import Process
+from agent_foundry.constructs.retry_types import RetryAborted
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
-from agent_foundry.primitives.models import FunctionAction, Retry, RetryExceptionPolicy
-from agent_foundry.primitives.plan import PrimitivePlan
-from agent_foundry.primitives.retry_types import RetryAborted
 
 # ---------------------------------------------------------------------------
 # State model
@@ -94,8 +94,8 @@ async def _compile_and_run(
     token, ctx_var = _install_run_context(writer)
     try:
         _, root_out = get_type_args(retry)
-        plan = PrimitivePlan(root=retry)
-        graph = compile_runtime_plan(plan)
+        process = Process(root=retry)
+        graph = compile_process(process)
         result = await graph.ainvoke(initial.model_dump())
         return root_out.model_validate(result)
     finally:

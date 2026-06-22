@@ -6,9 +6,9 @@ from agent_foundry.orchestration.env import build_container_env
 
 
 def test_build_container_env_includes_required_keys() -> None:
-    primitive = MagicMock()
+    construct = MagicMock()
     env = build_container_env(
-        primitive,
+        construct,
         oauth_token="tok-abc",
         role_instructions_path="/home/claude/role-instructions.md",
     )
@@ -17,9 +17,9 @@ def test_build_container_env_includes_required_keys() -> None:
 
 
 def test_build_container_env_merges_extra() -> None:
-    primitive = MagicMock()
+    construct = MagicMock()
     env = build_container_env(
-        primitive,
+        construct,
         oauth_token="t",
         role_instructions_path="/r",
         extra={"FOO": "bar", "BAZ": "1"},
@@ -29,9 +29,9 @@ def test_build_container_env_merges_extra() -> None:
 
 
 def test_extra_cannot_silently_override_required_keys() -> None:
-    primitive = MagicMock()
+    construct = MagicMock()
     env = build_container_env(
-        primitive,
+        construct,
         oauth_token="real",
         role_instructions_path="/r",
         extra={"CLAUDE_CODE_OAUTH_TOKEN": "fake"},

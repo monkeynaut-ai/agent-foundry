@@ -1,4 +1,4 @@
-"""Tests for telemetry threading through run_primitive_plan.
+"""Tests for telemetry threading through run_process.
 
 Per-run isolation: the runner builds a TracerProvider, anchors it on the
 RunContext (via the new ``telemetry_provider`` field), and never calls
@@ -14,9 +14,9 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from agent_foundry.orchestration.runner import run_primitive_plan
-from agent_foundry.primitives.models import FunctionAction
-from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.constructs.models import FunctionAction
+from agent_foundry.constructs.process import Process
+from agent_foundry.orchestration.runner import run_process
 from agent_foundry.telemetry import TelemetryConfig
 
 
@@ -24,15 +24,15 @@ class _State(BaseModel):
     value: str = "x"
 
 
-def _plan() -> PrimitivePlan:
+def _plan() -> Process:
     def fn(s: _State) -> _State:
         return _State(value=s.value)
 
-    return PrimitivePlan(root=FunctionAction[_State, _State](function=fn))
+    return Process(root=FunctionAction[_State, _State](function=fn))
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_with_no_telemetry_leaves_run_context_provider_unset(
+async def test_run_process_with_no_telemetry_leaves_run_context_provider_unset(
     tmp_path: Path,
 ) -> None:
     """telemetry=None → RunContext.telemetry_provider is None during execution."""
@@ -42,7 +42,7 @@ async def test_run_primitive_plan_with_no_telemetry_leaves_run_context_provider_
         observed["provider"] = event.run_context.telemetry_provider
         observed["telemetry"] = event.run_context.telemetry
 
-    await run_primitive_plan(
+    await run_process(
         _plan(),
         initial_state=_State(),
         artifacts_dir=tmp_path,
@@ -59,7 +59,7 @@ async def test_run_primitive_plan_with_no_telemetry_leaves_run_context_provider_
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_with_telemetry_anchors_provider_on_run_context(
+async def test_run_process_with_telemetry_anchors_provider_on_run_context(
     tmp_path: Path,
 ) -> None:
     """When telemetry=config is passed, the runner builds a TracerProvider and
@@ -79,7 +79,7 @@ async def test_run_primitive_plan_with_telemetry_anchors_provider_on_run_context
     def capture(event) -> None:
         observed["provider"] = event.run_context.telemetry_provider
 
-    await run_primitive_plan(
+    await run_process(
         _plan(),
         initial_state=_State(),
         artifacts_dir=tmp_path,
@@ -97,7 +97,7 @@ async def test_run_primitive_plan_with_telemetry_anchors_provider_on_run_context
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_telemetry_provider_shut_down_on_success(
+async def test_run_process_telemetry_provider_shut_down_on_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     shutdowns: list[bool] = []
@@ -124,7 +124,7 @@ async def test_run_primitive_plan_telemetry_provider_shut_down_on_success(
         service_name="archipelago-test",
     )
 
-    await run_primitive_plan(
+    await run_process(
         _plan(),
         initial_state=_State(),
         artifacts_dir=tmp_path,
@@ -139,7 +139,7 @@ async def test_run_primitive_plan_telemetry_provider_shut_down_on_success(
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_with_telemetry_does_not_mutate_global_tracer_provider(
+async def test_run_process_with_telemetry_does_not_mutate_global_tracer_provider(
     tmp_path: Path,
 ) -> None:
     """The runner must NOT call trace.set_tracer_provider — that would be a
@@ -156,7 +156,7 @@ async def test_run_primitive_plan_with_telemetry_does_not_mutate_global_tracer_p
         service_name="archipelago-test",
     )
 
-    await run_primitive_plan(
+    await run_process(
         _plan(),
         initial_state=_State(),
         artifacts_dir=tmp_path,
@@ -174,7 +174,7 @@ async def test_run_primitive_plan_with_telemetry_does_not_mutate_global_tracer_p
 
 
 @pytest.mark.asyncio
-async def test_run_primitive_plan_cleans_up_run_dir_when_build_tracer_provider_raises(
+async def test_run_process_cleans_up_run_dir_when_build_tracer_provider_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """If build_tracer_provider raises, the bootstrapped run_dir must be
@@ -194,7 +194,7 @@ async def test_run_primitive_plan_cleans_up_run_dir_when_build_tracer_provider_r
     )
 
     with pytest.raises(RuntimeError, match="bad telemetry config"):
-        await run_primitive_plan(
+        await run_process(
             _plan(),
             initial_state=_State(),
             artifacts_dir=tmp_path,

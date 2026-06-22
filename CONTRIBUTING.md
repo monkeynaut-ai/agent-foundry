@@ -5,12 +5,12 @@ codebase holds itself to, the conventions for data modeling, and the development
 
 ## Platform principles
 
-Agent Foundry is a **platform, not a library**. Products build custom primitive types,
+Agent Foundry is a **platform, not a library**. Products build custom construct types,
 action variants, and agent implementations on top of it. Design every API surface for
 extension.
 
-- **Declarative.** A product's primitive declaration is the complete, authoritative
-  specification of a primitive — prompt logic, instructions, response channel, execution
+- **Declarative.** A product's construct declaration is the complete, authoritative
+  specification of a construct — prompt logic, instructions, response channel, execution
   strategy, access rights, reuse policy. The platform executes what's declared; it does
   not make product decisions through defaults.
 - **Safe by default.** For any field where absence of configuration could mean "more
@@ -19,14 +19,14 @@ extension.
   semantic weight (response channel, executor), there is no default — the product must
   choose. Misconfiguration fails loudly and locally.
 - **Strict typing at all boundaries.** Public APIs accept and return Pydantic models,
-  never raw dicts. State flows between primitives as typed models. LangGraph's dict-based
+  never raw dicts. State flows between constructs as typed models. LangGraph's dict-based
   internals are encapsulated within the compiler.
 - **Extensibility via registries.** The compiler and validator dispatch to per-type
-  functions via a registry, not `isinstance` chains. New primitive types register their
+  functions via a registry, not `isinstance` chains. New construct types register their
   own compiler and validator without modifying core code. Unknown types raise loudly.
 - **Composition over inheritance for state models.** No subclass hierarchies between
   state types. Type boundaries use exact identity checks (`is`), not `issubclass`.
-- **Primitives are a tree, not a graph.** Composition is by direct object reference — no
+- **Constructs are a tree, not a graph.** Composition is by direct object reference — no
   string-based names or IDs for cross-referencing. Validation is local; compilation is
   recursive.
 - **Push complexity into the platform, not onto products.** When a design choice makes

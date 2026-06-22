@@ -22,11 +22,11 @@ from pydantic import BaseModel
 
 from agent_foundry.ai_models.inference import InferenceParameters, InferenceRequest
 from agent_foundry.ai_models.model import ModelEntry
+from agent_foundry.constructs.models import get_type_args
 from agent_foundry.models.usage import TokenUsage
-from agent_foundry.primitives.models import get_type_args
 
 if TYPE_CHECKING:
-    from agent_foundry.primitives.ai_call import AICall
+    from agent_foundry.constructs.ai_call import AICall
 
 
 class AICallResult[O: BaseModel](BaseModel):
@@ -41,37 +41,37 @@ class AICallResult[O: BaseModel](BaseModel):
 
 
 async def invoke_ai_call[I: BaseModel, O: BaseModel](
-    primitive: AICall[I, O],
+    construct: AICall[I, O],
     model_input: I,
 ) -> AICallResult[O]:
-    """Invoke ``primitive`` against ``model_input``; return output + usage.
+    """Invoke ``construct`` against ``model_input``; return output + usage.
 
     Raises ``TypeError`` if the provider returns an object that isn't an
     instance of the request's declared output type.
 
     Parameter names match the AICall executor contract so consumers can
     wrap this function directly:
-    ``return await invoke_ai_call(primitive=primitive, model_input=model_input)``.
+    ``return await invoke_ai_call(construct=construct, model_input=model_input)``.
     """
-    _, output_type = get_type_args(primitive)
+    _, output_type = get_type_args(construct)
 
     instructions = (
-        primitive.model_input.instructions
-        if isinstance(primitive.model_input.instructions, str)
-        else primitive.model_input.instructions(model_input)
+        construct.model_input.instructions
+        if isinstance(construct.model_input.instructions, str)
+        else construct.model_input.instructions(model_input)
     )
     prompt = (
-        primitive.model_input.prompt
-        if isinstance(primitive.model_input.prompt, str)
-        else primitive.model_input.prompt(model_input)
+        construct.model_input.prompt
+        if isinstance(construct.model_input.prompt, str)
+        else construct.model_input.prompt(model_input)
     )
     parameters = (
-        primitive.parameters
-        if isinstance(primitive.parameters, InferenceParameters)
-        else primitive.parameters(model_input)
+        construct.parameters
+        if isinstance(construct.parameters, InferenceParameters)
+        else construct.parameters(model_input)
     )
     model_entry = (
-        primitive.model if isinstance(primitive.model, ModelEntry) else primitive.model(model_input)
+        construct.model if isinstance(construct.model, ModelEntry) else construct.model(model_input)
     )
 
     request = InferenceRequest(

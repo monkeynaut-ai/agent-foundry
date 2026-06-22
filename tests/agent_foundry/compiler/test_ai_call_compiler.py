@@ -14,10 +14,10 @@ from agent_foundry.ai_models.inference import (
     InferenceResult,
 )
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
-from agent_foundry.compiler.primitive_compiler import compile_runtime_plan
-from agent_foundry.primitives.ai_call import AICall, ModelInput
-from agent_foundry.primitives.errors import PrimitiveCompilationError
-from agent_foundry.primitives.plan import PrimitivePlan
+from agent_foundry.compiler.compiler import compile_process
+from agent_foundry.constructs.ai_call import AICall, ModelInput
+from agent_foundry.constructs.errors import ConstructCompilationError
+from agent_foundry.constructs.process import Process
 
 
 class Input(BaseModel):
@@ -84,7 +84,7 @@ class TestAICallCompilerFieldResolution:
             parameters=InferenceParameters(max_tokens=256),
             model=_fake_entry(captured),
         )
-        graph = compile_runtime_plan(PrimitivePlan(action))
+        graph = compile_process(Process(action))
         asyncio.run(graph.ainvoke({"text": "hello"}))
 
         assert len(captured) == 1
@@ -101,7 +101,7 @@ class TestAICallCompilerFieldResolution:
             parameters=InferenceParameters(max_tokens=256),
             model=_fake_entry(captured),
         )
-        graph = compile_runtime_plan(PrimitivePlan(action))
+        graph = compile_process(Process(action))
         asyncio.run(graph.ainvoke({"text": "world"}))
 
         assert captured[0].instructions == "system:world"
@@ -115,7 +115,7 @@ class TestAICallCompilerFieldResolution:
             parameters=params,
             model=_fake_entry(captured),
         )
-        graph = compile_runtime_plan(PrimitivePlan(action))
+        graph = compile_process(Process(action))
         asyncio.run(graph.ainvoke({"text": "x"}))
 
         assert captured[0].parameters.max_tokens == 512
@@ -132,7 +132,7 @@ class TestAICallCompilerFieldResolution:
             parameters=_params,
             model=_fake_entry(captured),
         )
-        graph = compile_runtime_plan(PrimitivePlan(action))
+        graph = compile_process(Process(action))
         asyncio.run(graph.ainvoke({"text": "x", "flag": True}))
 
         assert captured[0].parameters.max_tokens == 1024
@@ -144,7 +144,7 @@ class TestAICallCompilerFieldResolution:
             parameters=InferenceParameters(max_tokens=256),
             model=_fake_entry(captured),
         )
-        graph = compile_runtime_plan(PrimitivePlan(action))
+        graph = compile_process(Process(action))
         asyncio.run(graph.ainvoke({"text": "x"}))
 
         assert captured[0].output_type is Output
@@ -156,7 +156,7 @@ class TestAICallCompilerFieldResolution:
             parameters=InferenceParameters(max_tokens=256),
             model=_fake_entry(captured),
         )
-        graph = compile_runtime_plan(PrimitivePlan(action))
+        graph = compile_process(Process(action))
         result = asyncio.run(graph.ainvoke({"text": "x"}))
 
         assert result["result"] == "ok"
@@ -174,7 +174,7 @@ class TestAICallCompilerModelSelection:
             parameters=InferenceParameters(max_tokens=256),
             model=lambda state: entry_a if state.flag else entry_b,
         )
-        graph = compile_runtime_plan(PrimitivePlan(action))
+        graph = compile_process(Process(action))
 
         asyncio.run(graph.ainvoke({"text": "x", "flag": True}))
         assert len(captured_a) == 1
@@ -207,7 +207,7 @@ class TestAICallCompilerOutputValidation:
             parameters=InferenceParameters(max_tokens=256),
             model=entry,
         )
-        graph = compile_runtime_plan(PrimitivePlan(action))
+        graph = compile_process(Process(action))
 
-        with pytest.raises(PrimitiveCompilationError):
+        with pytest.raises(ConstructCompilationError):
             asyncio.run(graph.ainvoke({"text": "x"}))

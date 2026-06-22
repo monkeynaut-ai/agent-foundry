@@ -8,7 +8,7 @@ from enum import StrEnum
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from agent_foundry.primitives.retry_types import (
+from agent_foundry.constructs.retry_types import (
     AttemptFailure,
     AttemptOutcome,
     DispositionKind,

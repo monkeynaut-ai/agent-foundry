@@ -1,4 +1,4 @@
-"""Terminal-outcome envelope returned by ``run_primitive_plan``.
+"""Terminal-outcome envelope returned by ``run_process``.
 
 Every run ends by returning exactly one ``RunOutcome`` variant:
 
@@ -9,7 +9,7 @@ Every run ends by returning exactly one ``RunOutcome`` variant:
 
 Callers branch on ``RunOutcome.kind`` rather than catching exceptions.
 This is an orchestration concept (it is what the runner returns), kept
-separate from the primitives layer.
+separate from the constructs layer.
 """
 
 from __future__ import annotations

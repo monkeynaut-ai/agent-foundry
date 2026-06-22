@@ -4,7 +4,7 @@ Start with the [project README](../README.md) for what Agent Foundry is and how 
 
 ## Guides — start here
 
-- [Getting started](guides/getting-started.md) — define state models, compose primitives, run a plan, extend with custom primitives
+- [Getting started](guides/getting-started.md) — define state models, compose constructs, run a process, extend with custom constructs
 - [Agent containers](guides/agent-containers.md) — running AI agents in Docker containers with structured communication
 
 ## Vision
@@ -30,6 +30,6 @@ permissions, executor failure handling, and the Codex agent path.
 
 ## Internal
 
-[`internal/`](internal/) holds dev notes — audits, completed implementation plans, and
+[`internal/`](internal/) holds dev notes — audits, completed implementation processes, and
 research. These are working artifacts, not user-facing documentation. See
 [`internal/README.md`](internal/README.md).

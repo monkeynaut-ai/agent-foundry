@@ -47,7 +47,7 @@ This works for single-directory access. It breaks when an agent needs write acce
 
 There is also a structural constraint in Agent Foundry: the agent-worker container entrypoint runs as **root** to perform git credential setup, filesystem lockdown, and role-instruction injection before dropping to the `claude` user via `gosu`. Passing `--user` at `docker run` time would break the entrypoint. Enforcement must happen at `docker exec` time (when Claude Code is invoked), not at container creation time.
 
-**Verdict:** Wrong Linux primitive. UIDs are for identity; GIDs are for resource access. Rejected.
+**Verdict:** Wrong Linux construct. UIDs are for identity; GIDs are for resource access. Rejected.
 
 ## 3. Approved Approach: Linux Group-Based Access Control
 
@@ -89,7 +89,7 @@ GID-based permissions are static filesystem state set once at workspace bootstra
 
 ## 4. Agent Foundry Platform Changes
 
-### 4.1 `AgentAction` model (`primitives/models.py`)
+### 4.1 `AgentAction` model (`constructs/models.py`)
 
 Remove `visible_dirs`, `writable_dirs`, and `uid`. Replace with:
 
@@ -103,7 +103,7 @@ No validator is needed. An agent with no GIDs is a valid read-only agent; the se
 
 ### 4.2 `LiveContainer` (`orchestration/registry.py`)
 
-Add a `gids: list[int]` field to `LiveContainer` (the runtime handle for a running container). Populate it from `primitive.gids` in `get_or_create` (or equivalent). The container itself is created without a `--user` override — the entrypoint runs as root as designed.
+Add a `gids: list[int]` field to `LiveContainer` (the runtime handle for a running container). Populate it from `construct.gids` in `get_or_create` (or equivalent). The container itself is created without a `--user` override — the entrypoint runs as root as designed.
 
 ### 4.3 `exec_run` signature (`agents/lifecycle.py`)
 
@@ -166,7 +166,7 @@ chmod -R 775       /workspace/codebase/tests
 
 The `tests/` step must run after the `codebase/` step. The ordering is load-bearing: `codebase/tests` inherits GID 1002 from the `codebase/` chown, then the second `chown` overrides it to 1003. Reversing the order would set `tests/` to GID 1002 (no override).
 
-### 5.3 Agent primitives (`designer`, `change_set_planner`, `tdd_planner`)
+### 5.3 Agent constructs (`designer`, `change_set_planner`, `tdd_planner`)
 
 Replace `uid=1001, visible_dirs=[...], writable_dirs=[...]` with:
 
@@ -199,7 +199,7 @@ These are integration tests and require a Docker daemon. They skip gracefully wh
 - Container creation (`docker run`) — no `--user` override; entrypoint continues to run as root.
 - The entrypoint itself — auth, git credentials, lockdown, role-instructions append, LSP plugin install all proceed as before.
 - Agent-worker image UID layout — `claude` user remains UID 1000, GID 1000.
-- `FunctionAction` and `Sequence` primitives — no `gids` field; these do not invoke Claude Code in a container.
+- `FunctionAction` and `Sequence` constructs — no `gids` field; these do not invoke Claude Code in a container.
 
 ## 8. Open Questions
 

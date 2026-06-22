@@ -124,6 +124,10 @@ class TestExecutorSpecExtraction:
 import pytest  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
+from agent_foundry.constructs.models import (  # noqa: E402
+    AgentAction,
+    ContainerReusePolicy,
+)
 from agent_foundry.orchestration import container_executor  # noqa: E402
 from agent_foundry.orchestration.container_executor import (  # noqa: E402
     TurnResult,
@@ -134,10 +138,6 @@ from agent_foundry.orchestration.registry import AgentContainerRegistry  # noqa:
 from agent_foundry.orchestration.run_context import (  # noqa: E402
     NoOpLifecycleWriter,
     RunContext,
-)
-from agent_foundry.primitives.models import (  # noqa: E402
-    AgentAction,
-    ContainerReusePolicy,
 )
 
 from .fakes import FakeClaudeCodeAdapter, FakeContainerManager  # noqa: E402
@@ -153,7 +153,7 @@ class _VerifyOutput(BaseModel):
     review_path: Annotated[str, AgentFilePath()]
 
 
-def _make_verify_primitive() -> AgentAction[_VerifyInput, _VerifyOutput]:
+def _make_verify_construct() -> AgentAction[_VerifyInput, _VerifyOutput]:
     return AgentAction[_VerifyInput, _VerifyOutput](
         name="reviewer",
         model="claude-sonnet-4-6",
@@ -233,7 +233,7 @@ class TestExecutorFilePathVerification:
         fake_mgr.read_file_script = {"/workspace/review.md": ["# review body"]}
 
         result = await run_agent_in_container(
-            primitive=_make_verify_primitive(),
+            construct=_make_verify_construct(),
             prompt="go",
             run_ctx=_make_ctx(fake_mgr),
         )
@@ -273,7 +273,7 @@ class TestExecutorFilePathVerification:
         fake_mgr.read_file_script = {"/workspace/review.md": [None, "# recovered"]}
 
         result = await run_agent_in_container(
-            primitive=_make_verify_primitive(),
+            construct=_make_verify_construct(),
             prompt="go",
             run_ctx=_make_ctx(fake_mgr),
         )
@@ -320,7 +320,7 @@ class TestExecutorFilePathVerification:
         fake_mgr.read_file_script = {"/workspace/review.md": [oversized, "compact body"]}
 
         result = await run_agent_in_container(
-            primitive=_make_verify_primitive(),
+            construct=_make_verify_construct(),
             prompt="go",
             run_ctx=_make_ctx(fake_mgr),
         )
@@ -359,7 +359,7 @@ class TestExecutorFilePathVerification:
 
         with pytest.raises(AgentFailedError) as excinfo:
             await run_agent_in_container(
-                primitive=_make_verify_primitive(),
+                construct=_make_verify_construct(),
                 prompt="go",
                 run_ctx=_make_ctx(fake_mgr),
             )
@@ -395,7 +395,7 @@ class TestExecutorFilePathVerification:
 
         with pytest.raises(AgentFailedError) as excinfo:
             await run_agent_in_container(
-                primitive=_make_verify_primitive(),
+                construct=_make_verify_construct(),
                 prompt="go",
                 run_ctx=_make_ctx(fake_mgr),
             )

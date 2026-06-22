@@ -28,8 +28,8 @@ from agent_foundry.orchestration.env import build_container_env
 from agent_foundry.orchestration.lifecycle_events import LifecycleEvent
 
 if TYPE_CHECKING:
+    from agent_foundry.constructs.models import AgentAction
     from agent_foundry.orchestration.lifecycle_writer import LifecycleWriter
-    from agent_foundry.primitives.models import AgentAction
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +52,14 @@ _HEALTH_POLL_INTERVAL_SECONDS = 0.25
 class LiveContainer:
     """One container bound to one AgentAction for the duration of one run.
 
-    The ``primitive_id`` / ``agent_name`` / ``created_at`` fields are
+    The ``construct_id`` / ``agent_name`` / ``created_at`` fields are
     populated by :meth:`AgentContainerRegistry.get_or_create`.
     """
 
     handle: ContainerHandleBase
     manager: ContainerManagerBase
     session_id: str | None = None
-    primitive_id: int | None = None
+    construct_id: int | None = None
     agent_name: str | None = None
     # Supplementary GIDs passed to docker exec --group-add when Claude Code
     # is invoked. Populated from AgentAction.gids by get_or_create.
@@ -98,7 +98,7 @@ class LiveContainer:
 class AgentContainerRegistry:
     """One-container-per-AgentAction-per-run pool.
 
-    Keyed by ``id(primitive)``. Creation is lazy (first call to
+    Keyed by ``id(construct)``. Creation is lazy (first call to
     :meth:`get_or_create`). :meth:`shutdown_all` is idempotent and
     tolerates per-container destroy failures — each failure is logged
     at WARNING and execution continues.
@@ -135,7 +135,7 @@ class AgentContainerRegistry:
 
     async def get_or_create(
         self,
-        primitive: AgentAction,
+        construct: AgentAction,
         *,
         lifecycle_writer: LifecycleWriter,
         agent_name: str,
@@ -143,18 +143,18 @@ class AgentContainerRegistry:
         extra_env: dict[str, str] | None = None,
         extra_volumes: dict[str, dict[str, str]] | None = None,
     ) -> LiveContainer:
-        """Return the live container for ``primitive``, creating it if absent.
+        """Return the live container for ``construct``, creating it if absent.
 
         Emits an ``agent_container_started`` lifecycle event on first
-        creation (not on cache hits). Identity-keyed by ``id(primitive)``.
+        creation (not on cache hits). Identity-keyed by ``id(construct)``.
 
         If ``instructions`` is provided, the string is written into the
         container at creation time. The caller (typically the compiler) is
-        responsible for resolving ``primitive.instructions_provider(input_state)``
+        responsible for resolving ``construct.instructions_provider(input_state)``
         against the per-invocation input state before calling; the registry
         takes the pre-resolved text.
         """
-        pid = id(primitive)
+        pid = id(construct)
         async with self._lock:
             if self._shut_down:
                 raise RuntimeError("Registry is shut down")
@@ -163,14 +163,14 @@ class AgentContainerRegistry:
                 return live
 
             manager = self._manager_override or await asyncio.to_thread(self._build_manager)
-            merged_env = self._extra_env_for(primitive)
+            merged_env = self._extra_env_for(construct)
             if extra_env:
                 merged_env.update(extra_env)
             handle = await asyncio.to_thread(
                 manager.create_container,
                 self._base_image_tag,
                 self._workspace_volume,
-                primitive.container_config,
+                construct.container_config,
                 merged_env,
                 extra_volumes,
             )
@@ -184,8 +184,8 @@ class AgentContainerRegistry:
                     ROLE_INSTRUCTIONS_PATH,
                     instructions,
                 )
-            if primitive.mcp_servers:
-                cwd = getattr(primitive, "cwd", None) or "/workspace"
+            if construct.mcp_servers:
+                cwd = getattr(construct, "cwd", None) or "/workspace"
                 # Write MCP server definitions to .claude.json under projects[cwd].
                 claude_json_raw = await asyncio.to_thread(
                     manager.read_file_from_container, handle, CLAUDE_CONFIG_PATH
@@ -196,7 +196,7 @@ class AgentContainerRegistry:
                     claude_json = {}
                 projects = claude_json.setdefault("projects", {})
                 existing_project: dict = projects.get(cwd, {})
-                project_entry = build_claude_json_project_entry(primitive.mcp_servers)
+                project_entry = build_claude_json_project_entry(construct.mcp_servers)
                 merged_project = {**existing_project, **project_entry}
                 projects[cwd] = merged_project
                 await asyncio.to_thread(
@@ -213,7 +213,7 @@ class AgentContainerRegistry:
                     settings: dict = json.loads(settings_raw) if settings_raw else {}
                 except json.JSONDecodeError:
                     settings = {}
-                mcp_perms = build_mcp_permissions(primitive.mcp_servers)
+                mcp_perms = build_mcp_permissions(construct.mcp_servers)
                 merged_settings = {
                     **settings,
                     "permissions": {
@@ -235,9 +235,9 @@ class AgentContainerRegistry:
             live = LiveContainer(
                 handle=handle,
                 manager=manager,
-                primitive_id=pid,
+                construct_id=pid,
                 agent_name=agent_name,
-                gids=list(primitive.gids),
+                gids=list(construct.gids),
             )
             self._containers[pid] = live
             lifecycle_writer.append(
@@ -247,13 +247,13 @@ class AgentContainerRegistry:
             )
             return live
 
-    def record_session_id(self, primitive: AgentAction, session_id: str) -> None:
+    def record_session_id(self, construct: AgentAction, session_id: str) -> None:
         """Stamp the LiveContainer with the claude ``--resume`` session id.
 
-        No-op if the primitive has never been registered via
+        No-op if the construct has never been registered via
         :meth:`get_or_create`.
         """
-        live = self._containers.get(id(primitive))
+        live = self._containers.get(id(construct))
         if live is not None:
             live.session_id = session_id
 
@@ -323,17 +323,17 @@ class AgentContainerRegistry:
             client = docker.from_env()
         return ContainerManager(client=client, default_image=self._base_image_tag)
 
-    def _extra_env_for(self, primitive: AgentAction) -> dict[str, str]:
+    def _extra_env_for(self, construct: AgentAction) -> dict[str, str]:
         """Compose the env dict passed to ``ContainerManager.create_container``.
 
         When the registry has been configured with ``oauth_token`` (the
-        ``run_primitive_plan`` entry path), compose the full agent env via
+        ``run_process`` entry path), compose the full agent env via
         :func:`build_container_env` so the container boots with the
         Claude Code OAuth token and the instructions-path env var the
         entrypoint consumes. Tests that construct the registry without an
         ``oauth_token`` (the fake-driver path) get an empty env.
 
-        ``SUPPLEMENTARY_GIDS`` is always injected when ``primitive.gids``
+        ``SUPPLEMENTARY_GIDS`` is always injected when ``construct.gids``
         is non-empty. The entrypoint reads this env var to add the ``claude``
         user to those groups before calling ``gosu claude`` — the only way
         to configure supplementary groups on a process, since the Docker exec
@@ -343,13 +343,13 @@ class AgentContainerRegistry:
         if self._oauth_token is not None:
             env.update(
                 build_container_env(
-                    primitive,
+                    construct,
                     oauth_token=self._oauth_token,
                     role_instructions_path=ROLE_INSTRUCTIONS_PATH,
                 )
             )
-        if primitive.gids:
-            env["SUPPLEMENTARY_GIDS"] = ",".join(str(g) for g in primitive.gids)
+        if construct.gids:
+            env["SUPPLEMENTARY_GIDS"] = ",".join(str(g) for g in construct.gids)
         return env
 
     async def _wait_until_healthy(
