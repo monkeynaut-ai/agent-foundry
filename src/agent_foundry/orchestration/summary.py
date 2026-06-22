@@ -197,7 +197,7 @@ def render_summary(run_dir: Path) -> None:
                         if isinstance(reason, str):
                             abort_reason = reason
                 elif event_type == LifecycleEvent.AGENT_INVOCATION_STARTED.value:
-                    agent = record.get("agent")
+                    agent = record.get("agent_name")
                     if not isinstance(agent, str):
                         continue
                     bucket = stats.setdefault(agent, _AgentStats())
@@ -233,7 +233,7 @@ def render_summary(run_dir: Path) -> None:
                                 total_cost_usd=cost if isinstance(cost, (int, float)) else None,
                             )
                         )
-                    agent = record.get("agent")
+                    agent = record.get("agent_name")
                     if not isinstance(agent, str):
                         continue
                     bucket = stats.setdefault(agent, _AgentStats())

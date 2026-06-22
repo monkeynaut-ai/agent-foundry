@@ -33,7 +33,7 @@ def _invocation_pair(
         "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
         "ts": start_ts,
         "run_id": run_id,
-        "agent": agent,
+        "agent_name": agent,
     }
     end_type = (
         LifecycleEvent.AGENT_INVOCATION_FAILED
@@ -44,7 +44,7 @@ def _invocation_pair(
         "type": end_type.value,
         "ts": end_ts,
         "run_id": run_id,
-        "agent": agent,
+        "agent_name": agent,
     }
     return [started, ended]
 
@@ -411,7 +411,7 @@ def _agent_completed_with_usage(
         "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
         "ts": start_ts,
         "run_id": run_id,
-        "agent": agent,
+        "agent_name": agent,
     }
     completed = {
         "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
