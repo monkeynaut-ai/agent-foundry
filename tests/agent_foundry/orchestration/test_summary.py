@@ -530,3 +530,155 @@ def test_render_summary_usage_section_absent_when_no_usage_events(tmp_path: Path
     render_summary(run_dir)
     text = (run_dir / "summary.txt").read_text(encoding="utf-8")
     assert "Usage" not in text
+
+
+def test_render_summary_missing_agent_name_field_skipped(tmp_path: Path) -> None:
+    """Events without an agent_name field are skipped silently (defensive robustness)."""
+    run_id = "run-missing-agent"
+    run_dir = tmp_path / run_id
+    records: list[dict] = [
+        _run_started(run_id, "2026-04-15T11:00:00+00:00"),
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+            "ts": "2026-04-15T11:00:01+00:00",
+            "run_id": run_id,
+            # Missing agent_name field
+        },
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+            "ts": "2026-04-15T11:00:02+00:00",
+            "run_id": run_id,
+            "agent_name": "valid_agent",
+        },
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
+            "ts": "2026-04-15T11:00:03+00:00",
+            "run_id": run_id,
+            "agent_name": "valid_agent",
+        },
+        _run_ended(run_id, "2026-04-15T11:00:10+00:00"),
+    ]
+    _write_jsonl(run_dir / "lifecycle.jsonl", records)
+
+    render_summary(run_dir)
+
+    text = (run_dir / "summary.txt").read_text(encoding="utf-8")
+    # Event without agent_name is skipped, but valid_agent still appears.
+    assert "valid_agent" in text
+    # Only one agent should appear, not an error or crash.
+    agent_lines = [line for line in text.splitlines() if "invocations" in line]
+    assert len(agent_lines) == 1
+
+
+def test_render_summary_agent_name_non_string_skipped(tmp_path: Path) -> None:
+    """Events with non-string agent_name values (None, int, etc.) are skipped."""
+    run_id = "run-nonstring-agent"
+    run_dir = tmp_path / run_id
+    records: list[dict] = [
+        _run_started(run_id, "2026-04-15T11:00:00+00:00"),
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+            "ts": "2026-04-15T11:00:01+00:00",
+            "run_id": run_id,
+            "agent_name": None,
+        },
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+            "ts": "2026-04-15T11:00:02+00:00",
+            "run_id": run_id,
+            "agent_name": 42,
+        },
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+            "ts": "2026-04-15T11:00:03+00:00",
+            "run_id": run_id,
+            "agent_name": "string_agent",
+        },
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
+            "ts": "2026-04-15T11:00:04+00:00",
+            "run_id": run_id,
+            "agent_name": "string_agent",
+        },
+        _run_ended(run_id, "2026-04-15T11:00:10+00:00"),
+    ]
+    _write_jsonl(run_dir / "lifecycle.jsonl", records)
+
+    render_summary(run_dir)
+
+    text = (run_dir / "summary.txt").read_text(encoding="utf-8")
+    # Only the valid string agent appears.
+    assert "string_agent" in text
+    # Non-string events are silently skipped; no error.
+    assert "None" not in text
+    assert "42" not in text
+
+
+def test_render_summary_duration_requires_valid_timestamps(tmp_path: Path) -> None:
+    """Duration is only calculated when both start and end timestamps are valid."""
+    run_id = "run-bad-timestamps"
+    run_dir = tmp_path / run_id
+    records: list[dict] = [
+        _run_started(run_id, "2026-04-15T11:00:00+00:00"),
+        # Valid pair: both timestamps present and valid.
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+            "ts": "2026-04-15T11:00:01+00:00",
+            "run_id": run_id,
+            "agent_name": "agent_valid",
+        },
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
+            "ts": "2026-04-15T11:00:02+00:00",
+            "run_id": run_id,
+            "agent_name": "agent_valid",
+        },
+        # Missing end timestamp: start present but no ts on COMPLETED.
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+            "ts": "2026-04-15T11:00:03+00:00",
+            "run_id": run_id,
+            "agent_name": "agent_no_end_ts",
+        },
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
+            "ts": None,
+            "run_id": run_id,
+            "agent_name": "agent_no_end_ts",
+        },
+        # Missing start timestamp: ts not set on STARTED.
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
+            "run_id": run_id,
+            "agent_name": "agent_no_start_ts",
+        },
+        {
+            "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
+            "ts": "2026-04-15T11:00:04+00:00",
+            "run_id": run_id,
+            "agent_name": "agent_no_start_ts",
+        },
+        _run_ended(run_id, "2026-04-15T11:00:10+00:00"),
+    ]
+    _write_jsonl(run_dir / "lifecycle.jsonl", records)
+
+    render_summary(run_dir)
+
+    text = (run_dir / "summary.txt").read_text(encoding="utf-8")
+    # All three agents should appear because the stats still count invocations.
+    assert "agent_valid" in text
+    assert "agent_no_end_ts" in text
+    assert "agent_no_start_ts" in text
+    # agent_valid has a calculable duration (1000ms); others show "n/a".
+    lines = text.splitlines()
+    agent_valid_line = next((line for line in lines if "agent_valid" in line), None)
+    assert agent_valid_line is not None
+    # Must show duration in ms for valid agent.
+    assert "1000ms" in agent_valid_line
+    # The other two should show "n/a" for duration (no valid pair).
+    agent_no_end_ts_line = next((line for line in lines if "agent_no_end_ts" in line), None)
+    assert agent_no_end_ts_line is not None
+    assert "n/a" in agent_no_end_ts_line
+    agent_no_start_ts_line = next((line for line in lines if "agent_no_start_ts" in line), None)
+    assert agent_no_start_ts_line is not None
+    assert "n/a" in agent_no_start_ts_line
