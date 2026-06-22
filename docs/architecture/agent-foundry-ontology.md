@@ -1,35 +1,71 @@
-# Agent Foundry Ontology: System, Participant, Role
+# Agent Foundry Ontology: System, Process, Construct, Run
 
-Agent Foundry builds **systems**. A system is an orchestration of **participants**, each performing a **role**. These three concepts -- system, participant, role -- form the platform's conceptual model. Everything else (graphs, nodes, edges, containers) is execution-layer machinery that implements this model. The ontology is independent of any execution engine; LangGraph is the current engine, but the model is designed to survive a change.
+Agent Foundry builds, runs, and manages systems: it composes a system's definition, executes its processes, and operates them over their lifetime — lifecycle, resilience, observability, and audit. A system offers a catalog of **processes**; a process is a runnable definition built from **constructs**; each execution of a process is a **run**. These concepts form the platform's conceptual model. The model is independent of any execution engine — the engine that actually runs a process is an implementation detail the platform deliberately keeps hidden.
+
+## The layered model
+
+```
+System      the deployment/product — offers a catalog of Processes, holds what they share
+  └─ Process      a defined, runnable thing — topology-agnostic, lifespan-agnostic
+       ├─ Topology     how its Constructs coordinate (graph today; router, blackboard later)
+       └─ Construct    the composable unit a Process is built from
+  └─ Run        one execution of a Process — triggered by API, app, or CLI; many run concurrently
+```
+
+Cardinality: a System offers **many** Processes; a Process has **many** concurrent Runs; each Run is bound to **exactly one** Process.
 
 ## Core Concepts
 
 ### System
 
-A system orchestrates **participants**, not roles. Roles are contracts sitting in a registry -- they don't do anything on their own. Participants are the entities that actually exist and act. A system declares which participants are involved and how they interact.
+A system is the unit of deployment. It offers a catalog of processes and owns what those processes share — the registry of which processes exist, their versioning, and cross-cutting concerns (shared knowledge stores, authentication, resources, triggers). A system is not itself runnable; it is the container and registry from which a run selects a process.
 
-A system declares:
-- **Participants**: which entities are involved, what roles they perform, how they're implemented
-- **Interactions**: how participants communicate and in what order
-- **Entry point**: where execution begins
-- **Breakpoints**: where execution pauses for external input
-- **Version pins**: which role versions this system expects
+Archipelago is a system. A knowledge-management deployment is a system. Each is built on Agent Foundry but defines its own processes and the resources they share.
 
-A system is the unit of deployment. Archipelago is a system. A future knowledge-management pipeline is a system. Each is built on Agent Foundry's infrastructure but defines its own participants, roles, and interactions. Roles are referenced indirectly -- through the participants that fulfill them.
+### Process
+
+A process is the defined, runnable thing. It is the artifact a run enacts.
+
+The Process *concept* is deliberately neutral on two axes — each individual process commits to one value of each:
+
+- **Topology** — the platform does not privilege a single structural paradigm; the concept admits a graph (today), an agent-router, a blackboard, and others. Each process declares the one topology it uses (see Topology).
+- **Lifespan** — the platform assumes no lifespan; a process may be a bounded job that completes or an indefinite standing behavior that never does. Each process is one or the other.
+
+A process declares:
+- **Constructs**: the units it is built from
+- **Topology**: how those constructs coordinate
+- **Entry point**: where a run begins
+- **Contract**: the typed input it requires and output it produces
+
+**Examples**: "implement a feature" is a bounded process — it terminates when the feature is built. "Continuously pull from changelogs and news sources, process articles, update a knowledge base, and notify a user when something noteworthy appears" is an unbounded process — it has no terminal goal. Both are processes; they differ in lifespan, not in kind.
+
+### Topology
+
+A topology is the structural paradigm by which a process's constructs coordinate. Today Agent Foundry implements one topology — a **graph** of constructs. Other topologies are anticipated (e.g. an agent-router that decides structure at runtime, or a blackboard with a shared store and a controller). Topology is a property of a process; the process name and contract do not change when the topology does, and the underlying execution engine is never exposed.
+
+### Construct
+
+A construct is the composable unit a process is built from. Constructs come in two categories, named by qualifier rather than by separate nouns:
+
+- **Control-flow constructs** express the process's structure: Sequence, Loop, Retry, Conditional. In the graph topology these are how participants are arranged.
+- **Action constructs** are where work happens: function calls, human-interaction gates, containerized agents, in-process model calls.
+
+A process is a composition of constructs; a control-flow construct contains other constructs, action constructs are the leaves that do work.
+
+### Run
+
+A run is one execution of a process, triggered by an API call, an application, or the CLI. Many runs execute concurrently — of the same process or different ones — and each run is bound to exactly one process. The run is the live instance; the process is the definition it enacts.
+
+## Participant and Role: the meaning of action constructs
+
+Participant and Role are the conceptual lens on action constructs — they describe *who acts* and *under what contract*.
 
 ### Participant
 
-A participant is an entity in a system that fulfills a role using a specific implementation.
-
-A participant declares:
-- **Identity**: a unique id within the system
-- **Role reference**: which role this participant fulfills (by name and version)
-- **Configuration**: context-specific overrides (which repo, which model, environment variables)
-
-**Example**: The `test_writer` participant in Archipelago fulfills the `test_writer` role using the `archipelago-test-writer` Docker image with Claude Code.
+A participant is the entity that acts at an action construct — what the construct delegates work to.
 
 **Entity types that can be participants:**
-- Autonomous AI agents (Claude Code in a container)
+- Autonomous AI agents (an agent in a container)
 - LLM-backed reasoning steps (in-process model calls)
 - Humans (approval gates, reviews, decisions)
 - Tools (API calls, scripts, functions)
@@ -37,82 +73,31 @@ A participant declares:
 - Communication channels (Slack, email, webhooks)
 - ML models (classifiers, embeddings, predictions)
 
-All of these are participants. They differ in implementation, not in their relationship to the system.
+These differ in implementation, not in their relationship to the process: each appears as an action construct fulfilling a role.
 
 ### Role
 
-A role is a pure contract. It defines what needs to be done, not how or by whom.
+A role is a pure contract — what must be done, not how or by whom.
 
 A role specifies:
 - **Purpose**: what the role exists to accomplish
-- **Scope**: what the role is allowed to touch (files, services, resources)
-- **Input schema**: what data the role requires
-- **Output schema**: what data the role must produce
-- **Permissions**: what the role is authorized to do
-- **Implementation**: how this role is fulfilled (module + class, Docker image, external service endpoint)
+- **Scope**: what it is allowed to touch (files, services, resources)
+- **Input / output schema**: the data it requires and must produce
+- **Permissions**: what it is authorized to do
 - **Quality controls**: timeout, retries, and success criteria
 
-**Example**: The `test_writer` role defines: "Given a feature spec and public interfaces, produce test files in `tests/`. No access to implementation source. Must produce test evidence."
-
-## Mapping to the Execution Layer
-
-The ontology maps to the current LangGraph-based execution layer as follows:
-
-| Ontology concept | Current code artifact | Current class/file |
-|-----------------|----------------------|-------------------|
-| System | Graph wiring plan | `GraphWiringPlan` in `planner/wiring_plan.py` |
-| Compiled system | LangGraph StateGraph | Output of `compile_plan()` in `compiler/compiler.py` |
-| Participant | Node definition + handler binding | `NodeDef` in `planner/wiring_plan.py` |
-| Role | Capability spec (YAML/JSON) | `CapabilitySpec` in `registry/spec.py` |
-| Role registry | Capability registry | `CapabilityRegistry` in `registry/registry.py` |
+**Example**: a `test_writer` role — "Given a feature spec and public interfaces, produce test files in `tests/`. No access to implementation source. Must produce test evidence." A participant (an agent in a specific image, a particular model) fulfills that role inside an action construct.
 
 ## Design Principles
 
-1. **Systems compose participants, not roles.** A system doesn't just list roles -- it specifies who fills each role and how they interact. Two systems can use the same roles with different participants.
+1. **A system offers; a process defines; a run enacts.** These are three levels — the deployment catalog, the runnable definition, and the live instance — and they never collapse into one another.
 
-2. **Roles are complete definitions.** A role spec defines the contract (schemas, permissions, scope) and the implementation (how the role is fulfilled). Different roles with different implementations are different roles -- there is no need for an indirection layer between contract and implementation.
+2. **Processes are topology-agnostic.** A graph is today's topology, not the model's commitment. The process's identity and contract are independent of how its constructs coordinate.
 
-3. **Participants bind roles to context.** A participant references a role and provides context-specific configuration (which repo, which model, environment overrides). The role defines what to do and how; the participant defines where and with what settings.
+3. **Processes are lifespan-agnostic.** Bounded jobs and indefinite standing behaviors are equally processes. The model assumes no terminal goal.
 
-4. **The execution layer is an implementation detail.** LangGraph is how we orchestrate today. The ontology does not depend on it. "Node" and "edge" are LangGraph concepts. "Participant" and "interaction" are system concepts.
+4. **Action constructs are participants performing roles.** The participant is the entity; the role is the contract; the action construct is how they appear in a process. Control-flow constructs express topology, not work.
 
-5. **Enforcement at the boundary.** The framework validates inputs and outputs at the participant boundary against the role's schemas. Neither the role nor the implementation needs to know about validation -- the framework enforces the contract.
+5. **Enforcement at the boundary.** The platform validates input and output at each construct's boundary against its declared contract. The construct's implementation does not perform this validation — the platform enforces it.
 
-## Vocabulary Migration
-
-| Old term | New term (ontology) | New term (code, planned) |
-|----------|-------------------|------------------------|
-| graph / wiring plan | System | `SystemDef` (future, see #32) |
-| node (conceptual) | Participant | `ParticipantDef` (future, see #32) |
-| node (LangGraph) | node (unchanged) | LangGraph `StateGraph` node |
-| capability | Role | `RoleSpec` |
-| capability spec | Role spec | `RoleSpec` (YAML/JSON file) |
-| capability registry | Role registry | `RoleRegistry` |
-| CapabilityStack (ACP) | Role stack | `RoleStack` |
-| capability_versions | role_versions | `GraphWiringPlan.role_versions` |
-| NodeDef.capability | participant's role reference | `NodeDef.role` |
-
-## Platform Evolution
-
-Systems built on Agent Foundry produce reusable components. These push down into the platform, strengthening all systems.
-
-```
-Archipelago builds systems
-        │
-        ▼
-Systems produce reusable components
-        │
-        ▼
-Components push down into Agent Foundry
-        │
-        ▼
-Agent Foundry strengthens all systems
-        │
-        └──────► (repeat)
-```
-
-Examples of components that will migrate from Archipelago into Agent Foundry:
-
-- **Docker worker image**: The Claude Code execution environment (image, entrypoint, capability stack) is currently Archipelago-specific, but any Agent Foundry system that needs an autonomous Claude worker uses the same infrastructure.
-- **Adapter protocol**: The WebSocket-based communication between container and orchestrator is not specific to software development.
-- **WorkerManager**: Container lifecycle, session persistence, and turn-taking are general orchestration concerns.
+6. **The execution engine is an implementation detail.** How a process actually runs is hidden. The ontology — system, process, topology, construct, run — is the stable vocabulary; the engine beneath it can change without changing the model.

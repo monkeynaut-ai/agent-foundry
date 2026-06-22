@@ -13,7 +13,7 @@ Start with the [project README](../README.md) for what Agent Foundry is and how 
 
 ## Architecture
 
-- [Ontology](architecture/agent-foundry-ontology.md) — the conceptual model (System, Participant, Role) and how it maps to execution
+- [Ontology](architecture/agent-foundry-ontology.md) — the conceptual model: System → Process → Construct → Run, with Topology as the structural axis and Participant/Role as the meaning of action constructs
 - [Platform / product separation](architecture/agent-foundry-separation-spec.md) — the boundary between Agent Foundry and the products built on it
 - ADRs: [typed communication model](architecture/adr_typed_communication_model.md) · [markdown template model shape](architecture/adr_markdown_template_model_shape.md)
 
