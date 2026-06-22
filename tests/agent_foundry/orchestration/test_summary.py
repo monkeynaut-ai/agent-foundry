@@ -496,7 +496,7 @@ def test_render_summary_usage_missing_renders_unknown(tmp_path: Path) -> None:
             "type": LifecycleEvent.AGENT_INVOCATION_STARTED.value,
             "ts": "2026-04-15T10:00:01+00:00",
             "run_id": run_id,
-            "agent": "implementer",
+            "agent_name": "implementer",
         },
         {
             "type": LifecycleEvent.AGENT_INVOCATION_COMPLETED.value,
