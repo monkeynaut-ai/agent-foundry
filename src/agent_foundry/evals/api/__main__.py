@@ -12,6 +12,7 @@ declared registry, and binds uvicorn to the host/port declared under
 from __future__ import annotations
 
 import uvicorn
+from dotenv import load_dotenv
 
 from agent_foundry.evals.api.app import create_app
 from agent_foundry.evals.api.config import load_config
@@ -19,6 +20,7 @@ from agent_foundry.evals.api.registry_loader import load_registry
 
 
 def main() -> None:
+    load_dotenv()
     config = load_config()
     registry = load_registry(config.registry)
     app = create_app(registry)

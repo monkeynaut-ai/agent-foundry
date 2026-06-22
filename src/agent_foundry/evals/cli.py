@@ -28,6 +28,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from agent_foundry.evals.agent_foundry_tasks import (
     build_invoke_ai_call_task,
     build_run_primitive_plan_task,
@@ -197,6 +199,7 @@ async def _run(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Returns the process exit code."""
+    load_dotenv()
     args = parse_args(argv)
     try:
         return asyncio.run(_run(args))

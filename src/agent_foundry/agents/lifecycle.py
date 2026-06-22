@@ -26,6 +26,8 @@ DEFAULT_ENV_ALLOWLIST = {
     "LANG",
     "TERM",
     "CLAUDE_CODE_OAUTH_TOKEN",
+    "GIT_USER_NAME",
+    "GIT_USER_EMAIL",
 }
 
 # In-container user that runs the agent. Hardcoded today; TD3 (typed

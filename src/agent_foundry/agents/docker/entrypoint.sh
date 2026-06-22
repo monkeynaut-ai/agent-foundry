@@ -29,7 +29,7 @@ fi
 # Defaults apply when env vars are unset; override via GIT_USER_NAME /
 # GIT_USER_EMAIL passed through the container env.
 gosu claude git config --global user.name "${GIT_USER_NAME:-Agent Foundry}"
-gosu claude git config --global user.email "${GIT_USER_EMAIL:-agent-foundry@monkeynaut-ai.com}"
+gosu claude git config --global user.email "${GIT_USER_EMAIL:-agent-foundry@example.com}"
 # Trust any workspace mount the agent encounters. Containers are
 # short-lived and scoped; `*` saves the agent from a "dubious ownership"
 # error wherever the workspace volume happens to be mounted.

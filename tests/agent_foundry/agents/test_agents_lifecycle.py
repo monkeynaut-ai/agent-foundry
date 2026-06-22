@@ -46,6 +46,10 @@ class TestDefaultEnvAllowlist:
     def test_given_default_allowlist_then_contains_only_generic_vars(self):
         assert "LANG" in DEFAULT_ENV_ALLOWLIST
         assert "CLAUDE_CODE_OAUTH_TOKEN" in DEFAULT_ENV_ALLOWLIST
+        # Non-secret git identity vars forward so the worker's commit
+        # author can be set from the host (or .env) without extra_env.
+        assert "GIT_USER_NAME" in DEFAULT_ENV_ALLOWLIST
+        assert "GIT_USER_EMAIL" in DEFAULT_ENV_ALLOWLIST
         # ANTHROPIC_API_KEY is intentionally excluded: containers authenticate
         # via CLAUDE_CODE_OAUTH_TOKEN, and the host may hold ANTHROPIC_API_KEY
         # for other purposes (e.g. list_claude_models). Forwarding both would
