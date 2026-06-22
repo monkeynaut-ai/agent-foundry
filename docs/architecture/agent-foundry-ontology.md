@@ -66,8 +66,6 @@ The ontology maps to the current LangGraph-based execution layer as follows:
 | Role | Capability spec (YAML/JSON) | `CapabilitySpec` in `registry/spec.py` |
 | Role registry | Capability registry | `CapabilityRegistry` in `registry/registry.py` |
 
-The "Current" column reflects the codebase as of this writing. A rename from "capability" to "role" is planned (see work-status.md #30).
-
 ## Design Principles
 
 1. **Systems compose participants, not roles.** A system doesn't just list roles -- it specifies who fills each role and how they interact. Two systems can use the same roles with different participants.
