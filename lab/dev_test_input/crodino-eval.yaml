@@ -1,5 +1,5 @@
 dev_test_input:
-  repo_url: "https://github.com/730alchemy/crodino.git"
+  repo_url: "https://github.com/monkeynaut-ai/crodino.git"
   repo_ref: "main"
   feature_spec:
     title: "Test cognitive foundations for reasoning"

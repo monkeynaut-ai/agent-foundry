@@ -3,7 +3,7 @@
 ## Team
 
 ```yaml
-name: 730alchemy
+name: monkeynaut-ai
 platform: claude
 git-host: github          # github | gitlab | bitbucket
 ticket-system: github

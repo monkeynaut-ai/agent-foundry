@@ -1,5 +1,5 @@
 dev_test_input:
-  repo_url: "https://github.com/730alchemy/agent-foundry.git"
+  repo_url: "https://github.com/monkeynaut-ai/agent-foundry.git"
   repo_ref: "test-dev-test"
   feature_spec:
     title: "Your feature title"

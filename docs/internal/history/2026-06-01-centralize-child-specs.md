@@ -1,7 +1,7 @@
 # Plan: Centralize primitive child-enumeration via `child_specs`
 
 **Branch:** `markn/gh-62-centralize-child-specs` (rebased onto current `main`)
-**Issue:** [#62](https://github.com/730alchemy/agent-foundry/issues/62) — Refactor: centralize primitive child-enumeration (`child_specs`) to remove N-way duplication
+**Issue:** [#62](https://github.com/monkeynaut-ai/agent-foundry/issues/62) — Refactor: centralize primitive child-enumeration (`child_specs`) to remove N-way duplication
 **Goal:** Introduce a single source of truth for "what are a primitive's child primitives + their compile-prefix suffixes" so the structure is not hand-encoded independently across the validators, the compilers, and the retry-channel-collection pass. Pure refactor — no behavior change.
 
 ---

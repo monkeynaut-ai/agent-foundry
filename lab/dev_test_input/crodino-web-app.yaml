@@ -7,7 +7,7 @@ dev_test_input:
     turn_timeout_seconds: 7200
     skip_permissions: true
     mem_limit_mb: 2048
-  repo_url: "https://github.com/730alchemy/crodino.git"
+  repo_url: "https://github.com/monkeynaut-ai/crodino.git"
   repo_ref: "main"
   feature_spec:
     title: "Crodino Web App — Eval results viewer"
