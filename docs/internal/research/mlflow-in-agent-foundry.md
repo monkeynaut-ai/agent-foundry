@@ -9,7 +9,7 @@ This document analyzes MLflow (https://mlflow.org/) capabilities in the context 
 
 ### Implemented
 
-**Use case 1 — MLflow Tracing as AF's telemetry substrate** is the only use case that has been implemented. Design doc: `docs/archive/mlflow-tracing-integration-design.md`. Implementation plan: `docs/archive/2026-04-27-mlflow-tracing-integration-plan.md`.
+**Use case 1 — MLflow Tracing as AF's telemetry substrate** is the only use case that has been implemented. Design doc: `docs/design/mlflow-tracing-integration-design.md`. Implementation plan: `docs/internal/history/2026-04-27-mlflow-tracing-integration-plan.md`.
 
 What's in place:
 - `src/agent_foundry/telemetry/` — OTel-only AF core module: `TelemetryConfig`, `RunDefinition`, `RedactionPolicy`, `RunStats`, `ArtifactSpec`, canonical attribute constants, `emit_span` context manager, `build_tracer_provider`.

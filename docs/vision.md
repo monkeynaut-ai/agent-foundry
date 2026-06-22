@@ -14,48 +14,21 @@ These builders are optimizing for:
 - Iteration velocity — change something, see the outcome, learn
 - Quality that doesn't require a second "hardening" project after the prototype
 
-## MOTIVATIONS --  ++ What We Believe
+## What We Believe
 
-Convictions strong enough to build on. Each is stated with its rationale. All are subject to revision as we learn.
+Convictions strong enough to build on. All are subject to revision as we learn.
 
-To Add:
+- **A high-quality foundation is worth building on.** Resilient, stable, and
+  self-healing, with a full audit trail and tools for investigating what happened.
+- **Complete control over the agent execution environment** is an advantage — running
+  agents in containers, headless, with streaming output.
+- **Always be capturing data.** Streaming agent output (assistant messages) lets us gauge
+  how faithfully an agent follows its instructions, and feeds continuous improvement.
+- **Knowledge is a strategic asset.** Accelerate learning; always look for ways to learn.
+- **Prepare for rising LLM costs.** Build mitigations into the platform — e.g. optional
+  model/provider switch logic for outages and cost control.
 
-- bring the singularity into existence and play in its tides
-- high-quality foundation to build on
-  - resilient, easy to troubleshoot (full audit trail, tools for investigating), stable, self-healing
-- prepare for inevitable increase in llm-related costs. Build mitigation into agent foundry
-  - mitigate outages with model/provider switch logic option ... may duplicate existing offering
-- complete control over agent execution environment
-- always be capturing data
-  - an advantage of running claude code in a container and running it headless with streaming output optiond
-- knowledge is a strategic asset. Accelerate learning and acceleration. Also, always look for ways to learn
-  - use agent stream out (assistant messages) to gauge fidelity of claude code (agent) to its instructions
-  - [OSS candidate?] create reusable tools to assist/empower this type of assessment (e.g clever uses of jq and ... ?)
-
-```
-  Tool-use distribution (which tools did it actually use vs. what we told it to prefer):
-jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' stream.jsonl | sort | uniq -c | sort -rn
-Answers: Did it use Task (Explore delegation) much, or did it grep/read directly? Did it call StructuredOutput once per turn? Did it touch LSP at all?
-
-Event-type distribution:
-jq -r '.type' stream.jsonl | sort | uniq -c
-Answers: How many turns? How many assistant vs user (tool-result) messages?
-
-Stop reasons per assistant message:
-jq -r 'select(.type == "assistant") | .message.stop_reason' stream.jsonl | sort | uniq -c
-Answers: How did turns terminate? tool_use = normal mid-turn; end_turn = agent chose to stop; max_tokens = bad.
-
-Tier 2 — text-only slice (~30–50K, lands cleanly in context)
-
-Strip tool payloads (the bulk of the 762K), keep just the agent's prose:
-jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' stream.jsonl > /tmp/designer-thinking.txt
-wc -c /tmp/designer-thinking.txt  # likely < 50K
-This is the agent's "thinking aloud" — you can read it straight to judge: did it plan before acting? Did it write an investigation summary before drafting (per our
-instructions)? Did it cite scope boundaries / assumptions explicitly when shaping the design? Did it ever mention "clarification" or "risk" in the framing we taught
-it?
-```
-
-## Principles (better heading?)
+## Principles
 
 - hide LangChain, LangGraph, MLflow
 - primitives to simplify defining topology

@@ -1,10 +1,74 @@
 # Agent Foundry
 
-A platform for defining, running, and managing agent systems.
+**A platform for building agentic workflow systems.** Agent Foundry provides composable,
+typed primitives that compile to executable [LangGraph](https://github.com/langchain-ai/langgraph)
+graphs. You declare a workflow as a tree of primitives; the platform handles compilation,
+execution, state management, container lifecycle, and observability.
+
+> **Status: alpha.** The platform foundation is in active development. APIs may change.
+> License: _to be decided_ — see [LICENSE](LICENSE).
+
+## Why Agent Foundry
+
+Agentic systems share a large body of infrastructure — container lifecycle, protocol
+handling, structured output, lockdown, compilation, state flow, recovery. Rebuilding it
+per product is wasteful and error-prone. Agent Foundry centralizes that machinery so
+building a new agentic system means *composing primitives and declaring agent behavior*,
+not reimplementing infrastructure. The things you change most often — prompts,
+instructions, schemas, executors — are callable fields on a primitive, so trying a
+variation is a one-line change in a declaration.
+
+## Core concepts
+
+A workflow is a **tree of primitives**, composed by direct object reference:
+
+**Control-flow primitives** structure the graph:
+- **Sequence** — linear execution of steps
+- **Loop** — iterate over a collection
+- **Retry** — repeat until a condition is met or attempts are exhausted
+- **Conditional** — branch on state
+
+**Action primitives** do work at the leaves:
+- **FunctionAction** — in-process function call
+- **GateAction** — block for human interaction, return the response as typed output
+- **AgentAction** — run a containerized AI agent
+
+State flows between primitives as typed Pydantic models. Each step declares the input
+fields it reads and the output fields it merges back; composite primitives accumulate
+state within their subgraph and select which fields leave scope.
+
+## Install
+
+```bash
+pip install agent-foundry          # core
+pip install agent-foundry[mlflow]  # with the optional MLflow telemetry adapter
+```
+
+Requires Python 3.14.
+
+## Quickstart
+
+See **[docs/guides/getting-started.md](docs/guides/getting-started.md)** for defining
+state models, composing a primitive tree, running a plan, and extending the platform with
+custom primitives. A complete runnable example (with telemetry wiring) lives in
+[`examples/mlflow_demo/`](examples/mlflow_demo/).
+
+## Documentation
+
+| Area | Where |
+|------|-------|
+| Getting started & guides | [`docs/guides/`](docs/guides/) |
+| Vision & motivation | [`docs/vision.md`](docs/vision.md) |
+| Architecture & ADRs | [`docs/architecture/`](docs/architecture/) |
+| Reference (containers, CLI, layering) | [`docs/reference/`](docs/reference/) |
+| Subsystem design docs | [`docs/design/`](docs/design/) |
+| Contributing | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+
+---
 
 ## Authentication
 
-ACP containers require exactly one of these environment variables:
+Agent containers require exactly one of these environment variables:
 
 **Option 1: OAuth token (Claude Pro/Max subscription)**
 ```bash
@@ -17,7 +81,7 @@ export CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat01-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
-The `DEFAULT_ENV_ALLOWLIST` in `acp/container.py` passes these from the host environment into containers. The entrypoint script validates that exactly one auth method is present and rejects the container if both or neither are set.
+The `DEFAULT_ENV_ALLOWLIST` in `agent_foundry/agents/lifecycle.py` passes these from the host environment into containers. The entrypoint script validates that exactly one auth method is present and rejects the container if both or neither are set.
 
 ## Lifecycle events: platform vs. domain
 
@@ -34,7 +98,7 @@ run_ctx.lifecycle_writer.append_run_event(
 )
 ```
 
-The helper stamps `type=LifecycleEvent.DOMAIN` (= `"domain"`) itself; products only supply the kind and extra fields. `DOMAIN` is the **escape hatch** that lets a product extend the lifecycle stream with its own vocabulary without needing to modify Agent Foundry's enum. Consumers of the jsonl (e.g., a product-specific summary renderer) filter by `type == "domain"` and route on the `kind` subfield. Downstream examples: Archipelago's planned `summary.txt` renderer that groups a run's activity by change set and step — each boundary is emitted as a `DOMAIN` event with a `kind` like `"change_set_started"` or `"step_completed"`.
+The helper stamps `type=LifecycleEvent.DOMAIN` (= `"domain"`) itself; products only supply the kind and extra fields. `DOMAIN` is the **escape hatch** that lets a product extend the lifecycle stream with its own vocabulary without needing to modify Agent Foundry's enum. Consumers of the jsonl (e.g., a product-specific summary renderer) filter by `type == "domain"` and route on the `kind` subfield.
 
 Rule of thumb: if the event describes something the platform does (start a container, run a turn, invoke a function), that's a platform event — emitted automatically. If the event describes something the *product* does (commit a change set, escalate to a human, mark a review cycle complete), that's a `DOMAIN` event — the product emits it explicitly.
 
@@ -135,3 +199,7 @@ The MLflow adapter is independent — call `enable_mlflow_adapter` from an `on_r
 ### Local verification demo
 
 A working end-to-end example lives at `examples/mlflow_demo/`. It includes a `docker-compose.yaml` that brings up a local MLflow 3.7 server with SQLite persistence, a `main.py` showing the wiring above, and a smoke test (`tests/agent_foundry/mlflow_adapter/test_verification_demo.py`, gated by `AF_LIVE_MLFLOW=1`). See `examples/mlflow_demo/README.md` for setup steps.
+
+## License
+
+To be decided. See [LICENSE](LICENSE).

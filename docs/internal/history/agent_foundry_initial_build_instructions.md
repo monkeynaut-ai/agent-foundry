@@ -10,7 +10,7 @@ The following architectural decisions were made after the initial build and dive
 
 3. **DS8 (Planner generates Decision Support plan) — Deferred.** The demo uses a static JSON plan. Dynamic plan generation depends on the removed WiringPlanner.
 
-4. **Separation boundary established.** Agent Foundry (`agent_foundry.*`) must never import from product code (`archipelago.*`). Enforced via `import-linter`. See `docs/agent-foundry-separation-spec.md`.
+4. **Separation boundary established.** Agent Foundry (`agent_foundry.*`) must never import from product code (`archipelago.*`). Enforced via `import-linter`. See `docs/architecture/agent-foundry-separation-spec.md`.
 
 ---
 

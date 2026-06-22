@@ -14,6 +14,7 @@ hide/
 *.db
 
 .claude/worktrees
+.claude/agent-memory/
 
 # Eval harness run artifacts
 **/.runs/

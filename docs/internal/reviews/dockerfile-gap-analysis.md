@@ -173,4 +173,4 @@ Combining `--dangerously-skip-permissions` with a proper firewall (`init-firewal
 
 ## Appendix: Claude Code CLI Reference
 
-The full Claude Code CLI surface area reference (flags, settings.json, MCP, hooks, sessions, skills, subagents, Docker guidance) has been extracted to [`docs/reference/claude-code-cli-reference.md`](reference/claude-code-cli-reference.md).
+The full Claude Code CLI surface area reference (flags, settings.json, MCP, hooks, sessions, skills, subagents, Docker guidance) has been extracted to [`docs/reference/claude-code-cli-reference.md`](../../reference/claude-code-cli-reference.md).

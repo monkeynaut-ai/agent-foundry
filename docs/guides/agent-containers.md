@@ -139,7 +139,7 @@ See `docker/` in this repo for the Archipelago reference implementation.
 
 ## Reference
 
-For detailed schemas, message formats, field types, and the full ACP specification, see the [Agent Containers Guide for agents](../agents-guide/agent-containers-guide.md). That document is written as a machine-readable reference; this document explains the concepts behind it.
+For detailed schemas, message formats, field types, and the full ACP specification, see the [Agent Containers reference](../reference/agent-containers.md). That document is written as a machine-readable reference; this document explains the concepts behind it.
 
 ## Key files
 

@@ -534,7 +534,7 @@ arguments:
 ### Container Best Practices
 - **Headless mode:** Use `claude -p --output-format stream-json --verbose` for JSON streaming
 - **Session resumption:** Capture `system.init` event for session ID, use `--resume SESSION_ID`
-- **Task completion signals:** See [`docs/archipelago/adapter_protocol_spec.md`](../archipelago/adapter_protocol_spec.md) for the full protocol
+- **Task completion signals:** See the [Agent Containers reference](agent-containers.md) for the full protocol
 - **Permissions in containers:** Use `--dangerously-skip-permissions` (safe in isolated container)
 - **MCP in containers:** Configure via `--mcp-config` flag or `.mcp.json`
 

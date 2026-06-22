@@ -1,10 +1,4 @@
-# Agent Foundry Users Guide
-
-## Topics
-
-- [Agent Containers](agent-containers.md) — running AI agents in Docker containers with structured communication
-
-## CLAUDE.md Layering
+# CLAUDE.md Layering
 
 There are at least three layers of CLAUDE.md files in the system, serving different audiences at different times:
 
@@ -39,4 +33,4 @@ There are at least three layers of CLAUDE.md files in the system, serving differ
 
 ### Open question: precedence
 
-This is essentially work-status item 19 — the two-layer CLAUDE.md strategy — but it's actually three layers now. Worth defining a precedence rule: does Layer 3 override Layer 2? Does Layer 2 override Layer 1? Or do they merge? How are contradictions resolved?
+Worth defining a precedence rule: does Layer 3 override Layer 2? Does Layer 2 override Layer 1? Or do they merge? How are contradictions resolved?

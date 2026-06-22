@@ -38,14 +38,29 @@ action = FunctionAction[MyInput, MyOutput](
 plan = PrimitivePlan(root=action)
 ```
 
-**3. Run it:**
+**3. Run it** — `run_primitive_plan` is the single public entry point. It is `async`,
+takes keyword-only arguments, and returns a `RunOutcome` (`RunCompleted` /
+`RunAborted` / `RunFailed`) whose `.output` holds the typed final state:
 
 ```python
-from agent_foundry.compiler import run_primitive_plan
+from agent_foundry.orchestration.runner import run_primitive_plan
+from agent_foundry.orchestration import RunCompleted
 
-output = run_primitive_plan(plan, MyInput(data="hello"))
-# output is MyOutput(data='hello', result='HELLO')
+outcome = await run_primitive_plan(
+    plan,
+    initial_state=MyInput(data="hello"),
+    artifacts_dir=run_dir,            # Path where this run writes lifecycle/summary
+    workspace_volume="my-vol",        # Docker volume backing agent workspaces
+    base_image_tag="agent-foundry-base:latest",
+    responder_provider=my_provider,   # supplies responses to GateAction interactions
+)
+
+if isinstance(outcome, RunCompleted):
+    print(outcome.output)  # MyOutput(data='hello', result='HELLO')
 ```
+
+For a complete, runnable end-to-end example (including telemetry wiring), see the
+[README](../../README.md) and `examples/mlflow_demo/`.
 
 ## Primitive types
 
