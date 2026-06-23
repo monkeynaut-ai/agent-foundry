@@ -56,7 +56,7 @@ class ContainerConfig(BaseModel):
     Products may extend or compose with this for domain-specific fields.
     """
 
-    mem_limit_mb: int = 1024
+    mem_limit_mb: int = 2048
     cpu_quota: int = 100_000
     pids_limit: int = 2048
     tmp_size_mb: int = 1024

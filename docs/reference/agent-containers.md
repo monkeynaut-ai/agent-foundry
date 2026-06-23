@@ -537,7 +537,7 @@ Resource constraints for a container. Products may pass their own constraint obj
 
 ```python
 class ContainerConfig(BaseModel):
-    mem_limit_mb: int = 1024       # Docker --memory (megabytes)
+    mem_limit_mb: int = 2048       # Docker --memory (megabytes)
     cpu_quota: int = 100_000       # Docker --cpu-quota (microseconds per period)
     pids_limit: int = 256          # Docker --pids-limit
 ```

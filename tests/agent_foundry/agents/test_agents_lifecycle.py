@@ -38,7 +38,7 @@ def manager(mock_client):
 class TestContainerConfig:
     def test_given_default_config_when_constructed_then_has_sane_defaults(self):
         cfg = ContainerConfig()
-        assert cfg.mem_limit_mb == 1024
+        assert cfg.mem_limit_mb == 2048
         assert cfg.cpu_quota == 100_000
         assert cfg.pids_limit == 2048
         assert cfg.tmp_size_mb == 1024
