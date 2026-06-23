@@ -56,6 +56,7 @@ class Model:
     CLAUDE_OPUS_4_7: ModelEntry
     CLAUDE_SONNET_4_6: ModelEntry
     CLAUDE_HAIKU_4_5: ModelEntry
+    GPT_5_5: ModelEntry
     GPT_5_4: ModelEntry
     GPT_5_4_MINI: ModelEntry
 
@@ -103,13 +104,26 @@ def _register_builtins() -> None:
     register_model("CLAUDE_HAIKU_4_5", Model.CLAUDE_HAIKU_4_5)
 
     # OpenAI models call the same Anthropic-free path through OpenAIProvider.
+    # Capability values per the OpenAI model docs (developers.openai.com).
     openai = OpenAIProvider()
+
+    Model.GPT_5_5 = ModelEntry(
+        model_id="gpt-5.5",
+        provider=openai,
+        capabilities=ModelCapabilities(
+            context_window=1_050_000,
+            max_output_tokens=128_000,
+            supports_thinking=True,
+            supports_vision=True,
+        ),
+    )
+    register_model("GPT_5_5", Model.GPT_5_5)
 
     Model.GPT_5_4 = ModelEntry(
         model_id="gpt-5.4",
         provider=openai,
         capabilities=ModelCapabilities(
-            context_window=400_000,
+            context_window=1_050_000,
             max_output_tokens=128_000,
             supports_thinking=True,
             supports_vision=True,

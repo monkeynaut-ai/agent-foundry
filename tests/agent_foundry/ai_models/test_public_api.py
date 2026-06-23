@@ -52,7 +52,13 @@ def test_concrete_providers_are_publicly_exported():
 def test_openai_models_are_registered():
     from agent_foundry.ai_models import Model, get_model
 
+    assert get_model("GPT_5_5") is Model.GPT_5_5
     assert get_model("GPT_5_4") is Model.GPT_5_4
     assert get_model("GPT_5_4_MINI") is Model.GPT_5_4_MINI
+    assert Model.GPT_5_5.model_id == "gpt-5.5"
     assert Model.GPT_5_4.model_id == "gpt-5.4"
     assert Model.GPT_5_4_MINI.model_id == "gpt-5.4-mini"
+    # Capabilities sourced from the OpenAI model docs.
+    assert Model.GPT_5_5.capabilities.context_window == 1_050_000
+    assert Model.GPT_5_4.capabilities.context_window == 1_050_000
+    assert Model.GPT_5_4_MINI.capabilities.context_window == 400_000
