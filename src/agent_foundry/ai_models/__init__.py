@@ -20,8 +20,10 @@ from agent_foundry.ai_models.model import (
     register_model,
 )
 from agent_foundry.ai_models.providers import AnthropicProvider, OpenAIProvider
+from agent_foundry.ai_models.resilience import DEFAULT_RETRY_POLICY, RetryPolicy
 
 __all__ = [
+    "DEFAULT_RETRY_POLICY",
     "AnthropicProvider",
     "InferenceParameters",
     "InferenceProvider",
@@ -31,6 +33,7 @@ __all__ = [
     "ModelCapabilities",
     "ModelEntry",
     "OpenAIProvider",
+    "RetryPolicy",
     "get_model",
     "register_model",
 ]

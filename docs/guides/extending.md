@@ -250,6 +250,14 @@ An `AICall` then references the entry via its `model` field
 (`get_model("my-model")`, a built-in `Model.CLAUDE_SONNET_4_6`, or a `ModelEntry`
 you construct). `register_model` is duplicate-guarded like the other registries.
 
+**Resilience.** `invoke_ai_call` retries transient errors and fails over down a
+chain. For retry to work, a custom provider should override
+`is_transient(exc)` to classify its SDK's errors (rate limits / timeouts / 5xx →
+`True`); the base default is `False` (no retry). Set `ModelEntry.fallback` to a
+default failover target, and a product can override per call with
+`AICall.retry` (a `RetryPolicy`) and `AICall.fallbacks` (a `list[ModelEntry]`;
+`[]` disables failover).
+
 ## Summary
 
 | You want to… | Use | Register / pass |

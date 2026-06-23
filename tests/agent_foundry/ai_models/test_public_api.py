@@ -62,3 +62,22 @@ def test_openai_models_are_registered():
     assert Model.GPT_5_5.capabilities.context_window == 1_050_000
     assert Model.GPT_5_4.capabilities.context_window == 1_050_000
     assert Model.GPT_5_4_MINI.capabilities.context_window == 400_000
+
+
+def test_retry_policy_is_publicly_exported():
+    from agent_foundry.ai_models import DEFAULT_RETRY_POLICY, RetryPolicy
+
+    assert {"RetryPolicy", "DEFAULT_RETRY_POLICY"} <= set(ai_models.__all__)
+    assert isinstance(DEFAULT_RETRY_POLICY, RetryPolicy)
+
+
+def test_builtin_models_have_same_family_fallback_chains():
+    from agent_foundry.ai_models import Model
+
+    # Same-family default chains (cross-provider is opt-in via override).
+    assert Model.GPT_5_5.fallback is Model.GPT_5_4
+    assert Model.GPT_5_4.fallback is Model.GPT_5_4_MINI
+    assert Model.GPT_5_4_MINI.fallback is None
+    assert Model.CLAUDE_OPUS_4_7.fallback is Model.CLAUDE_SONNET_4_6
+    assert Model.CLAUDE_SONNET_4_6.fallback is Model.CLAUDE_HAIKU_4_5
+    assert Model.CLAUDE_HAIKU_4_5.fallback is None

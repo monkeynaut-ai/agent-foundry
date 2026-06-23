@@ -20,11 +20,16 @@ class ModelCapabilities(BaseModel):
 
 @dataclass
 class ModelEntry:
-    """A registered AI model — its identity, provider, and capabilities."""
+    """A registered AI model — its identity, provider, and capabilities.
+
+    ``fallback`` is the model to fail over to when this one persistently fails
+    (after retries). Following ``fallback`` forms a chain; ``None`` ends it.
+    """
 
     model_id: str
     provider: InferenceProvider
     capabilities: ModelCapabilities
+    fallback: ModelEntry | None = None
 
 
 _registry: dict[str, ModelEntry] = {}
@@ -142,6 +147,14 @@ def _register_builtins() -> None:
         ),
     )
     register_model("GPT_5_4_MINI", Model.GPT_5_4_MINI)
+
+    # Default failover chains — same family (least surprising). Cross-provider
+    # redundancy is available to products by overriding fallback or passing an
+    # AICall.fallbacks chain.
+    Model.CLAUDE_OPUS_4_7.fallback = Model.CLAUDE_SONNET_4_6
+    Model.CLAUDE_SONNET_4_6.fallback = Model.CLAUDE_HAIKU_4_5
+    Model.GPT_5_5.fallback = Model.GPT_5_4
+    Model.GPT_5_4.fallback = Model.GPT_5_4_MINI
 
 
 _register_builtins()

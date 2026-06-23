@@ -9,8 +9,10 @@ inference call runs.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
+import anthropic
+import openai
 import pytest
 from pydantic import BaseModel
 
@@ -136,3 +138,33 @@ async def test_openai_close_on_unused_provider_is_noop(monkeypatch: pytest.Monke
     provider = OpenAIProvider()
     await provider.close()
     assert provider._client_instance is None
+
+
+# -- is_transient classification --
+
+
+def _status_error(sdk_cls, status: int):
+    err = Mock(spec=sdk_cls)
+    err.status_code = status
+    return err
+
+
+def test_openai_is_transient_classification() -> None:
+    p = OpenAIProvider(api_key="x")
+    assert p.is_transient(Mock(spec=openai.RateLimitError)) is True
+    assert p.is_transient(Mock(spec=openai.APITimeoutError)) is True
+    assert p.is_transient(Mock(spec=openai.APIConnectionError)) is True
+    assert p.is_transient(Mock(spec=openai.InternalServerError)) is True
+    assert p.is_transient(_status_error(openai.APIStatusError, 503)) is True
+    assert p.is_transient(_status_error(openai.AuthenticationError, 401)) is False
+    assert p.is_transient(_status_error(openai.BadRequestError, 400)) is False
+    assert p.is_transient(ValueError("not an SDK error")) is False
+
+
+def test_anthropic_is_transient_classification() -> None:
+    p = AnthropicProvider(api_key="x")
+    assert p.is_transient(Mock(spec=anthropic.RateLimitError)) is True
+    assert p.is_transient(Mock(spec=anthropic.InternalServerError)) is True
+    assert p.is_transient(_status_error(anthropic.APIStatusError, 502)) is True
+    assert p.is_transient(_status_error(anthropic.AuthenticationError, 401)) is False
+    assert p.is_transient(ValueError("not an SDK error")) is False

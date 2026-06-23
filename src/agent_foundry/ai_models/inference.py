@@ -61,3 +61,15 @@ class InferenceProvider(ABC):
     @abstractmethod
     async def close(self) -> None:
         """Release any resources held by the provider."""
+
+    def is_transient(self, exc: Exception) -> bool:
+        """Return True if ``exc`` is a transient failure worth retrying.
+
+        Transient means a retry of the same call could succeed (rate limits,
+        timeouts, connection drops, 5xx). Persistent failures (auth, bad
+        request, model-unavailable) return False so the caller fails over
+        instead of hammering the same model. Each provider classifies its own
+        SDK's exception taxonomy; the base default is conservative — unknown
+        errors are treated as persistent (no retry).
+        """
+        return False
