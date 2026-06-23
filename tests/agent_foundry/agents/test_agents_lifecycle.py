@@ -130,9 +130,7 @@ class TestCreateContainer:
         assert kw["network"] == "bridge"
         assert kw["extra_hosts"] == {"host.docker.internal": "host-gateway"}
 
-    def test_given_named_network_when_create_called_then_passed_through(
-        self, manager, mock_client
-    ):
+    def test_given_named_network_when_create_called_then_passed_through(self, manager, mock_client):
         manager.create_container(constraints=ContainerConfig(network="egress-filtered"))
         kw = mock_client.containers.create.call_args.kwargs
         assert kw["network"] == "egress-filtered"

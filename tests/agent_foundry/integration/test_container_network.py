@@ -51,9 +51,7 @@ class TestContainerNetworkWiring:
 
     def test_given_bridge_when_create_called_then_attached_to_bridge(self, docker_client):
         manager = ContainerManager(client=docker_client, default_image=_BASE_IMAGE)
-        handle = manager.create_container(
-            constraints=ContainerConfig(network=NetworkMode.BRIDGE)
-        )
+        handle = manager.create_container(constraints=ContainerConfig(network=NetworkMode.BRIDGE))
         try:
             assert _network_mode(manager, handle) == "bridge"
         finally:
@@ -65,9 +63,7 @@ class TestContainerNetworkWiring:
         manager = ContainerManager(client=docker_client, default_image=_BASE_IMAGE)
         handle = None
         try:
-            handle = manager.create_container(
-                constraints=ContainerConfig(network=net_name)
-            )
+            handle = manager.create_container(constraints=ContainerConfig(network=net_name))
             assert _network_mode(manager, handle) == net_name
         finally:
             if handle is not None:

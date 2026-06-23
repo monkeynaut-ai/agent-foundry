@@ -59,7 +59,9 @@ def _start_idle_container(manager: ContainerManager):
         time.sleep(0.25)
     logs = handle._container.logs(tail=40).decode(errors="replace")
     manager.destroy(handle)
-    raise AssertionError(f"container did not become healthy within {_HEALTH_TIMEOUT_S}s; logs={logs}")
+    raise AssertionError(
+        f"container did not become healthy within {_HEALTH_TIMEOUT_S}s; logs={logs}"
+    )
 
 
 @pytest.mark.integration
