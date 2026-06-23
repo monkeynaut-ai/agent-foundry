@@ -41,6 +41,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from agent_foundry import runtime
+from agent_foundry.agents.lifecycle import ContainerConfig, NetworkMode
 from agent_foundry.constructs.models import (
     AgentAction,
     ContainerReusePolicy,
@@ -167,6 +168,8 @@ async def test_end_to_end_real_claude_code(tmp_path: Path, cleanup_volumes) -> N
         instructions_provider=_instructions,
         executor=run_agent_in_container,
         reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+        # Real claude needs egress to reach the Anthropic API.
+        container_config=ContainerConfig(network=NetworkMode.BRIDGE),
     )
 
     def _finalize(state: StateB) -> StateC:
