@@ -299,6 +299,12 @@ class ContainerManager(ContainerManagerBase):
 
         create_kwargs: dict[str, Any] = {
             "detach": True,
+            # Run a tini init as PID 1. The idle entrypoint (`tail -f
+            # /dev/null`) neither reaps nor forwards signals; without an init,
+            # children orphaned by `docker exec` turns reparent to it and pile
+            # up as zombies in long-lived reused containers, and SIGTERM on
+            # stop isn't forwarded. tini reaps and forwards.
+            "init": True,
             "cap_drop": ["ALL"],
             "cap_add": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
             "read_only": False,
