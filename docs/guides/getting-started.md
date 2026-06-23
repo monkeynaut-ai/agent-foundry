@@ -43,8 +43,7 @@ takes keyword-only arguments, and returns a `RunOutcome` (`RunCompleted` /
 `RunAborted` / `RunFailed`) whose `.output` holds the typed final state:
 
 ```python
-from agent_foundry.orchestration.runner import run_process
-from agent_foundry.orchestration import RunCompleted
+from agent_foundry.orchestration import run_process, RunCompleted
 
 outcome = await run_process(
     process,

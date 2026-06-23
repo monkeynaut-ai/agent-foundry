@@ -1,5 +1,6 @@
 """Composable, typed process constructs for Agent Foundry."""
 
+from agent_foundry.constructs.ai_call import AICall, ModelInput
 from agent_foundry.constructs.claude_code import ClaudeEffort, ClaudeModel, list_claude_models
 from agent_foundry.constructs.errors import (
     ConstructCompilationError,
@@ -39,6 +40,7 @@ from agent_foundry.constructs.retry_types import (
 from agent_foundry.constructs.validators import register_validator, validate_construct
 
 __all__ = [
+    "AICall",
     "AgentAction",
     "AsyncFunctionAction",
     "AttemptFailure",
@@ -57,6 +59,7 @@ __all__ = [
     "Loop",
     "McpServer",
     "McpTransport",
+    "ModelInput",
     "Process",
     "ResolverDidNotConvergeError",
     "ResolverDisposition",
