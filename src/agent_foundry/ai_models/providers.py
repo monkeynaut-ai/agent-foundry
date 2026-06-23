@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+from types import ModuleType
 
+import anthropic
+import openai
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
@@ -13,6 +16,29 @@ from agent_foundry.ai_models.inference import (
     InferenceResult,
 )
 from agent_foundry.models.usage import TokenUsage
+
+
+def _sdk_error_is_transient(exc: Exception, sdk: ModuleType) -> bool:
+    """Classify an openai/anthropic SDK exception as transient (retryable).
+
+    Both SDKs share the same exception taxonomy. Timeouts, connection drops,
+    rate limits, and 5xx are transient; everything else (auth, bad request,
+    not-found, …) is persistent.
+    """
+    if isinstance(
+        exc,
+        (
+            sdk.APITimeoutError,
+            sdk.APIConnectionError,
+            sdk.RateLimitError,
+            sdk.InternalServerError,
+        ),
+    ):
+        return True
+    if isinstance(exc, sdk.APIStatusError):
+        status = getattr(exc, "status_code", 0)
+        return status == 429 or status >= 500
+    return False
 
 
 class AnthropicProvider(InferenceProvider):
@@ -74,6 +100,9 @@ class AnthropicProvider(InferenceProvider):
         if self._client_instance is not None:
             await self._client_instance.close()
 
+    def is_transient(self, exc: Exception) -> bool:
+        return _sdk_error_is_transient(exc, anthropic)
+
 
 class OpenAIProvider(InferenceProvider):
     """Inference provider backed by the OpenAI Responses API.
@@ -127,3 +156,6 @@ class OpenAIProvider(InferenceProvider):
     async def close(self) -> None:
         if self._client_instance is not None:
             await self._client_instance.close()
+
+    def is_transient(self, exc: Exception) -> bool:
+        return _sdk_error_is_transient(exc, openai)

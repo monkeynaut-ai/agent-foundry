@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from agent_foundry.ai_models.inference import InferenceParameters
 from agent_foundry.ai_models.model import ModelEntry
+from agent_foundry.ai_models.resilience import RetryPolicy
 from agent_foundry.constructs.models import Construct
 
 
@@ -28,6 +29,14 @@ class AICall[I: BaseModel, O: BaseModel](Construct[I, O], arbitrary_types_allowe
     model_input: ModelInput[I]
     model: ModelEntry | Callable[[I], ModelEntry]
     parameters: InferenceParameters | Callable[[I], InferenceParameters]
+    retry: RetryPolicy | None = None
+    """Retry policy for transient errors. ``None`` uses ``DEFAULT_RETRY_POLICY``."""
+    fallbacks: list[ModelEntry] | None = None
+    """Failover chain tried after the primary model persistently fails.
+
+    ``None`` derives the chain from the primary model's ``ModelEntry.fallback``;
+    ``[]`` disables failover; a non-empty list overrides the chain (and may
+    span providers)."""
     timeout_seconds: int = Field(default=30, ge=1)
     name: str | None = Field(default=None, min_length=1)
     """Diagnostic label for lifecycle events, spans, and logs. Not used for

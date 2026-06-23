@@ -16,17 +16,34 @@ onto the ``AI_CALL_COMPLETED`` lifecycle event.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import TYPE_CHECKING, cast
 
 from pydantic import BaseModel
 
 from agent_foundry.ai_models.inference import InferenceParameters, InferenceRequest
 from agent_foundry.ai_models.model import ModelEntry
+from agent_foundry.ai_models.resilience import DEFAULT_RETRY_POLICY
 from agent_foundry.constructs.models import get_type_args
 from agent_foundry.models.usage import TokenUsage
 
 if TYPE_CHECKING:
     from agent_foundry.constructs.ai_call import AICall
+
+logger = logging.getLogger(__name__)
+
+
+def _fallback_chain(entry: ModelEntry) -> list[ModelEntry]:
+    """Follow ``ModelEntry.fallback`` into a list, stopping at None or a cycle."""
+    chain: list[ModelEntry] = []
+    seen = {id(entry)}
+    node = entry.fallback
+    while node is not None and id(node) not in seen:
+        chain.append(node)
+        seen.add(id(node))
+        node = node.fallback
+    return chain
 
 
 class AICallResult[O: BaseModel](BaseModel):
@@ -70,25 +87,52 @@ async def invoke_ai_call[I: BaseModel, O: BaseModel](
         if isinstance(construct.parameters, InferenceParameters)
         else construct.parameters(model_input)
     )
-    model_entry = (
+    primary = (
         construct.model if isinstance(construct.model, ModelEntry) else construct.model(model_input)
     )
+    retry_policy = construct.retry or DEFAULT_RETRY_POLICY
+    chain = construct.fallbacks if construct.fallbacks is not None else _fallback_chain(primary)
+    candidates = [primary, *chain]
 
-    request = InferenceRequest(
-        model_id=model_entry.model_id,
-        instructions=instructions,
-        prompt=prompt,
-        parameters=parameters,
-        output_type=output_type,
-    )
-    result = await model_entry.provider(request)
-
-    if not isinstance(result.output, output_type):
-        raise TypeError(
-            f"AICall provider returned {type(result.output).__name__}, "
-            f"expected {output_type.__name__}"
+    # Outer loop: fail over down the chain. Inner loop: retry transient errors
+    # against the current model. A persistent error (or exhausted retries)
+    # advances to the next model; if all fail, the last error propagates.
+    last_exc: Exception | None = None
+    for entry in candidates:
+        request = InferenceRequest(
+            model_id=entry.model_id,
+            instructions=instructions,
+            prompt=prompt,
+            parameters=parameters,
+            output_type=output_type,
         )
-    return cast(
-        "AICallResult[O]",
-        AICallResult(output=result.output, usage=result.usage),
-    )
+        for attempt in range(1, retry_policy.max_attempts + 1):
+            try:
+                result = await entry.provider(request)
+                if not isinstance(result.output, output_type):
+                    raise TypeError(
+                        f"AICall provider returned {type(result.output).__name__}, "
+                        f"expected {output_type.__name__}"
+                    )
+                return cast(
+                    "AICallResult[O]",
+                    AICallResult(output=result.output, usage=result.usage),
+                )
+            except Exception as exc:
+                last_exc = exc
+                if entry.provider.is_transient(exc) and attempt < retry_policy.max_attempts:
+                    logger.warning(
+                        "transient error from %s (attempt %d/%d): %s; retrying",
+                        entry.model_id,
+                        attempt,
+                        retry_policy.max_attempts,
+                        exc,
+                    )
+                    await asyncio.sleep(retry_policy.backoff_for(attempt))
+                    continue
+                if entry is not candidates[-1]:
+                    logger.warning("model %s failed (%s); failing over", entry.model_id, exc)
+                break
+
+    assert last_exc is not None  # candidates is always non-empty (primary)
+    raise last_exc
