@@ -133,8 +133,7 @@ import asyncio
 from pathlib import Path
 
 from agent_foundry.constructs import Process
-from agent_foundry.orchestration import run_process
-from agent_foundry.orchestration.run_outcome import RunCompleted
+from agent_foundry.orchestration import run_process, RunCompleted
 from agent_foundry.responders.protocol import static_provider
 
 

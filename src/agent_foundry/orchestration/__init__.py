@@ -16,6 +16,14 @@ from agent_foundry.orchestration.lifecycle_writer import (
     LifecycleWriter,
     NoOpLifecycleWriter,
 )
+from agent_foundry.orchestration.run_outcome import (
+    FailureKind,
+    RunAborted,
+    RunCompleted,
+    RunFailed,
+    RunOutcome,
+    RunOutcomeKind,
+)
 from agent_foundry.orchestration.summary import render_summary
 
 if TYPE_CHECKING:
@@ -23,10 +31,16 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AgentFailedError",
+    "FailureKind",
     "JsonlLifecycleWriter",
     "LifecycleEvent",
     "LifecycleWriter",
     "NoOpLifecycleWriter",
+    "RunAborted",
+    "RunCompleted",
+    "RunFailed",
+    "RunOutcome",
+    "RunOutcomeKind",
     "agent_log_path",
     "agent_turn_dir",
     "bootstrap_run_artifacts",

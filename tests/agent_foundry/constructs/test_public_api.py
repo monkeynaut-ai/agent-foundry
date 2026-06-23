@@ -23,3 +23,16 @@ def test_run_process_is_publicly_exported():
 
     assert "run_process" in orchestration.__all__
     assert callable(run_process)
+
+
+def test_run_outcome_types_are_publicly_exported():
+    # Products inspect the run outcome after run_process; the outcome types
+    # must be importable from the public package, not an internal module.
+    from agent_foundry.orchestration import RunAborted, RunCompleted, RunFailed, RunOutcome
+
+    for name in ("RunCompleted", "RunAborted", "RunFailed", "RunOutcome"):
+        assert name in orchestration.__all__
+    assert RunCompleted is not None
+    assert RunAborted is not None
+    assert RunFailed is not None
+    assert RunOutcome is not None
