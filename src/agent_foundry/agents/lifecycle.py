@@ -36,6 +36,18 @@ DEFAULT_ENV_ALLOWLIST = {
 _AGENT_USER = "claude"
 
 
+class NetworkMode(StrEnum):
+    """Container network attachment, mapped to Docker's ``--network``.
+
+    ``NONE`` gives the container no network interface at all (no egress,
+    no ingress). ``BRIDGE`` attaches Docker's default bridge, which
+    permits unrestricted outbound internet.
+    """
+
+    NONE = "none"
+    BRIDGE = "bridge"
+
+
 class ContainerConfig(BaseModel):
     """Generic container resource constraints.
 
@@ -46,6 +58,7 @@ class ContainerConfig(BaseModel):
     cpu_quota: int = 100_000
     pids_limit: int = 2048
     tmp_size_mb: int = 1024
+    network: NetworkMode = NetworkMode.NONE
 
 
 class ExecResult(BaseModel):
@@ -262,21 +275,26 @@ class ContainerManager(ContainerManagerBase):
         if extra_env:
             environment.update(extra_env)
 
+        create_kwargs: dict[str, Any] = {
+            "detach": True,
+            "cap_drop": ["ALL"],
+            "cap_add": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
+            "read_only": False,
+            "tmpfs": {"/tmp": f"size={constraints.tmp_size_mb}m"},
+            "volumes": volumes,
+            "mem_limit": f"{constraints.mem_limit_mb}m",
+            "environment": environment,
+            "network": constraints.network.value,
+            "cpu_quota": constraints.cpu_quota,
+            "pids_limit": constraints.pids_limit,
+        }
+        # The host-gateway alias resolves only when the container is on a
+        # network; passing it under `none` has nothing to bind to.
+        if constraints.network is not NetworkMode.NONE:
+            create_kwargs["extra_hosts"] = {"host.docker.internal": "host-gateway"}
+
         try:
-            container = self._client.containers.create(
-                image,
-                detach=True,
-                cap_drop=["ALL"],
-                cap_add=["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
-                read_only=False,
-                tmpfs={"/tmp": f"size={constraints.tmp_size_mb}m"},
-                volumes=volumes,
-                mem_limit=f"{constraints.mem_limit_mb}m",
-                environment=environment,
-                extra_hosts={"host.docker.internal": "host-gateway"},
-                cpu_quota=constraints.cpu_quota,
-                pids_limit=constraints.pids_limit,
-            )
+            container = self._client.containers.create(image, **create_kwargs)
         except Exception as e:
             raise ContainerCreationError(str(e), image=image) from e
 

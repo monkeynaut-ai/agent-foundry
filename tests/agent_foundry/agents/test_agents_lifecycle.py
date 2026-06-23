@@ -15,6 +15,7 @@ from agent_foundry.agents.lifecycle import (
     ExecResult,
     HealthReport,
     HealthStatus,
+    NetworkMode,
 )
 
 
@@ -40,6 +41,11 @@ class TestContainerConfig:
         assert cfg.cpu_quota == 100_000
         assert cfg.pids_limit == 2048
         assert cfg.tmp_size_mb == 1024
+
+    def test_given_default_config_when_constructed_then_egress_denied(self):
+        # Safe by default: a container gets no network unless the product opts in.
+        cfg = ContainerConfig()
+        assert cfg.network == NetworkMode.NONE
 
 
 class TestDefaultEnvAllowlist:
@@ -87,6 +93,21 @@ class TestCreateContainer:
         assert "user" not in kw  # entrypoint owns user switching via gosu
         assert kw["cap_drop"] == ["ALL"]
         assert kw["cap_add"] == ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
+
+    def test_given_default_when_create_called_then_egress_denied(self, manager, mock_client):
+        manager.create_container()
+        kw = mock_client.containers.create.call_args.kwargs
+        assert kw["network"] == "none"
+        # host.docker.internal mapping needs the host gateway, which only
+        # exists when the container is on a network — omit it under `none`.
+        assert "extra_hosts" not in kw
+
+    def test_given_bridge_network_when_create_called_then_egress_enabled(
+        self, manager, mock_client
+    ):
+        manager.create_container(constraints=ContainerConfig(network=NetworkMode.BRIDGE))
+        kw = mock_client.containers.create.call_args.kwargs
+        assert kw["network"] == "bridge"
         assert kw["extra_hosts"] == {"host.docker.internal": "host-gateway"}
 
     def test_given_constraints_when_create_called_then_resource_limits_applied(
