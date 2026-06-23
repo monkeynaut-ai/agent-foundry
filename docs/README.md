@@ -6,6 +6,7 @@ Start with the [project README](../README.md) for what Agent Foundry is and how 
 
 - [Getting started](guides/getting-started.md) — define state models, compose constructs, run a process, extend with custom constructs
 - [Agent containers](guides/agent-containers.md) — running AI agents in Docker containers with structured communication
+- [Extending Agent Foundry](guides/extending.md) — custom constructs, compilers, validators, and executors
 
 ## Vision
 
