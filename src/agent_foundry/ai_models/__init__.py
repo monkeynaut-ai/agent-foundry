@@ -19,8 +19,10 @@ from agent_foundry.ai_models.model import (
     get_model,
     register_model,
 )
+from agent_foundry.ai_models.providers import AnthropicProvider, OpenAIProvider
 
 __all__ = [
+    "AnthropicProvider",
     "InferenceParameters",
     "InferenceProvider",
     "InferenceRequest",
@@ -28,6 +30,7 @@ __all__ = [
     "Model",
     "ModelCapabilities",
     "ModelEntry",
+    "OpenAIProvider",
     "get_model",
     "register_model",
 ]

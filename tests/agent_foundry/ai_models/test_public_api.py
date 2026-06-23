@@ -39,3 +39,20 @@ def test_provider_seam_is_publicly_exported():
     assert callable(get_model)
     assert InferenceParameters and InferenceRequest and InferenceResult
     assert Model and ModelCapabilities
+
+
+def test_concrete_providers_are_publicly_exported():
+    from agent_foundry.ai_models import AnthropicProvider, OpenAIProvider
+
+    assert {"AnthropicProvider", "OpenAIProvider"} <= set(ai_models.__all__)
+    assert ai_models.AnthropicProvider is AnthropicProvider
+    assert ai_models.OpenAIProvider is OpenAIProvider
+
+
+def test_openai_models_are_registered():
+    from agent_foundry.ai_models import Model, get_model
+
+    assert get_model("GPT_5_4") is Model.GPT_5_4
+    assert get_model("GPT_5_4_MINI") is Model.GPT_5_4_MINI
+    assert Model.GPT_5_4.model_id == "gpt-5.4"
+    assert Model.GPT_5_4_MINI.model_id == "gpt-5.4-mini"
