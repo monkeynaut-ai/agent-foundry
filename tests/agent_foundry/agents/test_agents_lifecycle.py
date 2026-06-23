@@ -58,6 +58,13 @@ class TestContainerConfig:
         with pytest.raises(ValidationError, match="dissolves container isolation"):
             ContainerConfig(network=bad)
 
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_given_blank_network_when_constructed_then_rejected(self, blank):
+        # Docker reads an empty network as the default bridge — reject it so
+        # misconfiguration fails loudly instead of silently enabling egress.
+        with pytest.raises(ValidationError, match="must not be empty"):
+            ContainerConfig(network=blank)
+
 
 class TestDefaultEnvAllowlist:
     def test_given_default_allowlist_then_contains_only_generic_vars(self):
