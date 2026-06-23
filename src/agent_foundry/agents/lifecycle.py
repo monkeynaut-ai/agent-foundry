@@ -67,8 +67,14 @@ class ContainerConfig(BaseModel):
 
     @field_validator("network")
     @classmethod
-    def _forbid_isolation_breaking_networks(cls, v: NetworkMode | str) -> NetworkMode | str:
+    def _validate_network(cls, v: NetworkMode | str) -> NetworkMode | str:
         name = str(v)
+        if not name.strip():
+            raise ValueError(
+                "network must not be empty; Docker reads an empty value as the "
+                "default (bridge) network, which would silently grant egress. "
+                "Use NetworkMode.NONE for no network."
+            )
         if name == "host" or name.startswith("container:"):
             raise ValueError(
                 f"network={name!r} dissolves container isolation; "
