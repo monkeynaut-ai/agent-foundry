@@ -111,6 +111,8 @@ class TestCreateContainer:
         assert "user" not in kw  # entrypoint owns user switching via gosu
         assert kw["cap_drop"] == ["ALL"]
         assert kw["cap_add"] == ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
+        # tini PID 1 reaps zombies from exec'd turns and forwards signals.
+        assert kw["init"] is True
 
     def test_given_default_when_create_called_then_egress_denied(self, manager, mock_client):
         manager.create_container()
