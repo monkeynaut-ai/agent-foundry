@@ -205,12 +205,58 @@ Because the executor is a field, switching strategies — container vs. SDK vs.
 API vs. a test double — is a one-line change in the product declaration; no
 platform code changes.
 
+## 6. Custom inference providers
+
+`AICall` makes a single structured LLM call through an **inference provider**.
+The platform ships `AnthropicProvider`; a product adds another backend by
+implementing `InferenceProvider` and registering a `ModelEntry` for it. (This is
+the direct-API path only — it is unrelated to how containerized `AgentAction`s
+run, which is governed by the `executor`/base-image seam above.)
+
+A provider maps an `InferenceRequest` to its backend and returns an
+`InferenceResult` (the parsed output plus optional token usage):
+
+```python
+from agent_foundry.ai_models import (
+    InferenceProvider, InferenceRequest, InferenceResult,
+    ModelEntry, ModelCapabilities, register_model,
+)
+
+
+class MyProvider(InferenceProvider):
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
+        # request carries: model_id, instructions, prompt, parameters, output_type
+        output = await my_backend_call(request)          # -> request.output_type
+        return InferenceResult(output=output, usage=None)  # usage optional
+
+    async def close(self) -> None:
+        ...  # release the backend client
+
+
+register_model(
+    "my-model",
+    ModelEntry(
+        model_id="my-model-v1",
+        provider=MyProvider(),
+        capabilities=ModelCapabilities(
+            context_window=128_000, max_output_tokens=8_000,
+            supports_thinking=False, supports_vision=False,
+        ),
+    ),
+)
+```
+
+An `AICall` then references the entry via its `model` field
+(`get_model("my-model")`, a built-in `Model.CLAUDE_SONNET_4_6`, or a `ModelEntry`
+you construct). `register_model` is duplicate-guarded like the other registries.
+
 ## Summary
 
 | You want to… | Use | Register / pass |
 | --- | --- | --- |
 | Add a new construct shape | `Construct` subclass | `register_compiler`, `register_validator` |
 | Change how an action runs | existing action construct | `executor=` callable |
+| Add an LLM backend for `AICall` | `InferenceProvider` subclass | `register_model` |
 
-All three seams keep the construct declaration authoritative and leave the
-platform core untouched.
+All seams keep the construct declaration authoritative and leave the platform
+core untouched.
