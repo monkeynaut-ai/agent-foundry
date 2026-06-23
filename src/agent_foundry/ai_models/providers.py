@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
 from agent_foundry.ai_models.inference import (
     InferenceProvider,
@@ -70,5 +71,59 @@ class AnthropicProvider(InferenceProvider):
     async def close(self) -> None:
         # Read the backing field, not the property — closing must not lazily
         # build a client just to tear it down.
+        if self._client_instance is not None:
+            await self._client_instance.close()
+
+
+class OpenAIProvider(InferenceProvider):
+    """Inference provider backed by the OpenAI Responses API.
+
+    Uses OpenAI's native structured outputs (``responses.parse`` with the
+    output model as ``text_format``), so the model is constrained to emit JSON
+    matching the schema — no tool-call indirection. Owns one ``AsyncOpenAI``
+    client for the instance lifetime; the client is safe for concurrent use
+    within an event loop.
+    """
+
+    def __init__(self, api_key: str | None = None) -> None:
+        self._api_key = api_key
+        self._client_instance: AsyncOpenAI | None = None
+
+    @property
+    def _client(self) -> AsyncOpenAI:
+        # Built on first use so a key loaded after construction (the common
+        # load_dotenv()-after-import case) is still picked up.
+        if self._client_instance is None:
+            self._client_instance = AsyncOpenAI(
+                api_key=self._api_key or os.environ.get("OPENAI_API_KEY")
+            )
+        return self._client_instance
+
+    async def __call__(self, request: InferenceRequest) -> InferenceResult:
+        kwargs: dict = {
+            "model": request.model_id,
+            "instructions": request.instructions,
+            "input": request.prompt,
+            "text_format": request.output_type,
+        }
+        # Only forward tuning params when set — some reasoning models reject an
+        # explicit temperature, and an unset cap means "provider default".
+        if request.parameters.max_tokens is not None:
+            kwargs["max_output_tokens"] = request.parameters.max_tokens
+        if request.parameters.temperature is not None:
+            kwargs["temperature"] = request.parameters.temperature
+
+        response = await self._client.responses.parse(**kwargs)
+        output = response.output_parsed
+        if output is None:
+            raise RuntimeError(
+                f"OpenAI provider returned no parsed output for model {request.model_id!r}"
+            )
+        usage = TokenUsage.from_mapping(
+            response.usage.model_dump() if response.usage is not None else None
+        )
+        return InferenceResult(output=output, usage=usage)
+
+    async def close(self) -> None:
         if self._client_instance is not None:
             await self._client_instance.close()

@@ -25,6 +25,7 @@ dependencies = [
     "fastapi>=0.136.1",
     "uvicorn[standard]>=0.47.0",
     "archetype-md>=0.2.0",
+    "openai>=2.43.0",
 ]
 requires-python = "==3.14.*"
 readme = "README.md"
