@@ -15,6 +15,7 @@ import pytest
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
+from agent_foundry.agents.lifecycle import ContainerConfig, NetworkMode
 from agent_foundry.constructs.mcp import StdioMcpServer
 from agent_foundry.constructs.models import AgentAction, ContainerReusePolicy
 from agent_foundry.constructs.process import Process
@@ -118,6 +119,8 @@ async def test_agent_calls_stdio_mcp_tool_and_returns_result(
         reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
         mcp_servers={"echo": StdioMcpServer(command="bash", args=["-c", _ECHO_SERVER_SCRIPT])},
         skip_permissions=True,
+        # Real claude needs egress to reach the Anthropic API.
+        container_config=ContainerConfig(network=NetworkMode.BRIDGE),
     )
 
     result = await run_process(
