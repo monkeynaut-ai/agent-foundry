@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from agent_foundry.agents.agent_turn_envelope import AgentTurnEnvelope
-from agent_foundry.agents.lifecycle import ContainerManager
+from agent_foundry.agents.lifecycle import ContainerConfig, ContainerManager, NetworkMode
 from agent_foundry.agents.schema_tools import to_claude_code_schema
 
 # Load .env from the repo root so CLAUDE_CODE_OAUTH_TOKEN is available
@@ -65,6 +65,8 @@ def test_foundation_smoke_real_claude_code(cleanup_volumes) -> None:
 
     handle = manager.create_container(
         workspace_volume=workspace_volume,
+        # Real `claude` needs egress to reach the Anthropic API; opt in.
+        constraints=ContainerConfig(network=NetworkMode.BRIDGE),
         extra_env={
             "CLAUDE_CODE_OAUTH_TOKEN": oauth_token,
             "AGENT_HOST_DRIVEN": "1",

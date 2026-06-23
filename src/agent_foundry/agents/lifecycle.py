@@ -15,7 +15,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agent_foundry.agents.errors import ContainerCreationError, ContainerLifecycleError
 
@@ -36,6 +36,20 @@ DEFAULT_ENV_ALLOWLIST = {
 _AGENT_USER = "claude"
 
 
+class NetworkMode(StrEnum):
+    """Well-known container network attachments, mapped to Docker's ``--network``.
+
+    ``NONE`` gives the container no network interface at all (no egress,
+    no ingress). ``BRIDGE`` attaches Docker's default bridge, which
+    permits unrestricted outbound internet. A product may also pass any
+    user-defined network name as a plain string (e.g. an egress-filtered
+    network); see :attr:`ContainerConfig.network`.
+    """
+
+    NONE = "none"
+    BRIDGE = "bridge"
+
+
 class ContainerConfig(BaseModel):
     """Generic container resource constraints.
 
@@ -46,6 +60,27 @@ class ContainerConfig(BaseModel):
     cpu_quota: int = 100_000
     pids_limit: int = 2048
     tmp_size_mb: int = 1024
+    # ``none`` / ``bridge`` are the well-known modes; any other string is
+    # treated as a user-defined Docker network name. Host-sharing modes
+    # are rejected (see validator) because they dissolve isolation.
+    network: NetworkMode | str = NetworkMode.NONE
+
+    @field_validator("network")
+    @classmethod
+    def _validate_network(cls, v: NetworkMode | str) -> NetworkMode | str:
+        name = str(v)
+        if not name.strip():
+            raise ValueError(
+                "network must not be empty; Docker reads an empty value as the "
+                "default (bridge) network, which would silently grant egress. "
+                "Use NetworkMode.NONE for no network."
+            )
+        if name == "host" or name.startswith("container:"):
+            raise ValueError(
+                f"network={name!r} dissolves container isolation; "
+                "use 'none', 'bridge', or a user-defined network name"
+            )
+        return v
 
 
 class ExecResult(BaseModel):
@@ -262,21 +297,26 @@ class ContainerManager(ContainerManagerBase):
         if extra_env:
             environment.update(extra_env)
 
+        create_kwargs: dict[str, Any] = {
+            "detach": True,
+            "cap_drop": ["ALL"],
+            "cap_add": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
+            "read_only": False,
+            "tmpfs": {"/tmp": f"size={constraints.tmp_size_mb}m"},
+            "volumes": volumes,
+            "mem_limit": f"{constraints.mem_limit_mb}m",
+            "environment": environment,
+            "network": str(constraints.network),
+            "cpu_quota": constraints.cpu_quota,
+            "pids_limit": constraints.pids_limit,
+        }
+        # The host-gateway alias resolves only when the container is on a
+        # network; passing it under `none` has nothing to bind to.
+        if constraints.network != NetworkMode.NONE:
+            create_kwargs["extra_hosts"] = {"host.docker.internal": "host-gateway"}
+
         try:
-            container = self._client.containers.create(
-                image,
-                detach=True,
-                cap_drop=["ALL"],
-                cap_add=["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
-                read_only=False,
-                tmpfs={"/tmp": f"size={constraints.tmp_size_mb}m"},
-                volumes=volumes,
-                mem_limit=f"{constraints.mem_limit_mb}m",
-                environment=environment,
-                extra_hosts={"host.docker.internal": "host-gateway"},
-                cpu_quota=constraints.cpu_quota,
-                pids_limit=constraints.pids_limit,
-            )
+            container = self._client.containers.create(image, **create_kwargs)
         except Exception as e:
             raise ContainerCreationError(str(e), image=image) from e
 
