@@ -5,6 +5,7 @@ import tarfile
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from agent_foundry.agents.errors import ContainerCreationError, ContainerLifecycleError
 from agent_foundry.agents.lifecycle import (
@@ -46,6 +47,16 @@ class TestContainerConfig:
         # Safe by default: a container gets no network unless the product opts in.
         cfg = ContainerConfig()
         assert cfg.network == NetworkMode.NONE
+
+    def test_given_custom_network_name_when_constructed_then_kept_as_string(self):
+        # A user-defined (e.g. egress-filtered) network is passed by name.
+        cfg = ContainerConfig(network="egress-filtered")
+        assert cfg.network == "egress-filtered"
+
+    @pytest.mark.parametrize("bad", ["host", "container:other"])
+    def test_given_isolation_breaking_network_when_constructed_then_rejected(self, bad):
+        with pytest.raises(ValidationError, match="dissolves container isolation"):
+            ContainerConfig(network=bad)
 
 
 class TestDefaultEnvAllowlist:
@@ -108,6 +119,15 @@ class TestCreateContainer:
         manager.create_container(constraints=ContainerConfig(network=NetworkMode.BRIDGE))
         kw = mock_client.containers.create.call_args.kwargs
         assert kw["network"] == "bridge"
+        assert kw["extra_hosts"] == {"host.docker.internal": "host-gateway"}
+
+    def test_given_named_network_when_create_called_then_passed_through(
+        self, manager, mock_client
+    ):
+        manager.create_container(constraints=ContainerConfig(network="egress-filtered"))
+        kw = mock_client.containers.create.call_args.kwargs
+        assert kw["network"] == "egress-filtered"
+        # A named network carries traffic, so the host-gateway alias applies.
         assert kw["extra_hosts"] == {"host.docker.internal": "host-gateway"}
 
     def test_given_constraints_when_create_called_then_resource_limits_applied(
