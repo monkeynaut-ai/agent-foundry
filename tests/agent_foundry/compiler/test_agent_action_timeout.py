@@ -30,6 +30,16 @@ class AgentOutput(BaseModel):
     answer: str
 
 
+# The deadline under test and a longer async work duration. wait_for cancels
+# the async work at the deadline, so the async "slow" test resolves in
+# ~_DEADLINE_S (~1s), never the full _OVERRUN_S.
+_DEADLINE_S = 1
+_OVERRUN_S = 5.0
+# Sync executors cannot be cancelled, so the sync test sleeps the FULL duration
+# to prove the deadline is not enforced — keep it just over the deadline.
+_SYNC_OVERRUN_S = _DEADLINE_S + 0.3
+
+
 def _stub_prompt(state: AgentInput) -> str:
     return f"Q: {state.query}"
 
@@ -75,10 +85,10 @@ def _run_ctx(tmp_path: Any) -> Any:
 class TestAsyncExecutorTimeout:
     def test_slow_async_executor_times_out(self) -> None:
         async def slow_executor(*, construct, prompt, instructions, run_ctx) -> AgentOutput:
-            await asyncio.sleep(30)
+            await asyncio.sleep(_OVERRUN_S)
             return AgentOutput(answer="too-late")
 
-        action = _make_action(executor=slow_executor, timeout_seconds=1)
+        action = _make_action(executor=slow_executor, timeout_seconds=_DEADLINE_S)
         graph = compile_process(Process(action))
 
         with pytest.raises(ConstructTimeoutError):
@@ -101,10 +111,10 @@ class TestSyncExecutorNotEnforced:
 
     def test_sync_executor_runs_past_deadline(self) -> None:
         def slow_sync_executor(*, construct, prompt, instructions, run_ctx) -> AgentOutput:
-            time.sleep(1.1)
+            time.sleep(_SYNC_OVERRUN_S)
             return AgentOutput(answer="done")
 
-        action = _make_action(executor=slow_sync_executor, timeout_seconds=1)
+        action = _make_action(executor=slow_sync_executor, timeout_seconds=_DEADLINE_S)
         graph = compile_process(Process(action))
 
         result = asyncio.run(graph.ainvoke({"query": "x"}))

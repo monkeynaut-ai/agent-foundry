@@ -36,11 +36,22 @@ class _Output(BaseModel):
     result: str
 
 
+# The deadline under test, and a work duration safely longer than it. wait_for
+# cancels the work at the deadline, so a "slow" test resolves in ~_DEADLINE_S
+# (~1s) — never the full _OVERRUN_S. The longer duration only guarantees the
+# deadline fires first.
+_DEADLINE_S = 1
+_OVERRUN_S = 5.0
+
+
 class _SlowProvider(InferenceProvider):
-    """Sleeps longer than any test timeout to exercise the deadline."""
+    """Sleeps ``call_seconds`` so the deadline cancels the call mid-flight."""
+
+    def __init__(self, call_seconds: float = _OVERRUN_S) -> None:
+        self._call_seconds = call_seconds
 
     async def __call__(self, request: InferenceRequest) -> InferenceResult:
-        await asyncio.sleep(30)
+        await asyncio.sleep(self._call_seconds)
         return InferenceResult(output=_Output(result="too-late"))
 
     async def close(self) -> None:
@@ -111,7 +122,7 @@ def _run_ctx(tmp_path: Any) -> Any:
 
 class TestDefaultPathTimeout:
     def test_slow_provider_times_out(self, _run_ctx: Any) -> None:
-        call = _make_call(model_entry=_slow_entry(), timeout_seconds=1)
+        call = _make_call(model_entry=_slow_entry(), timeout_seconds=_DEADLINE_S)
         graph = compile_process(Process(call))
 
         with pytest.raises(ConstructTimeoutError):
@@ -121,10 +132,10 @@ class TestDefaultPathTimeout:
 class TestCustomExecutorTimeout:
     def test_slow_async_executor_times_out_and_emits_failed(self, _run_ctx: Any) -> None:
         async def slow_executor(*, construct: Any, model_input: Any) -> _Output:
-            await asyncio.sleep(30)
+            await asyncio.sleep(_OVERRUN_S)
             return _Output(result="too-late")
 
-        call = _make_call(executor=slow_executor, timeout_seconds=1)
+        call = _make_call(executor=slow_executor, timeout_seconds=_DEADLINE_S)
         graph = compile_process(Process(call))
 
         with pytest.raises(ConstructTimeoutError):
