@@ -69,7 +69,7 @@ def _fake_entry(captured: list[InferenceRequest]) -> ModelEntry:
     return ModelEntry(
         model_id="fake",
         provider=_CapturingProvider(captured),
-        capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
+        capabilities=ModelCapabilities(context_window=200_000, max_output_tokens=4096),
     )
 
 

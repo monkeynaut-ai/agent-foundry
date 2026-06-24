@@ -50,7 +50,7 @@ def _capturing_entry(captured: list[InferenceRequest]) -> ModelEntry:
     return ModelEntry(
         model_id="fake",
         provider=_CapturingProvider(captured),
-        capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
+        capabilities=ModelCapabilities(context_window=200_000, max_output_tokens=4096),
     )
 
 
@@ -81,7 +81,7 @@ async def test_provider_usage_threaded_into_result() -> None:
     entry = ModelEntry(
         model_id="fake",
         provider=_CapturingProvider(captured, usage=TokenUsage(input_tokens=11, output_tokens=22)),
-        capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
+        capabilities=ModelCapabilities(context_window=200_000, max_output_tokens=4096),
     )
     req = AICall[_Input, _Output](
         model_input=ModelInput[_Input](instructions="i", prompt="p"),
@@ -195,7 +195,7 @@ async def test_model_id_from_model_entry_passed_to_provider() -> None:
     entry = ModelEntry(
         model_id="claude-haiku-4-5-20251001",
         provider=_CapturingProvider(captured),
-        capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
+        capabilities=ModelCapabilities(context_window=200_000, max_output_tokens=4096),
     )
     req = AICall[_Input, _Output](
         model_input=ModelInput[_Input](instructions="i", prompt="p"),
@@ -237,7 +237,7 @@ async def test_provider_returning_wrong_type_raises() -> None:
     entry = ModelEntry(
         model_id="fake",
         provider=_BadProvider(),
-        capabilities=ModelCapabilities(context_window=1000, max_output_tokens=100),
+        capabilities=ModelCapabilities(context_window=200_000, max_output_tokens=4096),
     )
     req = AICall[_Input, _Output](
         model_input=ModelInput[_Input](instructions="i", prompt="p"),
