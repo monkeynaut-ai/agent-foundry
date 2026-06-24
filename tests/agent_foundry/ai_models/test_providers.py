@@ -132,6 +132,87 @@ async def test_openai_call_forwards_temperature_when_set() -> None:
     assert parse_mock.call_args.kwargs["temperature"] == 0.5
 
 
+def _openai_with_parse_mock():
+    provider = OpenAIProvider(api_key="x")
+    parse_mock = AsyncMock(
+        return_value=SimpleNamespace(output_parsed=_Answer(answer="x"), usage=None)
+    )
+    provider._client_instance = SimpleNamespace(responses=SimpleNamespace(parse=parse_mock))
+    return provider, parse_mock
+
+
+@pytest.mark.asyncio
+async def test_openai_forwards_reasoning_effort_when_set() -> None:
+    provider, parse_mock = _openai_with_parse_mock()
+    request = InferenceRequest(
+        model_id="gpt-5.4",
+        instructions="i",
+        prompt="p",
+        parameters=InferenceParameters(effort="high"),
+        output_type=_Answer,
+    )
+    await provider(request)
+    assert parse_mock.call_args.kwargs["reasoning"] == {"effort": "high"}
+
+
+@pytest.mark.asyncio
+async def test_openai_omits_reasoning_when_effort_unset() -> None:
+    provider, parse_mock = _openai_with_parse_mock()
+    request = InferenceRequest(
+        model_id="gpt-5.4",
+        instructions="i",
+        prompt="p",
+        parameters=InferenceParameters(),
+        output_type=_Answer,
+    )
+    await provider(request)
+    assert "reasoning" not in parse_mock.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_anthropic_forwards_adaptive_thinking_and_effort_when_set() -> None:
+    provider = AnthropicProvider(api_key="x")
+    block = SimpleNamespace(type="tool_use", input={"answer": "hi"})
+    create_mock = AsyncMock(return_value=SimpleNamespace(content=[block], usage=None))
+    provider._client_instance = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+
+    request = InferenceRequest(
+        model_id="claude-opus-4-7",
+        instructions="i",
+        prompt="p",
+        parameters=InferenceParameters(effort="low"),
+        output_type=_Answer,
+    )
+    result = await provider(request)
+    assert result.output == _Answer(answer="hi")
+
+    kwargs = create_mock.call_args.kwargs
+    assert kwargs["thinking"] == {"type": "adaptive"}
+    assert kwargs["output_config"] == {"effort": "low"}
+    # Forced structured-output tool_choice is preserved (compatible with adaptive).
+    assert kwargs["tool_choice"] == {"type": "tool", "name": "structured_output"}
+
+
+@pytest.mark.asyncio
+async def test_anthropic_omits_reasoning_when_effort_unset() -> None:
+    provider = AnthropicProvider(api_key="x")
+    block = SimpleNamespace(type="tool_use", input={"answer": "hi"})
+    create_mock = AsyncMock(return_value=SimpleNamespace(content=[block], usage=None))
+    provider._client_instance = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+
+    request = InferenceRequest(
+        model_id="claude-opus-4-7",
+        instructions="i",
+        prompt="p",
+        parameters=InferenceParameters(),
+        output_type=_Answer,
+    )
+    await provider(request)
+    kwargs = create_mock.call_args.kwargs
+    assert "thinking" not in kwargs
+    assert "output_config" not in kwargs
+
+
 @pytest.mark.asyncio
 async def test_openai_close_on_unused_provider_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)

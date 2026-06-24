@@ -46,6 +46,24 @@ def _fallback_chain(entry: ModelEntry) -> list[ModelEntry]:
     return chain
 
 
+# Effort level applied when only the coarse ``thinking`` bool requests reasoning.
+_DEFAULT_THINKING_EFFORT = "medium"
+
+
+def _resolve_effort(parameters: InferenceParameters) -> str | None:
+    """Resolve the reasoning effort to apply, or None for no reasoning.
+
+    ``effort`` is the control; the legacy ``thinking`` bool maps to a default
+    effort when ``effort`` is unset. ``"none"`` means explicitly no reasoning.
+    """
+    effort = (
+        parameters.effort
+        if parameters.effort is not None
+        else (_DEFAULT_THINKING_EFFORT if parameters.thinking else None)
+    )
+    return None if effort == "none" else effort
+
+
 def _effective_parameters(
     parameters: InferenceParameters,
     capabilities: ModelCapabilities,
@@ -54,26 +72,31 @@ def _effective_parameters(
 ) -> InferenceParameters:
     """Adjust call parameters to the target model's capabilities.
 
-    - ``thinking`` on a model that doesn't support it is a misconfiguration:
-      raise on the primary (loud, localized), but drop it on a fallback so
-      failover still works.
+    - Reasoning (``effort``, or the ``thinking`` bool) on a model that doesn't
+      support it is a misconfiguration: raise on the primary (loud, localized),
+      but drop it on a fallback so failover still works.
     - ``max_tokens`` defaults to the model's ``max_output_tokens`` when unset
       and is clamped to it when over — never silently exceed the model's cap.
+
+    The returned parameters carry the resolved reasoning level in ``effort``
+    (``thinking`` normalized to None), so providers read a single field.
     """
-    thinking = parameters.thinking
-    if thinking and not capabilities.supports_thinking:
+    effort = _resolve_effort(parameters)
+    if effort is not None and not capabilities.supports_thinking:
         if is_primary:
             raise ValueError(
-                "AICall requested thinking but the model does not support it "
-                "(capabilities.supports_thinking is False)"
+                "AICall requested reasoning (effort/thinking) but the model does "
+                "not support it (capabilities.supports_thinking is False)"
             )
-        thinking = None
+        effort = None
 
     requested = parameters.max_tokens
     max_tokens = capabilities.max_output_tokens if requested is None else requested
     max_tokens = min(max_tokens, capabilities.max_output_tokens)
 
-    return parameters.model_copy(update={"thinking": thinking, "max_tokens": max_tokens})
+    return parameters.model_copy(
+        update={"effort": effort, "thinking": None, "max_tokens": max_tokens}
+    )
 
 
 class AICallResult[O: BaseModel](BaseModel):

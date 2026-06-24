@@ -46,3 +46,27 @@ async def test_openai_provider_returns_structured_output() -> None:
 
     assert isinstance(result.output, _Capital)
     assert result.output.city.strip()  # non-empty structured field
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_openai_provider_with_reasoning_effort() -> None:
+    if not os.environ.get("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
+
+    provider = OpenAIProvider()
+    request = InferenceRequest(
+        model_id="gpt-5.4-mini",
+        instructions="Answer with only the city name.",
+        prompt="What is the capital of France?",
+        parameters=InferenceParameters(effort="low"),
+        output_type=_Capital,
+    )
+    try:
+        result = await provider(request)
+    finally:
+        await provider.close()
+
+    # reasoning.effort is accepted and structured output still round-trips.
+    assert isinstance(result.output, _Capital)
+    assert result.output.city.strip()

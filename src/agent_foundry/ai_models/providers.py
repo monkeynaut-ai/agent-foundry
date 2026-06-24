@@ -81,6 +81,12 @@ class AnthropicProvider(InferenceProvider):
         }
         if request.parameters.temperature is not None:
             kwargs["temperature"] = request.parameters.temperature
+        if request.parameters.effort is not None:
+            # Adaptive thinking + output-config effort is the 4.x reasoning API,
+            # and (unlike the legacy enabled+budget shape) is compatible with
+            # forced tool_choice, so structured output above is preserved.
+            kwargs["thinking"] = {"type": "adaptive"}
+            kwargs["output_config"] = {"effort": request.parameters.effort}
 
         response = await self._client.messages.create(**kwargs)
         tool_use_block = next((b for b in response.content if b.type == "tool_use"), None)
@@ -141,6 +147,8 @@ class OpenAIProvider(InferenceProvider):
             kwargs["max_output_tokens"] = request.parameters.max_tokens
         if request.parameters.temperature is not None:
             kwargs["temperature"] = request.parameters.temperature
+        if request.parameters.effort is not None:
+            kwargs["reasoning"] = {"effort": request.parameters.effort}
 
         response = await self._client.responses.parse(**kwargs)
         output = response.output_parsed
