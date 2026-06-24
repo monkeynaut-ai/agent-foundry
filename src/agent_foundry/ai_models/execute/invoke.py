@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, cast
 from pydantic import BaseModel
 
 from agent_foundry.ai_models.inference import InferenceParameters, InferenceRequest
-from agent_foundry.ai_models.model import ModelEntry
+from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.ai_models.resilience import DEFAULT_RETRY_POLICY
 from agent_foundry.constructs.models import get_type_args
 from agent_foundry.models.usage import TokenUsage
@@ -44,6 +44,36 @@ def _fallback_chain(entry: ModelEntry) -> list[ModelEntry]:
         seen.add(id(node))
         node = node.fallback
     return chain
+
+
+def _effective_parameters(
+    parameters: InferenceParameters,
+    capabilities: ModelCapabilities,
+    *,
+    is_primary: bool,
+) -> InferenceParameters:
+    """Adjust call parameters to the target model's capabilities.
+
+    - ``thinking`` on a model that doesn't support it is a misconfiguration:
+      raise on the primary (loud, localized), but drop it on a fallback so
+      failover still works.
+    - ``max_tokens`` defaults to the model's ``max_output_tokens`` when unset
+      and is clamped to it when over — never silently exceed the model's cap.
+    """
+    thinking = parameters.thinking
+    if thinking and not capabilities.supports_thinking:
+        if is_primary:
+            raise ValueError(
+                "AICall requested thinking but the model does not support it "
+                "(capabilities.supports_thinking is False)"
+            )
+        thinking = None
+
+    requested = parameters.max_tokens
+    max_tokens = capabilities.max_output_tokens if requested is None else requested
+    max_tokens = min(max_tokens, capabilities.max_output_tokens)
+
+    return parameters.model_copy(update={"thinking": thinking, "max_tokens": max_tokens})
 
 
 class AICallResult[O: BaseModel](BaseModel):
@@ -99,11 +129,14 @@ async def invoke_ai_call[I: BaseModel, O: BaseModel](
     # advances to the next model; if all fail, the last error propagates.
     last_exc: Exception | None = None
     for entry in candidates:
+        effective = _effective_parameters(
+            parameters, entry.capabilities, is_primary=entry is primary
+        )
         request = InferenceRequest(
             model_id=entry.model_id,
             instructions=instructions,
             prompt=prompt,
-            parameters=parameters,
+            parameters=effective,
             output_type=output_type,
         )
         for attempt in range(1, retry_policy.max_attempts + 1):
