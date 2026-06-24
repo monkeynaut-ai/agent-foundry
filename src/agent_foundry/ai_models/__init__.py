@@ -11,6 +11,7 @@ from agent_foundry.ai_models.inference import (
     InferenceProvider,
     InferenceRequest,
     InferenceResult,
+    ReasoningEffort,
 )
 from agent_foundry.ai_models.model import (
     Model,
@@ -33,6 +34,7 @@ __all__ = [
     "ModelCapabilities",
     "ModelEntry",
     "OpenAIProvider",
+    "ReasoningEffort",
     "RetryPolicy",
     "get_model",
     "register_model",

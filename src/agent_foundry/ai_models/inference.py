@@ -2,16 +2,33 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 from agent_foundry.models.usage import TokenUsage
 
 
+class ReasoningEffort(StrEnum):
+    """Reasoning effort levels — the union accepted across providers.
+
+    Not every provider accepts every level (e.g. Anthropic has no ``MINIMAL``);
+    each provider normalizes to its own supported set. Using an enum rejects
+    typos at construction rather than at the provider call.
+    """
+
+    NONE = "none"
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+
+
 class InferenceParameters(BaseModel):
     """Tuning parameters for an inference call, independent of model and provider."""
 
-    effort: str | None = Field(default=None, min_length=1)
+    effort: ReasoningEffort | None = None
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1)
     thinking: bool | None = None

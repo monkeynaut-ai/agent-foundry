@@ -14,6 +14,7 @@ from agent_foundry.ai_models.inference import (
     InferenceProvider,
     InferenceRequest,
     InferenceResult,
+    ReasoningEffort,
 )
 from agent_foundry.models.usage import TokenUsage
 
@@ -85,8 +86,13 @@ class AnthropicProvider(InferenceProvider):
             # Adaptive thinking + output-config effort is the 4.x reasoning API,
             # and (unlike the legacy enabled+budget shape) is compatible with
             # forced tool_choice, so structured output above is preserved.
+            effort = request.parameters.effort
+            # Anthropic has no 'minimal' level — map it to the nearest ('low')
+            # so a cross-provider failover from OpenAI doesn't 400.
+            if effort == ReasoningEffort.MINIMAL:
+                effort = ReasoningEffort.LOW
             kwargs["thinking"] = {"type": "adaptive"}
-            kwargs["output_config"] = {"effort": request.parameters.effort}
+            kwargs["output_config"] = {"effort": effort}
 
         response = await self._client.messages.create(**kwargs)
         tool_use_block = next((b for b in response.content if b.type == "tool_use"), None)
