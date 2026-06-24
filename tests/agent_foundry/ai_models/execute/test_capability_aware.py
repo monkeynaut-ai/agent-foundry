@@ -80,6 +80,44 @@ async def test_thinking_on_unsupported_primary_raises() -> None:
 
 
 @pytest.mark.asyncio
+async def test_effort_on_unsupported_primary_raises() -> None:
+    entry = _entry(_CapturingProvider([]), thinking=False)
+    construct = _call(entry, params=InferenceParameters(effort="high"), fallbacks=[])
+    with pytest.raises(ValueError, match="supports_thinking is False"):
+        await invoke_ai_call(construct=construct, model_input=_Input(text="x"))
+
+
+@pytest.mark.asyncio
+async def test_effort_passed_through_when_supported() -> None:
+    captured: list[InferenceRequest] = []
+    entry = _entry(_CapturingProvider(captured), thinking=True)
+    construct = _call(entry, params=InferenceParameters(effort="low"), fallbacks=[])
+    await invoke_ai_call(construct=construct, model_input=_Input(text="x"))
+    assert captured[0].parameters.effort == "low"
+
+
+@pytest.mark.asyncio
+async def test_thinking_bool_resolves_to_default_effort() -> None:
+    captured: list[InferenceRequest] = []
+    entry = _entry(_CapturingProvider(captured), thinking=True)
+    construct = _call(entry, params=InferenceParameters(thinking=True), fallbacks=[])
+    await invoke_ai_call(construct=construct, model_input=_Input(text="x"))
+    # The coarse thinking bool resolves to a default effort; thinking normalized away.
+    assert captured[0].parameters.effort == "medium"
+    assert captured[0].parameters.thinking is None
+
+
+@pytest.mark.asyncio
+async def test_effort_none_is_not_reasoning() -> None:
+    # Explicit "none" means no reasoning — allowed even on a non-thinking model.
+    captured: list[InferenceRequest] = []
+    entry = _entry(_CapturingProvider(captured), thinking=False)
+    construct = _call(entry, params=InferenceParameters(effort="none"), fallbacks=[])
+    await invoke_ai_call(construct=construct, model_input=_Input(text="x"))
+    assert captured[0].parameters.effort is None
+
+
+@pytest.mark.asyncio
 async def test_thinking_dropped_on_fallback() -> None:
     captured: list[InferenceRequest] = []
     primary = _entry(_CapturingProvider([], fail=_Persistent()), model_id="primary", thinking=True)
