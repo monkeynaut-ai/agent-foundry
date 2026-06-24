@@ -41,3 +41,16 @@ class ConstructCompilationError(Exception):
     def __init__(self, message: str, construct_type: str = ""):
         self.construct_type = construct_type
         super().__init__(message)
+
+
+class ConstructTimeoutError(Exception):
+    """Raised when a construct's executor exceeds its declared ``timeout_seconds``."""
+
+    def __init__(self, node_id: str, timeout_seconds: float, construct_type: str = ""):
+        self.node_id = node_id
+        self.timeout_seconds = timeout_seconds
+        self.construct_type = construct_type
+        super().__init__(
+            f"{construct_type or 'Construct'} {node_id} exceeded its "
+            f"timeout_seconds ({timeout_seconds:g}s)"
+        )
