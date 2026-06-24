@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import contextlib
+import logging
 
 import pytest
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
@@ -16,14 +18,23 @@ def cleanup_volumes():
     passes it to ``create_container`` / ``run_process`` must therefore
     remove the volume itself, or it leaks after the run. Append each volume
     name to the yielded list; teardown removes them all.
+
+    A removal failure (e.g. the volume is still in use by a leaked container)
+    is logged rather than swallowed silently — an invisible leak is how
+    lingering volumes went unnoticed before.
     """
     names: list[str] = []
     yield names
     if not names:
         return
     import docker
+    import docker.errors
 
     client = docker.from_env()
     for name in names:
-        with contextlib.suppress(Exception):
+        try:
             client.volumes.get(name).remove(force=True)
+        except docker.errors.NotFound:
+            pass
+        except Exception:
+            logger.warning("failed to remove test volume %s (leaked?)", name, exc_info=True)

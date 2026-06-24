@@ -10,7 +10,9 @@ Covers the full public contract:
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -714,3 +716,52 @@ class TestMcpSettingsInjection:
         start_idx = tracking_mgr.call_log.index("start")
         assert tracking_mgr.call_log.index(claude_json_key) < start_idx
         assert tracking_mgr.call_log.index(settings_key) < start_idx
+
+
+# --- Cancellation during create (issue #113) ---------------------------------
+
+
+class _SlowCreateManager(FakeContainerManager):
+    """``create_container`` blocks in its worker thread long enough for an outer
+    ``asyncio.wait_for`` deadline to cancel ``get_or_create`` mid-create."""
+
+    def create_container(self, *args: Any, **kwargs: Any) -> Any:
+        time.sleep(0.3)
+        return super().create_container(*args, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_create_still_reaps_container(
+    writer: LifecycleWriter,
+) -> None:
+    """A timeout cancelling ``get_or_create`` while ``create_container`` runs in
+    its thread must not leak the container. ``asyncio.to_thread`` cannot be
+    cancelled, so the thread finishes the create after cancellation; the registry
+    must still track the resulting container so ``shutdown_all`` reaps it.
+    """
+    manager = _SlowCreateManager()
+    registry = AgentContainerRegistry(
+        workspace_volume="test-vol",
+        base_image_tag="agent-foundry-base:test",
+        manager=manager,
+    )
+    construct = _make_construct()
+
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(
+            registry.get_or_create(construct, lifecycle_writer=writer, agent_name="coder"),
+            timeout=0.05,
+        )
+
+    # The create thread finishes the docker create it had already started.
+    for _ in range(200):
+        if manager.handles:
+            break
+        await asyncio.sleep(0.01)
+    assert len(manager.handles) == 1, "create thread should have produced one container"
+
+    await registry.shutdown_all()
+
+    # The created container must have been tracked and destroyed — not leaked.
+    assert manager.handles[0].status == "destroyed"
+    assert manager.handles[0].container_id in manager.destroyed_ids

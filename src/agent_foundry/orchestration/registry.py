@@ -166,26 +166,43 @@ class AgentContainerRegistry:
             merged_env = self._extra_env_for(construct)
             if extra_env:
                 merged_env.update(extra_env)
-            handle = await asyncio.to_thread(
-                manager.create_container,
-                self._base_image_tag,
-                self._workspace_volume,
-                construct.container_config,
-                merged_env,
-                extra_volumes,
+
+            def _track(handle: ContainerHandleBase) -> LiveContainer:
+                # Track for teardown immediately — before start/health/config
+                # writes. shutdown_all only tears down containers it can see, so
+                # a cancellation (e.g. an AgentAction timeout) or any error
+                # mid-setup would otherwise orphan a created container.
+                tracked = LiveContainer(
+                    handle=handle,
+                    manager=manager,
+                    construct_id=pid,
+                    agent_name=agent_name,
+                    gids=list(construct.gids),
+                )
+                self._containers[pid] = tracked
+                return tracked
+
+            # ``asyncio.to_thread`` cannot be cancelled: if the deadline fires
+            # while the docker create is running, the thread still finishes and
+            # produces a container. Shield the create so a cancellation does not
+            # discard its handle — on cancel, await the (already-running) create,
+            # track the container so shutdown_all reaps it, then re-raise.
+            create = asyncio.ensure_future(
+                asyncio.to_thread(
+                    manager.create_container,
+                    self._base_image_tag,
+                    self._workspace_volume,
+                    construct.container_config,
+                    merged_env,
+                    extra_volumes,
+                )
             )
-            # Track for teardown immediately — before start/health/config
-            # writes. shutdown_all only tears down containers it can see, so a
-            # cancellation (e.g. an AgentAction timeout) or any error mid-setup
-            # would otherwise orphan a created-but-unregistered container.
-            live = LiveContainer(
-                handle=handle,
-                manager=manager,
-                construct_id=pid,
-                agent_name=agent_name,
-                gids=list(construct.gids),
-            )
-            self._containers[pid] = live
+            try:
+                handle = await asyncio.shield(create)
+            except asyncio.CancelledError:
+                _track(await create)
+                raise
+            live = _track(handle)
             # If configured to inject role instructions, write them before
             # start so the base-image entrypoint's append block sees them
             # on boot (matches ``create_for_invocation`` semantics).
