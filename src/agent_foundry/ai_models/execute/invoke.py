@@ -22,7 +22,11 @@ from typing import TYPE_CHECKING, cast
 
 from pydantic import BaseModel
 
-from agent_foundry.ai_models.inference import InferenceParameters, InferenceRequest
+from agent_foundry.ai_models.inference import (
+    InferenceParameters,
+    InferenceRequest,
+    ReasoningEffort,
+)
 from agent_foundry.ai_models.model import ModelCapabilities, ModelEntry
 from agent_foundry.ai_models.resilience import DEFAULT_RETRY_POLICY
 from agent_foundry.constructs.models import get_type_args
@@ -47,21 +51,21 @@ def _fallback_chain(entry: ModelEntry) -> list[ModelEntry]:
 
 
 # Effort level applied when only the coarse ``thinking`` bool requests reasoning.
-_DEFAULT_THINKING_EFFORT = "medium"
+_DEFAULT_THINKING_EFFORT = ReasoningEffort.MEDIUM
 
 
-def _resolve_effort(parameters: InferenceParameters) -> str | None:
+def _resolve_effort(parameters: InferenceParameters) -> ReasoningEffort | None:
     """Resolve the reasoning effort to apply, or None for no reasoning.
 
     ``effort`` is the control; the legacy ``thinking`` bool maps to a default
-    effort when ``effort`` is unset. ``"none"`` means explicitly no reasoning.
+    effort when ``effort`` is unset. ``NONE`` means explicitly no reasoning.
     """
     effort = (
         parameters.effort
         if parameters.effort is not None
         else (_DEFAULT_THINKING_EFFORT if parameters.thinking else None)
     )
-    return None if effort == "none" else effort
+    return None if effort == ReasoningEffort.NONE else effort
 
 
 def _effective_parameters(

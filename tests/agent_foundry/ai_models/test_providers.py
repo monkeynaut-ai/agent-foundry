@@ -14,9 +14,13 @@ from unittest.mock import AsyncMock, Mock
 import anthropic
 import openai
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
-from agent_foundry.ai_models.inference import InferenceParameters, InferenceRequest
+from agent_foundry.ai_models.inference import (
+    InferenceParameters,
+    InferenceRequest,
+    ReasoningEffort,
+)
 from agent_foundry.ai_models.providers import AnthropicProvider, OpenAIProvider
 
 
@@ -191,6 +195,45 @@ async def test_anthropic_forwards_adaptive_thinking_and_effort_when_set() -> Non
     assert kwargs["output_config"] == {"effort": "low"}
     # Forced structured-output tool_choice is preserved (compatible with adaptive).
     assert kwargs["tool_choice"] == {"type": "tool", "name": "structured_output"}
+
+
+@pytest.mark.asyncio
+async def test_openai_forwards_minimal_effort_unchanged() -> None:
+    provider, parse_mock = _openai_with_parse_mock()
+    request = InferenceRequest(
+        model_id="gpt-5.4",
+        instructions="i",
+        prompt="p",
+        parameters=InferenceParameters(effort=ReasoningEffort.MINIMAL),
+        output_type=_Answer,
+    )
+    await provider(request)
+    # OpenAI supports 'minimal'; pass it through.
+    assert parse_mock.call_args.kwargs["reasoning"] == {"effort": "minimal"}
+
+
+@pytest.mark.asyncio
+async def test_anthropic_maps_minimal_effort_to_low() -> None:
+    provider = AnthropicProvider(api_key="x")
+    block = SimpleNamespace(type="tool_use", input={"answer": "hi"})
+    create_mock = AsyncMock(return_value=SimpleNamespace(content=[block], usage=None))
+    provider._client_instance = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+
+    request = InferenceRequest(
+        model_id="claude-opus-4-7",
+        instructions="i",
+        prompt="p",
+        parameters=InferenceParameters(effort=ReasoningEffort.MINIMAL),
+        output_type=_Answer,
+    )
+    await provider(request)
+    # Anthropic has no 'minimal' — normalized to 'low' so cross-provider failover works.
+    assert create_mock.call_args.kwargs["output_config"] == {"effort": "low"}
+
+
+def test_invalid_effort_rejected_at_construction() -> None:
+    with pytest.raises(ValidationError):
+        InferenceParameters(effort="extreme")
 
 
 @pytest.mark.asyncio
