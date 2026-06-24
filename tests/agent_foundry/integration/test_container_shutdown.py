@@ -90,6 +90,12 @@ class TestContainerShutdown:
         manager.destroy(handle)
 
         # Container (and its PID namespace, hence all processes) is gone.
-        remaining = {c.id for c in docker_client.containers.list(all=True)}
-        assert cid not in remaining
+        # Query by id rather than enumerating all containers: an unscoped
+        # containers.list(all=True) races concurrent teardown in other
+        # integration tests — docker-py inspects each enumerated container and
+        # 404s if one is removed mid-iteration.
+        import docker.errors
+
+        with pytest.raises(docker.errors.NotFound):
+            docker_client.containers.get(cid)
         assert handle.status == "destroyed"
