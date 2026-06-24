@@ -174,6 +174,18 @@ class AgentContainerRegistry:
                 merged_env,
                 extra_volumes,
             )
+            # Track for teardown immediately — before start/health/config
+            # writes. shutdown_all only tears down containers it can see, so a
+            # cancellation (e.g. an AgentAction timeout) or any error mid-setup
+            # would otherwise orphan a created-but-unregistered container.
+            live = LiveContainer(
+                handle=handle,
+                manager=manager,
+                construct_id=pid,
+                agent_name=agent_name,
+                gids=list(construct.gids),
+            )
+            self._containers[pid] = live
             # If configured to inject role instructions, write them before
             # start so the base-image entrypoint's append block sees them
             # on boot (matches ``create_for_invocation`` semantics).
@@ -232,14 +244,6 @@ class AgentContainerRegistry:
                 )
             await asyncio.to_thread(manager.start, handle)
             await self._wait_until_healthy(manager, handle)
-            live = LiveContainer(
-                handle=handle,
-                manager=manager,
-                construct_id=pid,
-                agent_name=agent_name,
-                gids=list(construct.gids),
-            )
-            self._containers[pid] = live
             lifecycle_writer.append(
                 LifecycleEvent.AGENT_CONTAINER_STARTED,
                 agent_name=agent_name,

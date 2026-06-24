@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import inspect
 from collections.abc import Awaitable, Callable
@@ -17,7 +18,7 @@ from pydantic import BaseModel, ValidationError
 # TYPE_CHECKING, so no runtime cycle exists.
 from agent_foundry.ai_models.execute.invoke import invoke_ai_call
 from agent_foundry.constructs.ai_call import AICall
-from agent_foundry.constructs.errors import ConstructCompilationError
+from agent_foundry.constructs.errors import ConstructCompilationError, ConstructTimeoutError
 from agent_foundry.constructs.models import (
     AgentAction,
     AsyncFunctionAction,
@@ -992,6 +993,24 @@ def _compile_gate_action(
 register_compiler(GateAction, _compile_gate_action)
 
 
+async def _await_within_deadline[T](
+    awaitable: Awaitable[T],
+    *,
+    timeout_seconds: float,
+    node_id: str,
+    construct_type: str,
+) -> T:
+    """Await ``awaitable`` under a per-turn deadline.
+
+    On expiry the awaited coroutine is cancelled and a ``ConstructTimeoutError``
+    is raised so a hung turn fails its node instead of stalling the whole run.
+    """
+    try:
+        return await asyncio.wait_for(awaitable, timeout=timeout_seconds)
+    except TimeoutError as exc:
+        raise ConstructTimeoutError(node_id, timeout_seconds, construct_type) from exc
+
+
 def _compile_agent_action(
     graph: StateGraph,
     action: AgentAction,
@@ -1041,11 +1060,16 @@ def _compile_agent_action(
                 redaction=redaction,
             ) as handle:
                 handle.set_operation_name("chat")
-                result = await executor(
-                    construct=construct,
-                    prompt=prompt,
-                    instructions=instructions,
-                    run_ctx=run_ctx,
+                result = await _await_within_deadline(
+                    executor(
+                        construct=construct,
+                        prompt=prompt,
+                        instructions=instructions,
+                        run_ctx=run_ctx,
+                    ),
+                    timeout_seconds=action.timeout_seconds,
+                    node_id=node_id,
+                    construct_type="AgentAction",
                 )
                 typed = _validate_typed(result)
                 handle.set_output(typed)
@@ -1056,6 +1080,10 @@ def _compile_agent_action(
         # pointing callers at ``ainvoke`` / ``run_process``.
         graph.add_node(node_id, node_fn_async)  # type: ignore[arg-type]
     else:
+        # timeout_seconds is not enforced on the sync path: synchronous code
+        # cannot be cancelled mid-call, and wrapping in a thread would not stop
+        # a hung executor. The default container executor is async (and is
+        # deadline-enforced above); sync executors are in-process product code.
 
         def node_fn_sync(state: dict[str, Any]) -> dict[str, Any]:
             construct, prompt, instructions, run_ctx, model_input = _prepare(state)
@@ -1144,11 +1172,21 @@ def _compile_ai_call(
             usage: TokenUsage | None = None
             try:
                 if executor is None:
-                    call_result = await invoke_ai_call(construct=action, model_input=model_input)
+                    call_result = await _await_within_deadline(
+                        invoke_ai_call(construct=action, model_input=model_input),
+                        timeout_seconds=action.timeout_seconds,
+                        node_id=node_id,
+                        construct_type="AICall",
+                    )
                     result = call_result.output
                     usage = call_result.usage
                 else:
-                    result = await executor(construct=action, model_input=model_input)
+                    result = await _await_within_deadline(
+                        executor(construct=action, model_input=model_input),
+                        timeout_seconds=action.timeout_seconds,
+                        node_id=node_id,
+                        construct_type="AICall",
+                    )
                 typed = _validate_typed(result)
             except TypeError as exc:
                 # TypeError here typically means the executor's return value was not
