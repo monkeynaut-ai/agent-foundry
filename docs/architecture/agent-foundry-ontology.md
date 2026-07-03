@@ -4,7 +4,7 @@ Agent Foundry builds, runs, and manages systems: it composes a system's definiti
 
 ## The layered model
 
-```
+``` text
 System      the deployment/product — offers a catalog of Processes, holds what they share
   └─ Process      a defined, runnable thing — topology-agnostic, lifespan-agnostic
        ├─ Topology     how its Constructs coordinate (graph today; router, blackboard later)
@@ -32,6 +32,7 @@ The Process *concept* is deliberately neutral on two axes — each individual pr
 - **Lifespan** — the platform assumes no lifespan; a process may be a bounded job that completes or an indefinite standing behavior that never does. Each process is one or the other.
 
 A process declares:
+
 - **Constructs**: the units it is built from
 - **Topology**: how those constructs coordinate
 - **Entry point**: where a run begins
@@ -65,6 +66,7 @@ Participant and Role are the conceptual lens on action constructs — they descr
 A participant is the entity that acts at an action construct — what the construct delegates work to.
 
 **Entity types that can be participants:**
+
 - Autonomous AI agents (an agent in a container)
 - LLM-backed reasoning steps (in-process model calls)
 - Humans (approval gates, reviews, decisions)
@@ -80,6 +82,7 @@ These differ in implementation, not in their relationship to the process: each a
 A role is a pure contract — what must be done, not how or by whom.
 
 A role specifies:
+
 - **Purpose**: what the role exists to accomplish
 - **Scope**: what it is allowed to touch (files, services, resources)
 - **Input / output schema**: the data it requires and must produce
