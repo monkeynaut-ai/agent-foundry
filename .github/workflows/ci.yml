@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v[0-9]*"
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  PDM_CHECK_UPDATE: "false"
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: pdm install
+
+      - name: Lint
+        run: pdm run lint-check
+
+      - name: Check formatting
+        run: pdm run format-check
+
+      - name: Typecheck
+        run: pdm run typecheck
+
+      - name: Check import contracts
+        run: pdm run lint-imports
+
+      - name: Check docs links
+        run: pdm run docs-check
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: pdm install
+
+      - name: Test
+        run: pdm run test-unit
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: pdm install
+
+      - name: Build distributions
+        run: pdm build
+
+  release-build:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [quality, test, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Tag '$TAG' is not a valid release tag (expected vX.Y.Z)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: pdm install
+
+      - name: Build release distributions
+        run: pdm build
+
+      - name: Validate built version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          export EXPECTED_VERSION="${TAG#v}"
+          python - <<'PY'
+          import email.parser
+          import os
+          import pathlib
+          import zipfile
+
+          expected = os.environ["EXPECTED_VERSION"]
+          wheels = sorted(pathlib.Path("dist").glob("agent_foundry-*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit(f"expected one wheel, found {len(wheels)}: {wheels}")
+          with zipfile.ZipFile(wheels[0]) as wheel:
+              metadata_name = next(
+                  name for name in wheel.namelist() if name.endswith(".dist-info/METADATA")
+              )
+              metadata = email.parser.Parser().parsestr(wheel.read(metadata_name).decode())
+          actual = metadata["Version"]
+          if actual != expected:
+              raise SystemExit(f"built version {actual!r} does not match tag {expected!r}")
+          print(f"validated release version {actual}")
+          PY

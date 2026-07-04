@@ -52,7 +52,7 @@ distribution = true
 [tool.pdm.version]
 source = "scm"
 tag_filter = "v*"
-fallback_version = "0.11.0"
+fallback_version = "0.0.0"
 
 [tool.pdm.build]
 package-dir = "src"
@@ -77,8 +77,12 @@ lint-imports.cmd = "lint-imports"
 lint-imports.env = {PYTHONPATH = "src"}
 lint.cmd = "ruff check --fix src/ tests/ tests-evals/"
 lint.env = {PYTHONPATH = "src"}
+lint-check.cmd = "ruff check src/ tests/ tests-evals/"
+lint-check.env = {PYTHONPATH = "src"}
 format.cmd = "ruff format src/ tests/ tests-evals/"
 format.env = {PYTHONPATH = "src"}
+format-check.cmd = "ruff format --check src/ tests/ tests-evals/"
+format-check.env = {PYTHONPATH = "src"}
 typecheck.cmd = "pyright"
 typecheck.env = {PYTHONPATH = "src"}
 docs-check.cmd = "python scripts/check-markdown-links.py"

@@ -29,6 +29,8 @@ Use these when learning or building with Agent Foundry.
   validators, executors, and providers. **Needs terminology cleanup.**
 - [Agent containers](guides/agent-containers.md) — containerized agent execution.
   **Needs broader coverage as additional executor adapters are added.**
+- [Releasing](guides/releasing.md) — release tagging, dynamic versioning, and
+  build validation.
 
 ## Reference
 
