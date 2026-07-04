@@ -1,155 +1,119 @@
 # Agent Containers
 
-Agent containers let you run AI agents inside Docker containers with defined instructions, tools, permissions, and a structured communication protocol. Agent Foundry provides the base infrastructure; your product defines what the agent does.
+Agent Foundry's initial `AgentAction` executor runs Claude Code inside a Docker
+container. This is one adapter path, not the whole framework: applications can
+provide different `AgentAction.executor` callables for SDK-backed agents,
+service-backed agents, test doubles, or future harnesses.
 
-## Why containers?
+Use containers when an agent needs an isolated workspace, filesystem access,
+tools, and structured turn outcomes.
 
-An AI agent doing real work — writing code, analyzing documents, reviewing pull requests — needs an isolated environment. Containers provide:
+## What The Current Container Path Provides
 
-- **Isolation**: the agent can't accidentally modify your host filesystem or interfere with other agents
-- **Reproducibility**: every run starts from the same image with the same tools installed
-- **Resource control**: memory limits, CPU quotas, PID limits prevent runaway processes
-- **Security**: non-root user, dropped Linux capabilities, no access to host secrets unless explicitly forwarded
+- Docker-based process isolation.
+- A non-root in-container user.
+- Deny-by-default supplementary groups (`gids=[]`).
+- Optional MCP server configuration.
+- Explicit model and reuse-policy fields on `AgentAction`.
+- Structured output through `AgentTurnEnvelope[OutputModel]`.
+- Lifecycle events and artifacts for each run.
 
-## How it works
+## Build The Images
 
-There are three layers:
+Agent Foundry currently ships Dockerfiles under `src/agent_foundry/agents/docker/`.
 
-### 1. Base image
-
-Agent Foundry ships a base Docker image (`agent-worker`) that includes the Claude Code CLI, a WebSocket adapter, and a generic entrypoint. It handles authentication, git credentials, repo cloning, and adapter startup. You never modify this image directly.
-
-Build it once:
-```sh
+```bash
 pdm run docker-base
+pdm run docker-foundry-dev
 ```
 
-### 2. Product overlay
+The base image contains the common runtime pieces. The foundry-dev image is the
+current development image used by the repository.
 
-Your product layers on top of the base image to define what the agent does. This includes:
+## Authentication
 
-- **CLAUDE.md** — instructions the agent reads at startup ("you are a code reviewer", "use TDD", "output DONE when finished")
-- **Marker config** — which stdout strings the agent uses to signal events (task complete, need clarification, need permission)
-- **Skills** — reusable capabilities the agent can invoke during its session
-- **Settings** — tool permissions and plugin configuration
-- **Startup hook** — a shell script that runs at container start for product-specific setup (install plugins, check versions)
+Containerized Claude Code execution requires exactly one Claude/Anthropic auth
+method to be available to the container:
 
-Build your product image:
-```sh
-pdm run docker-archipelago   # for Archipelago
+```bash
+export CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat01-..."
+# or
+export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
-### 3. Runtime configuration
+The current environment allowlist includes `CLAUDE_CODE_OAUTH_TOKEN` but does
+not forward arbitrary host environment variables. Pass additional environment
+through the runtime's explicit `extra_env` wiring when needed.
 
-When the orchestrator creates a container, it passes runtime configuration: which repo to clone, which WebSocket URL to connect to, resource constraints, and any extra environment variables. This is the per-task customization that varies across runs.
+## Use An AgentAction
 
-## The communication flow
+An `AgentAction` declares the typed input/output contract and the executor that
+will fulfill it.
 
-```
-Your orchestrator ←──WebSocket──→ Adapter (in container) ←──stdio──→ Claude Code
-```
+```python
+from pydantic import BaseModel
 
-1. Your orchestrator starts a WebSocket server
-2. The container starts and the adapter connects to your WebSocket URL
-3. The adapter sends `status: started`
-4. Your orchestrator sends a prompt via `InputMessage`
-5. Claude Code runs, producing output that the adapter streams back as `OutputMessage`s
-6. When Claude outputs a marker string (e.g., `MYPRODUCT_TASK_COMPLETE`), the adapter translates it into a structured `AgentEventMessage`
-7. Your orchestrator handles the event (validate work, ask for clarification, terminate)
+from agent_foundry.constructs import AgentAction, ContainerReusePolicy
+from agent_foundry.orchestration.container_executor import run_agent_in_container
 
-This is the **Agent Container Protocol (ACP)** — a small set of message types and event types that all agent containers use, regardless of which AI agent runs inside.
 
-## Events the agent can signal
+class ResearchInput(BaseModel):
+    topic: str
 
-| Event | What it means | What you do |
-|---|---|---|
-| `task_complete` | Agent thinks the work is done | Run your gate check. Accept → terminate. Reject → send feedback and resume. |
-| `clarification_requested` | Agent needs information | Read the question from the payload. Send an answer via `InputMessage`. |
-| `permission_requested` | Agent wants to do something risky | Read the action and risk level. Approve or deny via `InputMessage`. |
-| `stuck` | Agent can't proceed | Intervene — provide guidance or terminate. |
 
-These events are defined by ACP. Your product defines the *marker strings* that trigger them — the mapping from "what Claude writes to stdout" to "which ACP event fires."
+class ResearchOutput(BaseModel):
+    summary: str
 
-## Markers: connecting agent instructions to protocol events
 
-This is the key mechanism that ties everything together:
-
-1. Your **CLAUDE.md** tells the agent: "when you're done, output `MYPRODUCT_TASK_COMPLETE`"
-2. Your **marker-config.json** tells the adapter: "when you see `MYPRODUCT_TASK_COMPLETE`, emit a `task_complete` event"
-3. Your **orchestrator** receives the `task_complete` event and decides what to do
-
-The agent never knows about ACP events. The orchestrator never sees raw marker strings. The adapter translates between the two worlds.
-
-## Container lifecycle
-
-```
-create → start → [agent works, adapter communicates] → stop → destroy
+researcher = AgentAction[ResearchInput, ResearchOutput](
+    name="researcher",
+    prompt_builder=lambda state: f"Research {state.topic}",
+    instructions_provider=lambda _state: "Return a concise summary.",
+    executor=run_agent_in_container,
+    reuse_policy=ContainerReusePolicy.REUSE_NEW_SESSION,
+    model="claude-sonnet-4-6",
+)
 ```
 
-The `ContainerManager` handles this. Key behaviors:
+The executor must return an instance of the declared output model. The compiler
+validates that boundary before merging the result back into process state.
 
-- **Volumes are preserved on destroy** — you can inspect the workspace after the container exits
-- **Containers stay alive after task completion** — the gate check happens while the container is still running, so you can resume the same Claude session if the gate rejects
-- **Multi-turn sessions** — the adapter supports `--resume` so Claude retains its full conversation context across multiple prompts
+## Authority And Access
 
-## Getting started
+Agent containers are safe-by-default where practical:
 
-### Build images
-```sh
-pdm run docker-base          # base image (once)
-pdm run docker-archipelago   # product overlay
-```
+- `gids=[]` means no supplementary filesystem groups.
+- `mcp_servers={}` means no MCP tool access.
+- `ContainerConfig.network` defaults to `none`.
+- Host environment forwarding is allowlisted.
 
-### Run interactively (no orchestrator)
-```sh
-docker run -it \
-  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
-  -v myworkspace:/workspace \
-  archipelago-cc-worker:latest
-```
+Applications opt in to additional authority by setting fields on the
+`AgentAction`, the run invocation, or the container config.
 
-### Debug an exited container's workspace
-```sh
-./docker/bash-that-volume.sh <container_name_or_id>
-```
+## Structured Turn Outcomes
 
-### Run with an orchestrator
-Pass `ACP_WS_URL` to connect the adapter to your WebSocket server:
-```sh
-docker run \
-  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
-  -e ACP_WS_URL="ws://host.docker.internal:8765/session-1" \
-  -e REPO_URL="https://github.com/org/repo.git" \
-  -v myworkspace:/workspace \
-  myproduct-worker:latest
-```
+The Claude Code container path expects each turn to produce an
+`AgentTurnEnvelope[O]`, where `O` is the `AgentAction` output model.
 
-## Creating a new product
+The envelope can represent:
 
-To define a new product that uses agent containers:
+- success with a typed payload
+- clarification needed
+- permission needed
+- failure
 
-1. Write a **CLAUDE.md** — describe the agent's role, what markers to output, any domain-specific instructions
-2. Write a **marker-config.json** — map your marker strings to ACP event types
-3. Write a **Dockerfile** — `FROM agent-worker:latest`, copy your files in
-4. Optionally write a **product-init.sh** — for plugins, version checks, or environment setup
-5. Optionally write **skills** — reusable capabilities the agent can invoke
-6. Optionally override **settings.json** — to customize permissions or enable plugins
+Clarification and permission outcomes route through the run's responder
+provider. Success payloads are validated as the declared output model.
 
-See `docker/` in this repo for the Archipelago reference implementation.
+## Reuse Policy
+
+`ContainerReusePolicy` is explicit because reuse changes semantics:
+
+- `REUSE_RESUME`: reuse the same container and resume the agent session.
+- `REUSE_NEW_SESSION`: reuse the container filesystem but start a fresh session.
 
 ## Reference
 
-For detailed schemas, message formats, field types, and the full ACP specification, see the [Agent Containers reference](../reference/agent-containers.md). That document is written as a machine-readable reference; this document explains the concepts behind it.
-
-## Key files
-
-| File | Purpose |
-|---|---|
-| `src/agent_foundry/agents/` | ACP module — protocol, adapters, container management |
-| `src/agent_foundry/agents/docker/Dockerfile.base` | Base image definition |
-| `src/agent_foundry/agents/docker/entrypoint.sh` | Base entrypoint |
-| `docker/Dockerfile` | Archipelago product overlay |
-| `docker/CLAUDE.md` | Archipelago agent instructions |
-| `docker/marker-config.json` | Archipelago marker mappings |
-| `docker/product-init.sh` | Archipelago startup hook |
-| `docker/bash-that-volume.sh` | Debug utility — shell into a container's workspace |
+See [Agent container reference](../reference/agent-containers.md) for the current
+model and protocol details. Legacy, broader container notes are archived under
+[docs/archive/reference/](../archive/reference/).

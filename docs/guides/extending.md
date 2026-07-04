@@ -1,9 +1,9 @@
 # Extending Agent Foundry
 
-Agent Foundry is a **platform, not a library**: products add their own construct
-types, compilation rules, and execution strategies on top of it rather than
-editing its core. There are three extension seams, each open through a registry
-or a callable field:
+Agent Foundry is a framework core with explicit extension seams. Applications
+add their own construct types, compilation rules, execution strategies,
+providers, and adapters on top of it rather than editing the core. There are
+three primary extension seams, each open through a registry or a callable field:
 
 1. **Custom constructs** — define a new `Construct` subclass and register a
    compiler and validator for it.
@@ -12,7 +12,7 @@ or a callable field:
    type.
 3. **Registries** — `register_compiler` and `register_validator` dispatch by
    construct type and are duplicate-guarded, so extensions add behaviour without
-   touching platform code.
+   touching core framework code.
 
 This guide walks through all three with a small, runnable example.
 
@@ -83,9 +83,9 @@ register_compiler(ConstantAction, _compile_constant_action)
 Notes:
 
 - **Reading scoped input.** A construct that *uses* its input projects the state
-  dict onto `I` and validates it. The platform's built-in leaves do this with an
-  internal helper; for your own nodes, take the fields you declared in `I` from
-  `state` and validate them with `I.model_validate(...)`.
+  dict onto `I` and validates it. Agent Foundry's built-in leaves do this with
+  an internal helper; for your own nodes, take the fields you declared in `I`
+  from `state` and validate them with `I.model_validate(...)`.
 - **Parameterized generics dispatch by base type.** `ConstantAction[A, B]` is a
   distinct class from `ConstantAction`, so the compiler walks the MRO to find the
   registered base. Register against the base (`ConstantAction`), not a
@@ -135,6 +135,7 @@ from pathlib import Path
 from agent_foundry.constructs import Process
 from agent_foundry.orchestration import run_process, RunCompleted
 from agent_foundry.responders.protocol import static_provider
+from agent_foundry.responders.stdin import StdinResponder
 
 
 class Empty(BaseModel):
@@ -160,7 +161,7 @@ outcome = asyncio.run(
         artifacts_dir=Path("/tmp/af-run"),
         workspace_volume="example-vol",
         base_image_tag="unused:latest",
-        responder_provider=static_provider(...),  # a Responder; unused here
+        responder_provider=static_provider(StdinResponder()),  # unused here
     )
 )
 assert isinstance(outcome, RunCompleted)
@@ -173,11 +174,13 @@ The other extension seam needs no new type: action constructs take a callable
 that *performs* the work, so you can change how an agent or model call runs by
 swapping that field. `AgentAction` and `AICall` both expose an `executor`.
 
-- `AgentAction.executor` contract: `executor(*, construct: AgentAction, prompt: str) -> O`.
+- `AgentAction.executor` contract:
+  `executor(*, construct: AgentAction, prompt: str, instructions: str, run_ctx: RunContext) -> O`.
   The compiler calls it with keyword arguments and passes the same construct
-  instance, so the executor can read everything declared on it (instructions,
-  container config, MCP servers, …). The platform ships a containerized executor;
-  a product can supply an SDK- or API-backed one, or a fake for tests.
+  instance, so the executor can read everything declared on it (container config,
+  MCP servers, model choice, reuse policy, and so on). Agent Foundry ships an
+  initial containerized executor; an application can supply an SDK- or API-backed
+  one, or a fake for tests.
 - `AICall.executor` contract: `async (*, construct: AICall[I, O], model_input: I) -> O`.
   When omitted, the default LLM provider path runs. Pass your own to mock
   inference, wrap it with metrics, swap providers, or synthesize a fallback on
@@ -187,7 +190,7 @@ swapping that field. `AgentAction` and `AICall` both expose an `executor`.
 from agent_foundry.constructs import AgentAction
 
 
-async def fake_executor(*, construct: AgentAction, prompt: str):
+async def fake_executor(*, construct: AgentAction, prompt: str, instructions: str, run_ctx):
     # Return a canned, validated output instead of running a container.
     return construct  # ... build and return an instance of the agent's output type
 
@@ -202,13 +205,13 @@ agent = AgentAction[MyIn, MyOut](
 ```
 
 Because the executor is a field, switching strategies — container vs. SDK vs.
-API vs. a test double — is a one-line change in the product declaration; no
-platform code changes.
+API vs. a test double — is a one-line change in the application declaration; no
+core framework code changes.
 
 ## 6. Custom inference providers
 
 `AICall` makes a single structured LLM call through an **inference provider**.
-The platform ships `AnthropicProvider`; a product adds another backend by
+Agent Foundry ships `AnthropicProvider`; an application adds another backend by
 implementing `InferenceProvider` and registering a `ModelEntry` for it. (This is
 the direct-API path only — it is unrelated to how containerized `AgentAction`s
 run, which is governed by the `executor`/base-image seam above.)
@@ -254,7 +257,7 @@ you construct). `register_model` is duplicate-guarded like the other registries.
 chain. For retry to work, a custom provider should override
 `is_transient(exc)` to classify its SDK's errors (rate limits / timeouts / 5xx →
 `True`); the base default is `False` (no retry). Set `ModelEntry.fallback` to a
-default failover target, and a product can override per call with
+default failover target, and an application can override per call with
 `AICall.retry` (a `RetryPolicy`) and `AICall.fallbacks` (a `list[ModelEntry]`;
 `[]` disables failover).
 
@@ -266,5 +269,5 @@ default failover target, and a product can override per call with
 | Change how an action runs | existing action construct | `executor=` callable |
 | Add an LLM backend for `AICall` | `InferenceProvider` subclass | `register_model` |
 
-All seams keep the construct declaration authoritative and leave the platform
+All seams keep the construct declaration authoritative and leave the framework
 core untouched.

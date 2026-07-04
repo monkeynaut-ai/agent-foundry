@@ -1,107 +1,174 @@
-# Building on Agent Foundry
+# Getting Started
+
+This guide builds a small typed process, validates its construct boundaries, and
+runs it through Agent Foundry's current runtime.
+
+Agent Foundry is alpha. The runtime entry point still takes some orchestration
+arguments that matter mainly for agent/container workflows; a function-only
+process can pass simple placeholder values for those fields.
 
 ## Install
 
-Agent Foundry is a local dependency. In your package's `pyproject.toml`:
-
-```toml
-dependencies = [
-    "agent-foundry @ file:///${PROJECT_ROOT}/../agent-foundry",
-]
+```bash
+pip install agent-foundry
 ```
 
-## Core concepts
+Requires Python 3.14.
 
-**1. Define state models** — Pydantic BaseModels for input/output at each step:
+For local development from this repository:
+
+```bash
+pdm install
+pdm run test-unit
+```
+
+## 1. Define State Models
+
+Process state crosses construct boundaries through Pydantic models.
 
 ```python
 from pydantic import BaseModel
 
-class MyInput(BaseModel):
-    data: str
 
-class MyOutput(BaseModel):
-    data: str
-    result: str
+class DraftInput(BaseModel):
+    topic: str
+
+
+class DraftState(BaseModel):
+    topic: str
+    outline: str
+
+
+class DraftOutput(BaseModel):
+    topic: str
+    outline: str
+    title: str
 ```
 
-**2. Build constructs** — compose a tree from leaf actions and control flow:
+## 2. Define Actions
+
+Actions are ordinary callables wrapped in typed constructs.
 
 ```python
-from agent_foundry.constructs import (
-    FunctionAction, Sequence, Loop, Retry, Conditional, Process
-)
+from agent_foundry.constructs import FunctionAction
 
-action = FunctionAction[MyInput, MyOutput](
-    function=lambda s: MyOutput(data=s.data, result=s.data.upper())
-)
-process = Process(root=action)
+
+def outline(state: DraftInput) -> DraftState:
+    return DraftState(topic=state.topic, outline=f"Notes about {state.topic}")
+
+
+def title(state: DraftState) -> DraftOutput:
+    return DraftOutput(
+        topic=state.topic,
+        outline=state.outline,
+        title=f"Understanding {state.topic}",
+    )
+
+
+outline_action = FunctionAction[DraftInput, DraftState](function=outline)
+title_action = FunctionAction[DraftState, DraftOutput](function=title)
 ```
 
-**3. Run it** — `run_process` is the single public entry point. It is `async`,
-takes keyword-only arguments, and returns a `RunOutcome` (`RunCompleted` /
-`RunAborted` / `RunFailed`) whose `.output` holds the typed final state:
+## 3. Compose A Process
+
+Constructs compose into a process tree. Here a `Sequence` runs the two actions
+in order.
 
 ```python
-from agent_foundry.orchestration import run_process, RunCompleted
+from agent_foundry.constructs import Process, Sequence
 
-outcome = await run_process(
-    process,
-    initial_state=MyInput(data="hello"),
-    artifacts_dir=run_dir,            # Path where this run writes lifecycle/summary
-    workspace_volume="my-vol",        # Docker volume backing agent workspaces
-    base_image_tag="agent-foundry-base:latest",
-    responder_provider=my_provider,   # supplies responses to GateAction interactions
+
+process = Process(
+    root=Sequence[DraftInput, DraftOutput](
+        steps=[
+            outline_action,
+            title_action,
+        ]
+    )
 )
-
-if isinstance(outcome, RunCompleted):
-    print(outcome.output)  # MyOutput(data='hello', result='HELLO')
 ```
 
-For a complete, runnable end-to-end example (including telemetry wiring), see the
-[README](../../README.md) and `examples/mlflow_demo/`.
+## 4. Validate Boundaries
 
-## Construct types
-
-| Construct | Purpose | Key fields |
-|-----------|---------|-----------|
-| `FunctionAction[I, O]` | Call a function | `function: Callable[[I], O]` |
-| `GateAction[I, O]` | Block for human input | `interaction: str`, `prompt_key: str` |
-| `Sequence[I, O]` | Run steps in order | `steps: list[Construct]` |
-| `Loop[I, O]` | Iterate over collection | `over: Callable[[I], list]`, `item_key: str`, `body: Construct` |
-| `Retry[I, O]` | Repeat until condition | `max_attempts: int`, `until: Callable[[I], bool]`, `body: Construct` |
-| `Conditional[I, O]` | Branch on state | `condition: Callable[[I], bool]`, `then_branch`, `else_branch` |
-
-## Rules
-
-- Every construct is parameterized: `FunctionAction[InputType, OutputType](...)`
-- Types must match at boundaries (exact match, not subtype)
-- Composite constructs (Sequence, Loop, etc.) isolate state — only I/O fields cross boundaries
-- Retry exits normally on exhaustion — check domain state in a parent Conditional to handle it
-- Conditional without else_branch is a "detour" — all four types must be identical
-
-## Extending with custom constructs
-
-Register a compiler for your own construct type:
+Validation checks that the state required by each construct is available and
+that the process can produce its declared output.
 
 ```python
-from agent_foundry.constructs import Construct
-from agent_foundry.compiler import register_compiler
-
-class MyCustomConstruct[I, O](Construct[I, O]):
-    custom_field: str
-
-def _compile_my_custom(graph, prim, prefix, gate_ids):
-    # Add nodes/edges to graph
-    # Return (entry_node_id, exit_node_id)
-    ...
-
-register_compiler(MyCustomConstruct, _compile_my_custom)
+process.validate()
 ```
 
-## What to test
+If a step reads a field that no earlier step produces, validation fails before
+the process runs.
 
-- State models construct and validate correctly
-- Construct trees pass validation (`process.validate()`)
-- `run_process(process, input)` produces expected typed output
-- State isolation — internal fields don't leak across boundaries
+## 5. Run The Process
+
+`run_process` is async and returns a `RunOutcome`. For this function-only
+example, the workspace volume and image tag are recorded in run metadata but no
+agent container is started.
+
+```python
+import asyncio
+import tempfile
+from pathlib import Path
+
+from agent_foundry.orchestration import RunCompleted, run_process
+from agent_foundry.responders.protocol import static_provider
+from agent_foundry.responders.stdin import StdinResponder
+
+
+async def main() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        outcome = await run_process(
+            process,
+            initial_state=DraftInput(topic="typed agent workflows"),
+            artifacts_dir=Path(tmp),
+            workspace_volume="getting-started-workspace",
+            base_image_tag="agent-foundry-base:latest",
+            responder_provider=static_provider(StdinResponder()),
+        )
+
+    if isinstance(outcome, RunCompleted):
+        print(outcome.output)
+    else:
+        raise RuntimeError(outcome)
+
+
+asyncio.run(main())
+```
+
+The completed output is a `DraftOutput` instance:
+
+```text
+topic='typed agent workflows' outline='Notes about typed agent workflows' title='Understanding typed agent workflows'
+```
+
+## Construct Types
+
+| Construct | Purpose |
+|-----------|---------|
+| `FunctionAction[I, O]` | Call synchronous Python code. |
+| `AsyncFunctionAction[I, O]` | Call async Python code. |
+| `GateAction[I, O]` | Pause for external or human input through a responder. |
+| `AICall[I, O]` | Call a model provider through a typed model-call contract. |
+| `AgentAction[I, O]` | Delegate work to an agent executor or harness. |
+| `Sequence[I, O]` | Run child constructs in order. |
+| `Loop[I, O]` | Iterate over a collection. |
+| `Retry[I, O]` | Repeat a body until a condition passes or attempts are exhausted. |
+| `Conditional[I, O]` | Choose a branch based on state. |
+
+## Rules To Remember
+
+- Every construct must be parameterized: `FunctionAction[InputType, OutputType](...)`.
+- Inputs and outputs are Pydantic `BaseModel` types.
+- Construct boundaries are validated before and during execution.
+- Composite constructs can accumulate internal fields, then expose only their
+  declared output fields.
+- Runtime-specific details belong behind action executors, providers, responders,
+  and other adapter seams.
+
+## Next Steps
+
+- Use [Extending Agent Foundry](extending.md) to add custom constructs,
+  compilers, validators, executors, and providers.
+- Use [Agent containers](agent-containers.md) when you are ready to run an agent
+  inside the current containerized Claude Code execution path.
