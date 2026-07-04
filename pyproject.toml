@@ -52,8 +52,7 @@ distribution = true
 [tool.pdm.version]
 source = "scm"
 tag_filter = "v*"
-fallback_version = "0.10.6"
-version_format = "scripts.build_version:format_version"
+fallback_version = "0.11.0"
 
 [tool.pdm.build]
 package-dir = "src"
