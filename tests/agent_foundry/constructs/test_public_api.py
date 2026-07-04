@@ -33,6 +33,13 @@ def test_run_process_is_publicly_exported():
     assert callable(run_process)
 
 
+def test_container_executor_adapter_is_publicly_exported():
+    from agent_foundry.orchestration import run_agent_in_container
+
+    assert "run_agent_in_container" in orchestration.__all__
+    assert callable(run_agent_in_container)
+
+
 def test_run_outcome_types_are_publicly_exported():
     # Products inspect the run outcome after run_process; the outcome types
     # must be importable from the public package, not an internal module.

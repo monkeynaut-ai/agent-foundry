@@ -53,8 +53,8 @@ will fulfill it.
 ```python
 from pydantic import BaseModel
 
-from agent_foundry.constructs import AgentAction, ContainerReusePolicy
-from agent_foundry.orchestration.container_executor import run_agent_in_container
+from agent_foundry import AgentAction, ContainerReusePolicy
+from agent_foundry.orchestration import run_agent_in_container
 
 
 class ResearchInput(BaseModel):

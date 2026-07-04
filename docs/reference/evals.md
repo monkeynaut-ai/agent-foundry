@@ -23,6 +23,7 @@ third-party eval frameworks live behind runner adapters.
 
 | Module | Purpose |
 |--------|---------|
+| `agent_foundry.evals` | Public eval models, target registry, and task builders. |
 | `agent_foundry.evals.models` | Pydantic suite, target, evaluator, runner, and report models. |
 | `agent_foundry.evals.registry` | `AICallRegistry` opt-in target registry. |
 | `agent_foundry.evals.runner_loader` | Dynamic `module:Class` runner loading. |
@@ -56,7 +57,7 @@ The registry value is a `module:attribute` string pointing at an
 ## Register AICalls
 
 ```python
-from agent_foundry.evals.registry import AICallRegistry
+from agent_foundry.evals import AICallRegistry
 from your_app.ai_calls import design_review
 
 EVAL_REGISTRY = AICallRegistry()
@@ -68,7 +69,7 @@ Unregistered calls are invisible to the eval API.
 ## Define A Suite
 
 ```python
-from agent_foundry.evals.models import (
+from agent_foundry.evals import (
     AICallTarget,
     Case,
     Dataset,

@@ -182,7 +182,7 @@ swapping that field. `AgentAction` and `AICall` both expose an `executor`.
   error.
 
 ```python
-from agent_foundry.constructs import AgentAction
+from agent_foundry import AgentAction
 
 
 async def fake_executor(*, construct: AgentAction, prompt: str, instructions: str, run_ctx):
@@ -216,8 +216,12 @@ A provider maps an `InferenceRequest` to its backend and returns an
 
 ```python
 from agent_foundry.ai_models import (
-    InferenceProvider, InferenceRequest, InferenceResult,
-    ModelEntry, ModelCapabilities, register_model,
+    InferenceProvider,
+    InferenceRequest,
+    InferenceResult,
+    ModelCapabilities,
+    ModelEntry,
+    register_model,
 )
 
 

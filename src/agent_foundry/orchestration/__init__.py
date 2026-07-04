@@ -27,6 +27,7 @@ from agent_foundry.orchestration.run_outcome import (
 from agent_foundry.orchestration.summary import render_summary
 
 if TYPE_CHECKING:
+    from agent_foundry.orchestration.container_executor import run_agent_in_container
     from agent_foundry.orchestration.runner import run_process
 
 __all__ = [
@@ -45,6 +46,7 @@ __all__ = [
     "agent_turn_dir",
     "bootstrap_run_artifacts",
     "render_summary",
+    "run_agent_in_container",
     "run_process",
 ]
 
@@ -56,6 +58,10 @@ __all__ = [
 def __getattr__(name: str) -> Any:
     if name == "run_process":
         from agent_foundry.orchestration.runner import run_process as _f
+
+        return _f
+    if name == "run_agent_in_container":
+        from agent_foundry.orchestration.container_executor import run_agent_in_container as _f
 
         return _f
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

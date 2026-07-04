@@ -23,7 +23,7 @@ The default provider path is implemented by
 `AICall.retry` accepts a `RetryPolicy`.
 
 ```python
-from agent_foundry.ai_models.resilience import RetryPolicy
+from agent_foundry.ai_models import RetryPolicy
 
 RetryPolicy(
     max_attempts=3,
