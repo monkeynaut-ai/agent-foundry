@@ -292,8 +292,8 @@ class AgentAction[I: BaseModel, O: BaseModel](Construct[I, O]):
 
     # Filesystem access — GID-based group permissions.
     # Lists the supplementary GIDs the agent process should hold when
-    # Claude Code is invoked via docker exec --group-add. An empty list
-    # means no supplementary groups (read-only against group-owned dirs).
+    # the containerized agent process runs. An empty list means no
+    # supplementary groups (read-only against group-owned dirs).
     # workspace_bootstrap is responsible for chown/chmod of workspace
     # directories to their respective GIDs before agents run.
     gids: list[int] = Field(default_factory=list)

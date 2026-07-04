@@ -28,7 +28,7 @@ Use these when learning or building with Agent Foundry.
 - [Extending Agent Foundry](guides/extending.md) — custom constructs, compilers,
   validators, executors, and providers. **Needs terminology cleanup.**
 - [Agent containers](guides/agent-containers.md) — containerized agent execution.
-  **Needs repair against current paths and scripts.**
+  **Needs broader coverage as additional executor adapters are added.**
 
 ## Reference
 
@@ -36,6 +36,9 @@ Use these when checking concrete behavior or integration details.
 
 - [Agent containers reference](reference/agent-containers.md) — current low-level
   container/protocol reference for the current Docker + Claude Code path.
+- [AICall resilience reference](reference/ai-call-resilience.md) — retry,
+  failover, timeout, custom executor, observability, and known gaps for model
+  calls.
 - [Evals reference](reference/evals.md) — typed eval models, runner boundary,
   registry, CLI, and API.
 
@@ -48,9 +51,12 @@ questions.
   Agent Foundry exists and what it optimizes for. **Needs framework-language
   alignment.**
 
-## Design Records
+## Design
+
+- [Observability adapter design](design/observability-adapter-design.md) —
+  vendor-neutral telemetry core and optional MLflow adapter.
 
 Historical subsystem design records live in [design/archive/](design/archive/).
-They cover AI-call resilience, telemetry, evals, container permissions, executor
-failure handling, system resilience, and the Codex agent path. Read them as
-implementation history rather than current user-facing guidance.
+They cover evals, container permissions, executor failure handling, system
+resilience, and the Codex agent path. Read them as implementation history rather
+than current user-facing guidance.

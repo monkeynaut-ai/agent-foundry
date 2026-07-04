@@ -61,8 +61,8 @@ class LiveContainer:
     session_id: str | None = None
     construct_id: int | None = None
     agent_name: str | None = None
-    # Supplementary GIDs passed to docker exec --group-add when Claude Code
-    # is invoked. Populated from AgentAction.gids by get_or_create.
+    # Supplementary GIDs requested for the containerized agent process.
+    # The registry passes them through SUPPLEMENTARY_GIDS at container startup.
     gids: list[int] = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     # Per-container invocation counter. Mutate via ``next_invocation()``

@@ -84,6 +84,33 @@ The default environment allowlist is intentionally small:
 
 Additional environment must be passed explicitly through run/container wiring.
 
+## Filesystem Access With GIDs
+
+`AgentAction.gids` declares the supplementary Linux group IDs the agent process
+should hold inside the container. This models access to resources rather than
+agent identity:
+
+- The in-container agent user remains stable.
+- Directories can be owned by resource-specific groups.
+- Directories with mode `775` grant write access to members of the owning group
+  and read/execute access to other users.
+- `gids=[]` is valid and means the agent receives no supplementary resource
+  groups.
+- An agent can hold more than one resource group, for example
+  `gids=[1001, 1002]`.
+
+The current implementation passes configured groups through
+`SUPPLEMENTARY_GIDS` at container startup. The Docker entrypoint creates any
+missing numeric groups, adds the agent user to those groups, then drops to the
+non-root agent user before running commands.
+
+A workspace can use nested group ownership to narrow write authority. For
+example, `codebase/` can be owned by a codebase group while `codebase/tests/` is
+owned by a test group. In that setup, an agent with only the codebase GID can
+read `tests/` but cannot write there unless it also has the test GID. Bootstrap
+ordering matters: assign parent directory ownership first, then override nested
+directories.
+
 ## Turn Envelope
 
 `AgentTurnEnvelope[O]` wraps one of:
