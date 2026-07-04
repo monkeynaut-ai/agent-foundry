@@ -21,7 +21,9 @@ Current stable public surfaces:
 - `agent_foundry.compiler`
 - `agent_foundry.ai_models`
 - `agent_foundry.evals`
+- `agent_foundry.models`
 - `agent_foundry.responders`
+- `agent_foundry.runtime`
 - `agent_foundry.telemetry`
 - selected `agent_foundry.orchestration` exports:
   - `run_process`
@@ -69,6 +71,7 @@ Examples:
 - underscored helpers
 - deep compiler helper functions
 - container registry internals
+- container image UID/GID constants
 - lifecycle writer implementation details
 - artifact helper functions
 - runner internals not exported from package `__init__` modules

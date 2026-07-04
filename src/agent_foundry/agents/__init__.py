@@ -13,5 +13,3 @@
 # If the Dockerfile bumps the UID, bump it here in the same change.
 AGENT_USER_UID = 1000
 AGENT_USER_GID = 1000
-
-__all__ = ["AGENT_USER_GID", "AGENT_USER_UID"]
