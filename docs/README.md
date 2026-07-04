@@ -56,6 +56,8 @@ questions.
 - [Motivation and principles](architecture/motivation-and-principles.md) — why
   Agent Foundry exists and what it optimizes for. **Needs framework-language
   alignment.**
+- [Framework layers and integration boundaries](architecture/framework-layers-and-boundaries.md)
+  — durable framework responsibilities versus current integration boundaries.
 
 ## Design
 
