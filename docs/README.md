@@ -53,10 +53,12 @@ questions.
 
 ## Design
 
+- [Checkpoint and resume contract](design/checkpoint-resume-contract.md) —
+  framework-level contract for durable typed checkpoints and explicit resume
+  planning.
 - [Observability adapter design](design/observability-adapter-design.md) —
   vendor-neutral telemetry core and optional MLflow adapter.
 
-Historical subsystem design records live in [design/archive/](design/archive/).
-They cover evals, container permissions, executor failure handling, system
-resilience, and the Codex agent path. Read them as implementation history rather
-than current user-facing guidance.
+Historical subsystem design records that still need disposition live in
+[design/staged-for-processing/](design/staged-for-processing/). Read them as
+implementation history rather than current user-facing guidance.

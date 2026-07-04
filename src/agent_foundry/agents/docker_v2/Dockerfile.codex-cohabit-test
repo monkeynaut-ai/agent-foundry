@@ -1,0 +1,37 @@
+# Codex + Claude cohabitation smoke test.
+#
+# Layered on top of the current claude-bearing worker image. Adds the codex
+# CLI; verifies both engines install, authenticate, and run side-by-side
+# without filesystem, PATH, or auth-env collisions.
+#
+# Build:
+#   docker build -t agent-foundry-codex-cohabit-test:latest \
+#     -f src/agent_foundry/agents/docker_v2/Dockerfile.codex-cohabit-test .
+#
+# The 7 checks documented in codex-agent-refactor.md gate the v2 image
+# layering decision. This file is a one-shot experiment; delete once the
+# decision is made.
+
+FROM agent-worker-foundry-dev:latest
+
+USER root
+
+# The base image is node-free (claude is a self-contained native ELF
+# binary). Codex ships its native binary inside an npm package, so we
+# need node+npm here.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Codex CLI is published as @openai/codex on npm. Pinning a version avoids
+# nondeterministic test results if upstream ships a breaking change.
+RUN npm i -g @openai/codex@0.128.0
+
+# Pre-create ~/.codex/ owned by claude. Otherwise docker auto-creates it
+# as root when bind-mounting auth.json, and codex (running as claude)
+# can't write its config/cache files there.
+RUN mkdir -p /home/claude/.codex && chown claude:claude /home/claude/.codex
+
+USER claude
