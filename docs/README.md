@@ -41,6 +41,8 @@ Use these when checking concrete behavior or integration details.
   calls.
 - [Evals reference](reference/evals.md) — typed eval models, runner boundary,
   registry, CLI, and API.
+- [Public API policy](reference/public-api.md) — stable, experimental, and
+  internal API tiers for the framework pivot.
 
 ## Architecture
 
