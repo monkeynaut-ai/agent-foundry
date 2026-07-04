@@ -115,5 +115,4 @@ provider. Success payloads are validated as the declared output model.
 ## Reference
 
 See [Agent container reference](../reference/agent-containers.md) for the current
-model and protocol details. Legacy, broader container notes are archived under
-[docs/archive/reference/](../archive/reference/).
+model and protocol details.
