@@ -29,7 +29,7 @@ the compiler will read:
 ```python
 from pydantic import BaseModel
 
-from agent_foundry.constructs.models import Construct
+from agent_foundry import Construct
 
 
 class ConstantAction[I: BaseModel, O: BaseModel](Construct[I, O]):
@@ -61,8 +61,7 @@ from typing import Any
 
 from langgraph.graph import StateGraph
 
-from agent_foundry.compiler import register_compiler
-from agent_foundry.compiler.compiler import CompileContext, CompileResult
+from agent_foundry.compiler import CompileContext, CompileResult, register_compiler
 
 
 def _compile_constant_action(
@@ -101,8 +100,7 @@ per construct type; the dispatcher also recurses into children for you.
 declared output type `O`:
 
 ```python
-from agent_foundry.constructs import register_validator
-from agent_foundry.constructs.models import get_type_args
+from agent_foundry.constructs import get_type_args, register_validator
 
 
 def _validate_constant_action(action: ConstantAction) -> None:
@@ -132,10 +130,7 @@ the built-ins exactly like a native one:
 import asyncio
 from pathlib import Path
 
-from agent_foundry.constructs import Process
-from agent_foundry.orchestration import run_process, RunCompleted
-from agent_foundry.responders.protocol import static_provider
-from agent_foundry.responders.stdin import StdinResponder
+from agent_foundry import Process, RunCompleted, StdinResponder, run_process, static_provider
 
 
 class Empty(BaseModel):

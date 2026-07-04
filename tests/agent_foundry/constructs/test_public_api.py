@@ -18,6 +18,14 @@ def test_aicall_is_publicly_exported():
     assert constructs.ModelInput is ModelInput
 
 
+def test_construct_extension_helpers_are_publicly_exported():
+    from agent_foundry.constructs import Construct, get_type_args
+
+    assert {"Construct", "get_type_args"} <= set(constructs.__all__)
+    assert constructs.Construct is Construct
+    assert constructs.get_type_args is get_type_args
+
+
 def test_run_process_is_publicly_exported():
     from agent_foundry.orchestration import run_process
 

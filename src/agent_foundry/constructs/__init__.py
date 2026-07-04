@@ -26,6 +26,7 @@ from agent_foundry.constructs.models import (
     Loop,
     Retry,
     Sequence,
+    get_type_args,
 )
 from agent_foundry.constructs.process import Process
 from agent_foundry.constructs.retry_types import (
@@ -71,6 +72,7 @@ __all__ = [
     "StreamableHttpMcpServer",
     "TypeMismatchError",
     "UnregisteredConstructError",
+    "get_type_args",
     "list_claude_models",
     "register_validator",
     "validate_construct",

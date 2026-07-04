@@ -9,6 +9,7 @@ def test_top_level_exports_common_framework_surface():
         AICall,
         AsyncFunctionAction,
         Conditional,
+        Construct,
         ContainerReusePolicy,
         FunctionAction,
         GateAction,
@@ -28,6 +29,7 @@ def test_top_level_exports_common_framework_surface():
         "AgentAction",
         "AsyncFunctionAction",
         "Conditional",
+        "Construct",
         "ContainerReusePolicy",
         "FunctionAction",
         "GateAction",
@@ -47,6 +49,7 @@ def test_top_level_exports_common_framework_surface():
     assert AgentAction is agent_foundry.AgentAction
     assert AsyncFunctionAction is agent_foundry.AsyncFunctionAction
     assert Conditional is agent_foundry.Conditional
+    assert Construct is agent_foundry.Construct
     assert ContainerReusePolicy is agent_foundry.ContainerReusePolicy
     assert FunctionAction is agent_foundry.FunctionAction
     assert GateAction is agent_foundry.GateAction
