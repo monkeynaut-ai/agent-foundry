@@ -50,7 +50,7 @@ class DraftOutput(BaseModel):
 Actions are ordinary callables wrapped in typed constructs.
 
 ```python
-from agent_foundry.constructs import FunctionAction
+from agent_foundry import FunctionAction
 
 
 def outline(state: DraftInput) -> DraftState:
@@ -75,7 +75,7 @@ Constructs compose into a process tree. Here a `Sequence` runs the two actions
 in order.
 
 ```python
-from agent_foundry.constructs import Process, Sequence
+from agent_foundry import Process, Sequence
 
 
 process = Process(
@@ -111,9 +111,7 @@ import asyncio
 import tempfile
 from pathlib import Path
 
-from agent_foundry.orchestration import RunCompleted, run_process
-from agent_foundry.responders.protocol import static_provider
-from agent_foundry.responders.stdin import StdinResponder
+from agent_foundry import RunCompleted, StdinResponder, run_process, static_provider
 
 
 async def main() -> None:

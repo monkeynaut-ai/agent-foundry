@@ -57,7 +57,7 @@ fields leave their scope.
 ```python
 from pydantic import BaseModel
 
-from agent_foundry.constructs import FunctionAction, Process, Sequence
+from agent_foundry import FunctionAction, Process, Sequence
 
 
 class DraftInput(BaseModel):
