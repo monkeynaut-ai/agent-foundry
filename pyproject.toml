@@ -76,6 +76,7 @@ format.cmd = "ruff format src/ tests/ tests-evals/"
 format.env = {PYTHONPATH = "src"}
 typecheck.cmd = "pyright"
 typecheck.env = {PYTHONPATH = "src"}
+docs-check.cmd = "python scripts/check-markdown-links.py"
 
 [dependency-groups]
 dev = [
