@@ -43,6 +43,8 @@ Use these when checking concrete behavior or integration details.
   registry, CLI, and API.
 - [Public API policy](reference/public-api.md) — stable, experimental, and
   internal API tiers for the framework pivot.
+- [Runtime accessors](reference/runtime.md) — run-scoped helpers for
+  function/action code.
 
 ## Architecture
 
