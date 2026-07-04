@@ -49,6 +49,7 @@ Current experimental public surfaces:
 - run hook event types from `agent_foundry.orchestration`
 - `agent_foundry.mlflow_adapter`
 - container-specific configuration and execution behavior
+- low-level telemetry span/provider helpers
 - adapter-specific continuation, artifact, and telemetry behavior
 
 Rules:

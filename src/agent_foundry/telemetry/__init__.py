@@ -13,17 +13,12 @@ from agent_foundry.telemetry.config import (
     RunStats,
     TelemetryConfig,
 )
-from agent_foundry.telemetry.setup import build_tracer_provider
-from agent_foundry.telemetry.spans import SpanHandle, emit_span
 
 __all__ = [
     "ArtifactSpec",
     "RedactionPolicy",
     "RunDefinition",
     "RunStats",
-    "SpanHandle",
     "TelemetryConfig",
     "attributes",
-    "build_tracer_provider",
-    "emit_span",
 ]

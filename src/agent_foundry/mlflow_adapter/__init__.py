@@ -148,4 +148,4 @@ def enable(
         weakref.finalize(run_context, _unregister, ctx_id)
 
 
-__all__ = ["MLFLOW_TRANSLATIONS", "enable", "reset_for_testing"]
+__all__ = ["MLFLOW_TRANSLATIONS", "enable"]

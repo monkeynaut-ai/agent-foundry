@@ -57,7 +57,7 @@ def fake_mlflow(monkeypatch: pytest.MonkeyPatch) -> FakeMLflow:
 @pytest.fixture(autouse=True)
 def reset_adapter_state() -> Iterator[None]:
     """Clear the adapter's process-global idempotency sets between tests."""
-    from agent_foundry.mlflow_adapter import reset_for_testing
+    from agent_foundry.mlflow_adapter.__init__ import reset_for_testing
 
     reset_for_testing()
     yield
