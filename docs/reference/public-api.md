@@ -49,6 +49,7 @@ Current experimental public surfaces:
 - `agent_foundry.orchestration.run_agent_in_container`
 - `agent_foundry.orchestration.RunContext`
 - run hook event types from `agent_foundry.orchestration`
+- `agent_foundry.agents` containerized-agent contracts
 - `agent_foundry.mlflow_adapter`
 - container-specific configuration and execution behavior
 - low-level telemetry span/provider helpers

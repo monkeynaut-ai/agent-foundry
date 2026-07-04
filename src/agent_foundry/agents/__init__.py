@@ -1,4 +1,22 @@
-"""Platform infrastructure for containerized AI agents."""
+"""Experimental containerized-agent execution contracts."""
+
+from agent_foundry.agents.agent_turn_envelope import (
+    AgentTurnEnvelope,
+    ClarificationOutcome,
+    FailureOutcome,
+    PermissionOutcome,
+    SuccessOutcome,
+    TurnOutcomeKind,
+)
+from agent_foundry.agents.lifecycle import (
+    ContainerConfig,
+    ContainerHandleBase,
+    ContainerManagerBase,
+    ExecResult,
+    HealthReport,
+    HealthStatus,
+    NetworkMode,
+)
 
 # UID and GID of the non-root ``claude`` user in the agent-worker base
 # image. Hosts that prepare files or directories on the workspace volume
@@ -13,3 +31,19 @@
 # If the Dockerfile bumps the UID, bump it here in the same change.
 AGENT_USER_UID = 1000
 AGENT_USER_GID = 1000
+
+__all__ = [
+    "AgentTurnEnvelope",
+    "ClarificationOutcome",
+    "ContainerConfig",
+    "ContainerHandleBase",
+    "ContainerManagerBase",
+    "ExecResult",
+    "FailureOutcome",
+    "HealthReport",
+    "HealthStatus",
+    "NetworkMode",
+    "PermissionOutcome",
+    "SuccessOutcome",
+    "TurnOutcomeKind",
+]

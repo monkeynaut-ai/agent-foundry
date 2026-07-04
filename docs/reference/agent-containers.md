@@ -20,9 +20,10 @@ This is an initial integration, not a universal agent-container abstraction.
 |------|----------|---------|
 | `AgentAction[I, O]` | `agent_foundry.constructs` | Declares prompt, instructions, executor, model, reuse policy, access, and output type. |
 | `ContainerReusePolicy` | `agent_foundry.constructs` | Controls whether a container/session is reused. |
-| `ContainerConfig` | `agent_foundry.agents.lifecycle` | Resource and network constraints for container creation. |
-| `ContainerManagerBase` | `agent_foundry.agents.lifecycle` | Backend seam for container lifecycle operations. |
-| `AgentTurnEnvelope[O]` | `agent_foundry.agents.agent_turn_envelope` | Structured turn result wrapper. |
+| `ContainerConfig` | `agent_foundry.agents` | Resource and network constraints for container creation. |
+| `NetworkMode` | `agent_foundry.agents` | Well-known container network modes. |
+| `ContainerManagerBase` | `agent_foundry.agents` | Backend seam for container lifecycle operations. |
+| `AgentTurnEnvelope[O]` | `agent_foundry.agents` | Structured turn result wrapper. |
 | `Responder` | `agent_foundry.responders` | Handles clarification and permission outcomes. |
 
 ## AgentAction Fields
