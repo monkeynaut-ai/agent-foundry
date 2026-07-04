@@ -5,7 +5,7 @@ build-backend = "pdm.backend"
 [project]
 name = "agent-foundry"
 dynamic = ["version"]
-description = "Default template for PDM package"
+description = "Typed framework for declaring and running agentic systems"
 authors = [
     {name = "Mark Norman", email = "mark@marknorman.com"},
 ]
@@ -30,6 +30,32 @@ dependencies = [
 requires-python = "==3.14.*"
 readme = "README.md"
 license = {text = "MIT"}
+keywords = [
+    "agents",
+    "agentic",
+    "ai",
+    "framework",
+    "llm",
+    "orchestration",
+    "pydantic",
+    "typed",
+    "workflow",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://github.com/monkeynaut-ai/agent-foundry"
+Source = "https://github.com/monkeynaut-ai/agent-foundry"
+"Bug Tracker" = "https://github.com/monkeynaut-ai/agent-foundry/issues"
+Documentation = "https://github.com/monkeynaut-ai/agent-foundry/tree/main/docs"
 
 [project.optional-dependencies]
 mlflow = ["mlflow>=3.6.0"]
