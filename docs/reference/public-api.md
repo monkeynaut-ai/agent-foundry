@@ -45,6 +45,8 @@ change while the framework pivot settles.
 Current experimental public surfaces:
 
 - `agent_foundry.orchestration.run_agent_in_container`
+- `agent_foundry.orchestration.RunContext`
+- run hook event types from `agent_foundry.orchestration`
 - `agent_foundry.mlflow_adapter`
 - container-specific configuration and execution behavior
 - adapter-specific continuation, artifact, and telemetry behavior
@@ -67,6 +69,7 @@ Examples:
 - deep compiler helper functions
 - container registry internals
 - lifecycle writer implementation details
+- artifact helper functions
 - runner internals not exported from package `__init__` modules
 - modules under `agent_foundry.evals.runners`
 - direct imports from implementation modules when a package-level export exists

@@ -51,3 +51,30 @@ def test_run_outcome_types_are_publicly_exported():
     assert RunAborted is not None
     assert RunFailed is not None
     assert RunOutcome is not None
+
+
+def test_orchestration_runtime_contract_types_are_publicly_exported():
+    from agent_foundry.orchestration import (
+        LifecycleEvent,
+        OnRunEndedHook,
+        OnRunStartingHook,
+        RunContext,
+        RunEndedEvent,
+        RunStartingEvent,
+    )
+
+    expected = {
+        "LifecycleEvent",
+        "OnRunEndedHook",
+        "OnRunStartingHook",
+        "RunContext",
+        "RunEndedEvent",
+        "RunStartingEvent",
+    }
+    assert expected <= set(orchestration.__all__)
+    assert LifecycleEvent is not None
+    assert OnRunEndedHook is not None
+    assert OnRunStartingHook is not None
+    assert RunContext is not None
+    assert RunEndedEvent is not None
+    assert RunStartingEvent is not None
