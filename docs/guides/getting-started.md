@@ -174,6 +174,12 @@ process = Process(
 process.validate()
 ```
 
+To run this process through the runtime, use the repository example:
+
+```bash
+pdm run python examples/getting_started.py
+```
+
 ## Where Adapters Fit
 
 The example above uses only the core declaration and validation layers. Agent
