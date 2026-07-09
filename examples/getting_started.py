@@ -8,6 +8,7 @@ Run from the repository root:
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 from pathlib import Path
 
@@ -70,8 +71,12 @@ process = Process(
 
 
 async def main() -> None:
-    process.validate()
+    print("Starting Agent Foundry Getting Started example")
 
+    process.validate()
+    print("Process validated")
+
+    print("Running process")
     with tempfile.TemporaryDirectory() as tmp:
         outcome = await run_process(
             process,
@@ -85,7 +90,9 @@ async def main() -> None:
     if not isinstance(outcome, RunCompleted):
         raise RuntimeError(outcome)
 
-    print(outcome.output)
+    print("Process completed")
+    print("Output:")
+    print(json.dumps(outcome.output.model_dump(), indent=2))
 
 
 if __name__ == "__main__":
