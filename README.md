@@ -1,17 +1,20 @@
 # Agent Foundry
 
-Agent Foundry is a typed, boundary-enforced framework for declaring and running
-agentic systems. Builders compose processes from declared constructs, validate
-state boundaries, and run them through adapter seams for workflow engines, agent
-harnesses, model providers, tools, and observability backends.
+[![CI](https://github.com/monkeynaut-ai/agent-foundry/actions/workflows/ci.yml/badge.svg)](https://github.com/monkeynaut-ai/agent-foundry/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/downloads/)
 
-Those seams are the long-term portability strategy. The adapter ecosystem is
-still a work in progress: Agent Foundry provides the core abstractions and
-initial integrations, while broader backend and provider support still needs to
-be built and validated.
+Agent Foundry is a typed, boundary-enforced framework for declaring and running agentic systems. Builders compose processes from declared constructs, validate state boundaries, and run them through adapter seams for workflow engines, agent harnesses, model providers, tools, and observability backends.
+
+Current Targets Audience and Use Case
+
+- framework for experimentation and learning
+- rapid development of high-quality MVPs
+
+Those seams are the long-term portability strategy. The adapter ecosystem is still a work in progress: Agent Foundry provides the core abstractions and initial integrations, while broader backend and provider support still needs to be built and validated.
 
 > **Status: alpha.** Agent Foundry is pre-1.0 and APIs may change.
-> License: MIT. See [LICENSE](LICENSE).
+> License: Apache-2.0. See [LICENSE](LICENSE).
 
 ## Why Agent Foundry
 
