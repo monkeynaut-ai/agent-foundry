@@ -60,9 +60,6 @@
       }
     ]
   },
-  "enabledPlugins": {
-    "jig@duronext-jig": true
-  },
   "extraKnownMarketplaces": {
     "duronext-jig": {
       "source": {
