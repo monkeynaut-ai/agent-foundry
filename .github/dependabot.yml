@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Keeps the SHA-pinned actions in ci.yml current — without this, pinning
+  # freezes them permanently.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+    groups:
+      dev-dependencies:
+        dependency-type: development
