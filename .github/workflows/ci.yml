@@ -132,7 +132,7 @@ jobs:
           import zipfile
 
           expected = os.environ["EXPECTED_VERSION"]
-          wheels = sorted(pathlib.Path("dist").glob("agent_foundry-*.whl"))
+          wheels = sorted(pathlib.Path("dist").glob("agent_foundry_ai-*.whl"))
           if len(wheels) != 1:
               raise SystemExit(f"expected one wheel, found {len(wheels)}: {wheels}")
           with zipfile.ZipFile(wheels[0]) as wheel:
