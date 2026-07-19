@@ -41,7 +41,7 @@ The core telemetry package depends on OpenTelemetry, not MLflow.
 The MLflow adapter is optional:
 
 ```bash
-pip install agent-foundry[mlflow]
+pip install agent-foundry-ai[mlflow]
 ```
 
 ## Runtime Flow

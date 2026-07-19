@@ -11,7 +11,7 @@ documented in the [public API policy](../reference/public-api.md).
 ## Install
 
 ```bash
-pip install agent-foundry
+pip install agent-foundry-ai
 ```
 
 Requires Python 3.14.

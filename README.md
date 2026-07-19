@@ -127,8 +127,8 @@ semantics, ideally through shared contract tests.
 ## Install
 
 ```bash
-pip install agent-foundry
-pip install agent-foundry[mlflow]  # optional MLflow adapter
+pip install agent-foundry-ai
+pip install agent-foundry-ai[mlflow]  # optional MLflow adapter
 ```
 
 Requires Python 3.14.
