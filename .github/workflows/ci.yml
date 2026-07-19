@@ -145,3 +145,29 @@ jobs:
               raise SystemExit(f"built version {actual!r} does not match tag {expected!r}")
           print(f"validated release version {actual}")
           PY
+
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [release-build]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: "3.14"
+
+      - name: Build
+        run: pdm build
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
