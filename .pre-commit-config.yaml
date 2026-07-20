@@ -35,3 +35,17 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-push]
+      - id: typecheck
+        name: pyright
+        entry: bash -c 'pdm run typecheck'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit, pre-push]
+      - id: docs-check
+        name: docs-check (markdown links)
+        entry: bash -c 'pdm run docs-check'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
